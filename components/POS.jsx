@@ -403,6 +403,23 @@ export default function POS({ user, onLogout }) {
     const methodText = order.payment_method === 'cash' ? 'ເງິນສົດ' : order.payment_method === 'transfer' ? 'ໂອນ' : order.payment_method === 'qr' ? 'QR' : order.payment_method
     const dt = new Date(order.created_at || Date.now())
     const dateStr = dt.toLocaleString('lo-LA')
+    const orderPayments = Array.isArray(order.payments)
+      ? order.payments
+      : typeof order.payments === 'string'
+        ? (() => { try { return JSON.parse(order.payments) } catch { return [] } })()
+        : []
+    const paymentLines = orderPayments.map(p => {
+      const currency = p.currency || 'LAK'
+      const rate = Number(p.rate) || 1
+      const amount = Number(p.amount) || 0
+      const amountLak = Number(p.amount_lak) || amount * rate
+      return `
+        <div class="payrow">
+          <span>${currency} ${formatNumber(amount)}</span>
+          <span>@ ${formatNumber(rate)} = ${formatPrice(amountLak)}</span>
+        </div>
+      `
+    }).join('')
     const lines = (order.items || []).map(it => `
       <div class="row">
         <div class="name">${(it.name || it.product_name || '—')}</div>
@@ -433,6 +450,7 @@ export default function POS({ user, onLogout }) {
       .total { display: flex; justify-content: space-between; margin: 2px 0; font-family: monospace; }
       .total-label { }
       .total-value { font-variant-numeric: tabular-nums }
+      .payrow { display: flex; justify-content: space-between; gap: 8px; margin: 2px 0; font-size: 10px; font-family: monospace; }
       .grand { font-size: 16px; font-weight: 800; }
       .note { font-size: 10px; color: #333; margin-top: 4px; padding: 4px; border: 1px dashed #000; }
       @media print { .no-print { display: none } }
@@ -460,6 +478,10 @@ export default function POS({ user, onLogout }) {
       <div class="total grand"><span>ລວມທັງໝົດ</span><span class="total-value">${formatPrice(order.total)}</span></div>
       <div class="divider"></div>
       <div class="total"><span>ຮັບເງິນ</span><span class="total-value">${formatPrice(order.amount_paid)}</span></div>
+      ${paymentLines ? `
+        <div class="xs bold" style="margin-top:4px;">ລາຍລະອຽດການຮັບເງິນ / Rate</div>
+        ${paymentLines}
+      ` : ''}
       <div class="total bold"><span>ເງິນທອນ</span><span class="total-value">${formatPrice(order.change_amount)}</span></div>
 
       ${order.note ? `<div class="note">📝 ${order.note}</div>` : ''}

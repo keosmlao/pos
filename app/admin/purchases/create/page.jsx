@@ -7,9 +7,9 @@ import { generateAndPrintPurchaseReceipt } from '@/utils/receiptPdfGenerator'
 
 const API = '/api'
 
-const currencies = [
+const defaultCurrencies = [
   { value: 'LAK', label: 'LAK', symbol: '₭', rate: 1 },
-  { value: 'THB', label: 'THB', symbol: '฿', rate: 600 },
+  { value: 'THB', label: 'THB', symbol: '฿', rate: 625 },
   { value: 'USD', label: 'USD', symbol: '$', rate: 21500 },
   { value: 'CNY', label: 'CNY', symbol: '¥', rate: 2950 },
   { value: 'VND', label: 'VND', symbol: '₫', rate: 0.85 },
@@ -22,7 +22,7 @@ const paymentMethods = [
 ]
 
 function formatAmount(amount, currency = 'LAK') {
-  const cur = currencies.find(c => c.value === currency)
+  const cur = defaultCurrencies.find(c => c.value === currency)
   return new Intl.NumberFormat('lo-LA').format(amount) + ' ' + (cur?.symbol || currency)
 }
 
@@ -44,6 +44,7 @@ export default function PurchaseCreate() {
 
   const [suppliers, setSuppliers] = useState([])
   const [products, setProducts] = useState([])
+  const [currencies, setCurrencies] = useState(defaultCurrencies)
   const [form, setForm] = useState({
     supplier_id: '', paid: '', note: '',
     date: new Date().toISOString().split('T')[0],
@@ -70,9 +71,21 @@ export default function PurchaseCreate() {
     Promise.all([
       fetch(`${API}/admin/suppliers`).then(r => r.json()),
       fetch(`${API}/admin/products`).then(r => r.json()),
-    ]).then(([suppliersData, productsData]) => {
+      fetch(`${API}/admin/currencies`).then(r => r.json()).catch(() => defaultCurrencies),
+    ]).then(([suppliersData, productsData, currencyData]) => {
       setSuppliers(suppliersData)
       setProducts(productsData)
+      const enabledCurrencies = Array.isArray(currencyData)
+        ? currencyData
+            .filter(c => c.enabled !== false)
+            .map(c => ({
+              value: c.code,
+              label: c.code,
+              symbol: c.symbol || c.code,
+              rate: Number(c.rate) || 1,
+            }))
+        : defaultCurrencies
+      setCurrencies(enabledCurrencies.length > 0 ? enabledCurrencies : defaultCurrencies)
 
       if (pendingInvoice) {
         const pickNum = (obj, keys) => {
@@ -105,7 +118,7 @@ export default function PurchaseCreate() {
           .filter(Boolean)
 
         if (mappedItems.length > 0) setItems(mappedItems)
-        const thbRate = currencies.find(c => c.value === 'THB')?.rate || 600
+        const thbRate = enabledCurrencies.find(c => c.value === 'THB')?.rate || 625
         setExchangeRate(thbRate)
         setForm(f => ({
           ...f,
