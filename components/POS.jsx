@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { calculatePromotions } from '../utils/promotions'
 import { useCompanyProfile } from '../utils/useCompanyProfile'
+import { connectCashDrawer, isCashDrawerSupported, openCashDrawer } from '../utils/cashDrawer'
 
 const API = '/api'
 
@@ -81,6 +82,9 @@ export default function POS({ user, onLogout }) {
   const [todayHandovers, setTodayHandovers] = useState([])
   const [handoverForm, setHandoverForm] = useState({ actual_cash: '', received_by: '', note: '' })
   const [handoverSaving, setHandoverSaving] = useState(false)
+  const [drawerBusy, setDrawerBusy] = useState(false)
+  const [drawerReady, setDrawerReady] = useState(false)
+  const [cashDrawerSupported, setCashDrawerSupported] = useState(false)
   const customerWinRef = useRef(null)
   const bcRef = useRef(null)
 
@@ -120,6 +124,7 @@ export default function POS({ user, onLogout }) {
     return () => clearInterval(t)
   }, [reloadPromotions])
   useEffect(() => { fetchProducts() }, [fetchProducts])
+  useEffect(() => { setCashDrawerSupported(isCashDrawerSupported()) }, [])
 
   // Refocus scan input ONLY when all modals just closed (no polling to avoid stealing focus from other inputs)
   const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary
@@ -242,6 +247,40 @@ export default function POS({ user, onLogout }) {
     customerWinRef.current = w
   }
 
+  const setupCashDrawer = async () => {
+    if (!cashDrawerSupported) {
+      showToast('Browser ນີ້ບໍ່ຮອງຮັບ Web Serial', 'error')
+      return
+    }
+
+    setDrawerBusy(true)
+    try {
+      const result = await connectCashDrawer()
+      if (result.ok) {
+        setDrawerReady(true)
+        showToast('ເຊື່ອມ cash drawer ສຳເລັດ', 'success')
+      } else if (result.reason === 'not_configured') {
+        showToast('ຍັງບໍ່ໄດ້ເລືອກ cash drawer', 'error')
+      } else {
+        showToast('ບໍ່ສາມາດເຊື່ອມ cash drawer ໄດ້', 'error')
+      }
+    } finally {
+      setDrawerBusy(false)
+    }
+  }
+
+  const kickCashDrawer = async () => {
+    if (!cashDrawerSupported) return
+
+    const result = await openCashDrawer()
+    if (result.ok) {
+      setDrawerReady(true)
+    } else if (drawerReady) {
+      setDrawerReady(false)
+      showToast('ເປີດ cash drawer ບໍ່ສຳເລັດ', 'error')
+    }
+  }
+
   const handleCheckout = async () => {
     const useMulti = payments.length > 0
     let paid, paymentsPayload = null
@@ -287,6 +326,8 @@ export default function POS({ user, onLogout }) {
     if (res.ok) {
       const order = await res.json()
       showToast('ການຊຳລະສຳເລັດ', 'success')
+      const shouldOpenDrawer = paymentMethod === 'cash' || (paymentsPayload && paymentsPayload.length > 0)
+      if (shouldOpenDrawer) kickCashDrawer()
       try { bcRef.current?.postMessage({ type: 'complete', order }) } catch {}
       setShowReceipt(order); setCart([]); setAmountPaid(''); setShowCheckout(false)
       setDiscount(0); setCustomerNote(''); setLastScan(null); setPayments([])
@@ -1087,6 +1128,22 @@ export default function POS({ user, onLogout }) {
                 ))}
               </div>
             </div>
+
+            {paymentMethod === 'cash' && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <div className="min-w-0">
+                  <div className="text-xs font-extrabold text-slate-800">Cash drawer</div>
+                  <div className={`text-[10px] font-bold ${drawerReady ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    {drawerReady ? 'ພ້ອມເປີດອັດຕະໂນມັດ' : 'ເຊື່ອມຕໍ່ກ່ອນໃຊ້ຄັ້ງທຳອິດ'}
+                  </div>
+                </div>
+                <button type="button" onClick={setupCashDrawer} disabled={drawerBusy || !isCashDrawerSupported()}
+                  title={cashDrawerSupported ? 'ເຊື່ອມຕໍ່ ແລະ ທົດສອບເປີດ cash drawer' : 'Browser ບໍ່ຮອງຮັບ Web Serial'}
+                  className="shrink-0 px-3 py-2 rounded-lg bg-white border border-slate-200 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-extrabold text-slate-700">
+                  {drawerBusy ? 'ກຳລັງເຊື່ອມ...' : drawerReady ? 'ທົດສອບເປີດ' : 'ເຊື່ອມຕໍ່'}
+                </button>
+              </div>
+            )}
 
             {/* Note */}
             <div>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 
 const DEFAULT = {
-  name: 'POS System',
+  name: 'SMLAO Soft Co,Ltd',
   slogan: '',
   tax_id: '',
   business_reg_no: '',
