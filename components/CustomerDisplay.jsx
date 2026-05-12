@@ -114,7 +114,7 @@ export default function CustomerDisplay() {
                   <div className="text-2xl font-extrabold font-mono-t text-amber-300">{fmt(lastOrder.change_amount)}</div>
                 </div>
               </div>
-              <div className="text-sm text-emerald-200 mt-6 font-mono-t">ໃບບິນ #{lastOrder.id}</div>
+              <div className="text-sm text-emerald-200 mt-6 font-mono-t">ໃບບິນ {lastOrder.bill_number || `#${lastOrder.id}`}</div>
             </div>
           </div>
         </div>

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import crypto from 'crypto';
 import pool from '@/lib/db';
 import { handle, ok } from '@/lib/api';
+import defaultLocations from '@/data/laoLocations';
 
 export const GET = handle(async () => {
   await pool.query(`
@@ -54,6 +55,18 @@ export const GET = handle(async () => {
       change_amount NUMERIC DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount NUMERIC DEFAULT 0;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS note TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS payments JSONB;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_phone TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS credit_due_date DATE;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS credit_status TEXT DEFAULT 'none';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS credit_paid NUMERIC DEFAULT 0;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS member_id INTEGER;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS member_points_earned INTEGER DEFAULT 0;
+    CREATE INDEX IF NOT EXISTS idx_orders_credit_status ON orders(credit_status);
+    CREATE INDEX IF NOT EXISTS idx_orders_member_id ON orders(member_id);
 
     CREATE TABLE IF NOT EXISTS order_items (
       id SERIAL PRIMARY KEY,
@@ -62,6 +75,38 @@ export const GET = handle(async () => {
       quantity INTEGER NOT NULL,
       price NUMERIC NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS members (
+      id SERIAL PRIMARY KEY,
+      member_code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      province TEXT,
+      district TEXT,
+      village TEXT,
+      address TEXT,
+      tier TEXT NOT NULL DEFAULT 'standard',
+      points INTEGER NOT NULL DEFAULT 0,
+      total_spent NUMERIC NOT NULL DEFAULT 0,
+      active BOOLEAN DEFAULT TRUE,
+      note TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS province TEXT;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS district TEXT;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS village TEXT;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS tier TEXT NOT NULL DEFAULT 'standard';
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS points INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS total_spent NUMERIC NOT NULL DEFAULT 0;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS note TEXT;
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_members_phone_unique ON members(phone) WHERE phone IS NOT NULL AND TRIM(phone) <> '';
+    CREATE INDEX IF NOT EXISTS idx_members_search ON members(member_code, name, phone);
 
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -182,6 +227,19 @@ export const GET = handle(async () => {
     ALTER TABLE debt_payments ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'cash';
     ALTER TABLE debt_payments ADD COLUMN IF NOT EXISTS attachment TEXT;
 
+    CREATE TABLE IF NOT EXISTS customer_debt_payments (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+      payment_number TEXT,
+      payment_date DATE DEFAULT CURRENT_DATE,
+      amount NUMERIC NOT NULL DEFAULT 0,
+      payment_method TEXT DEFAULT 'cash',
+      note TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_debt_payments_order ON customer_debt_payments(order_id);
+    CREATE INDEX IF NOT EXISTS idx_customer_debt_payments_date ON customer_debt_payments(payment_date DESC);
+
     CREATE TABLE IF NOT EXISTS promotions (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -195,6 +253,11 @@ export const GET = handle(async () => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  await pool.query(
+    "INSERT INTO settings (key, value) VALUES ('lao_locations', $1) ON CONFLICT DO NOTHING",
+    [JSON.stringify(defaultLocations)]
+  );
 
   const products = [
     { code: 'PVC-001', name: 'ທໍ່ PVC 1/2"', cat: 'ທໍ່ນ້ຳ', brand: 'Thai Pipe', cost: 10000, sell: 15000, qty: 200, unit: 'ທ່ອນ', supplier: 'ບໍລິສັດ ທໍ່ໄທ' },

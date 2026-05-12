@@ -45,7 +45,7 @@ function renderBankAccounts(company) {
 function renderThermalCompanyHeader(company) {
   if (!company) return '<div class="center bold xl">POS</div>'
   const logo = company.logo_url
-    ? `<div class="center"><img src="${location.origin}${company.logo_url}" style="max-height:40px;max-width:60mm;margin:0 auto 4px;object-fit:contain" /></div>`
+    ? `<div class="center"><img src="${location.origin}${company.logo_url}" style="max-height:40px;max-width:52mm;margin:0 auto 4px;object-fit:contain" /></div>`
     : ''
   const idLine = [company.tax_id && `TAX: ${company.tax_id}`, company.business_reg_no && `REG: ${company.business_reg_no}`].filter(Boolean).join(' · ')
   const contactLine = [company.phone, company.email].filter(Boolean).join(' · ')
@@ -65,23 +65,28 @@ function printThermalHtml(title, bodyHtml) {
   <style>
     @page { size: 80mm auto; margin: 0 }
     * { box-sizing: border-box; font-family: ${receiptFontStack}; }
-    body { margin: 0; padding: 5mm 4mm; width: 80mm; color: #000; font-size: 12px; line-height: 1.35; }
+    html, body { margin: 0; padding: 0; width: 80mm; }
+    body { padding: 4mm 3mm; width: 72mm; max-width: 72mm; color: #000; font-size: 11px; line-height: 1.3; overflow: hidden; }
+    img { max-width: 52mm !important; height: auto; object-fit: contain; }
     .center { text-align: center }
     .right { text-align: right }
     .bold { font-weight: 800 }
-    .xl { font-size: 16px }
-    .lg { font-size: 14px }
-    .sm { font-size: 11px }
-    .xs { font-size: 10px; color: #555 }
+    .xl { font-size: 14px }
+    .lg { font-size: 12px }
+    .sm { font-size: 10px }
+    .xs { font-size: 9px; color: #555 }
     .divider { border-top: 1px dashed #000; margin: 6px 0 }
     .double { border-top: 2px solid #000; margin: 6px 0 }
-    .row { margin: 4px 0 }
-    .name { font-weight: 700; word-break: break-word }
-    .line { display: flex; justify-content: space-between; gap: 8px; font-family: monospace; }
+    .row { margin: 2px 0; break-inside: avoid; }
+    .name { font-weight: 700; overflow-wrap: anywhere; word-break: break-word }
+    .line { display: flex; justify-content: space-between; gap: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+    .line span:first-child { min-width: 0; overflow-wrap: anywhere; }
     .line span:last-child { text-align: right; flex-shrink: 0 }
-    .total { display: flex; justify-content: space-between; gap: 8px; margin: 2px 0; font-family: monospace; }
-    .grand { font-size: 15px; font-weight: 800 }
-    .note { font-size: 10px; margin-top: 4px; padding: 4px; border: 1px dashed #000; word-break: break-word }
+    .total { display: flex; justify-content: space-between; gap: 6px; margin: 2px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+    .total span:first-child { min-width: 0; overflow-wrap: anywhere; }
+    .total span:last-child { text-align: right; flex-shrink: 0 }
+    .grand { font-size: 13px; font-weight: 800 }
+    .note { font-size: 9px; margin-top: 4px; padding: 4px; border: 1px dashed #000; overflow-wrap: anywhere; word-break: break-word }
     @media print { .no-print { display: none } }
   </style></head><body>
     ${bodyHtml}
@@ -91,6 +96,56 @@ function printThermalHtml(title, bodyHtml) {
   </body></html>`
 
   const win = window.open('', '_blank', 'width=360,height=700')
+  if (!win) throw new Error('Failed to open print window - popup may be blocked')
+  win.document.open()
+  win.document.write(html)
+  win.document.close()
+}
+
+function printA4Html(title, bodyHtml) {
+  const html = `<!doctype html>
+  <html><head><meta charset="utf-8"><title>${title}</title>
+  <style>
+    @page { size: A4; margin: 12mm }
+    * { box-sizing: border-box; font-family: ${receiptFontStack}; }
+    body { margin: 0; color: #111827; font-size: 12px; line-height: 1.45; }
+    .page { width: 100%; min-height: 273mm; }
+    .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #111827; padding-bottom: 12px; margin-bottom: 14px; }
+    .brand { display: flex; gap: 12px; min-width: 0; }
+    .logo { width: 64px; height: 64px; object-fit: contain; border: 1px solid #e5e7eb; padding: 4px; }
+    .company { font-size: 19px; font-weight: 900; color: #111827; }
+    .muted { color: #6b7280; }
+    .xs { font-size: 10px; }
+    .sm { font-size: 11px; }
+    .docbox { min-width: 190px; text-align: right; }
+    .doctitle { font-size: 22px; font-weight: 900; color: #991b1b; letter-spacing: 0; }
+    .section { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; margin-bottom: 12px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .label { color: #6b7280; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+    .value { font-weight: 700; color: #111827; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 6px 5px; font-size: 10px; text-align: left; color: #374151; }
+    td { border: 1px solid #e5e7eb; padding: 6px 5px; vertical-align: top; }
+    .right { text-align: right; }
+    .center { text-align: center; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .summary { margin-left: auto; width: 310px; margin-top: 12px; }
+    .sumrow { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid #e5e7eb; padding: 6px 0; }
+    .grand { font-size: 16px; font-weight: 900; color: #991b1b; border-bottom: 2px solid #111827; }
+    .note { margin-top: 12px; padding: 8px; border: 1px dashed #9ca3af; color: #374151; min-height: 30px; }
+    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 34px; }
+    .sig { text-align: center; padding-top: 42px; border-top: 1px solid #374151; font-weight: 700; }
+    .no-print { margin-top: 12px; text-align: right; }
+    @media print { .no-print { display: none } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style></head><body>
+    <div class="page">${bodyHtml}</div>
+    <div class="no-print"><button onclick="window.print()">Print</button></div>
+    <script>
+      window.onload = () => { window.print(); }
+    </script>
+  </body></html>`
+
+  const win = window.open('', '_blank', 'width=900,height=1100')
   if (!win) throw new Error('Failed to open print window - popup may be blocked')
   win.document.open()
   win.document.write(html)
@@ -214,6 +269,149 @@ export async function generateAndPrintPurchaseReceipt(purchaseData, form, items,
   } catch (error) {
     console.error('Error generating receipt:', error)
     alert('Failed to print receipt: ' + error.message)
+  }
+}
+
+export async function generateAndPrintPurchaseA4(purchaseData, form, items, supplierName, subtotal, discountAmount, itemsTotal, currency) {
+  try {
+    await ensureReceiptFontLoaded()
+
+    const productMap = {}
+    try {
+      const productRes = await fetch('/api/admin/products')
+      if (productRes.ok) {
+        const productData = await productRes.json()
+        productData.forEach(p => { productMap[p.id] = p })
+      }
+    } catch {}
+
+    const company = await fetchCompanyProfile()
+    const exRate = Number(purchaseData?.exchange_rate) || 1
+    const billCurrency = currency || purchaseData?.currency || 'LAK'
+    const isForeign = billCurrency !== 'LAK'
+    const totalLAK = Number(purchaseData?.total) || (isForeign ? Number(itemsTotal || 0) * exRate : Number(itemsTotal || 0))
+    const displaySubtotal = Number(subtotal || 0)
+    const displayDiscount = Number(discountAmount || 0)
+    const displayTotal = Number(itemsTotal || 0)
+    const paymentType = form.payment_type === 'debt' || purchaseData?.payment_type === 'debt' ? 'ຕິດໜີ້ / Credit' : 'ເງິນສົດ / Cash'
+    const docNo = form.ref_number || purchaseData?.ref_number || purchaseData?.sml_doc_no || `#${purchaseData?.id || ''}`
+    const docDate = form.date || purchaseData?.created_at || Date.now()
+    const idLine = [company?.tax_id && `TAX: ${company.tax_id}`, company?.business_reg_no && `REG: ${company.business_reg_no}`].filter(Boolean).join(' · ')
+    const contactLine = [company?.phone, company?.email].filter(Boolean).join(' · ')
+
+    const itemRows = (items || []).map((item, idx) => {
+      const product = productMap[item.product_id] || {}
+      const qty = Number(item.quantity ?? item.qty) || 0
+      const rawUnitPrice = Number(item.cost_price ?? item.price ?? item.unit_price) || 0
+      const unitPrice = isForeign && !item.disc_type && !item.disc_value ? rawUnitPrice / exRate : rawUnitPrice
+      const disc = Number(item.disc_value || 0)
+      let lineDisc = 0
+      let lineTotal = 0
+      if (item.disc_type === 'percent') {
+        const netPrice = unitPrice * (1 - disc / 100)
+        lineTotal = Math.round(qty * netPrice)
+        lineDisc = Math.round(qty * unitPrice - lineTotal)
+      } else if (item.disc_type === 'fixed') {
+        const netPrice = Math.max(0, unitPrice - disc)
+        lineTotal = Math.round(qty * netPrice)
+        lineDisc = Math.round(disc * qty)
+      } else {
+        lineTotal = Math.round(qty * unitPrice)
+      }
+      const code = product.product_code || item.product_code || item.item_code || ''
+      const name = product.product_name || product.name || item.product_name || item.name || '—'
+      const unit = product.unit || item.unit || item.unit_name || item.unit_code || ''
+      return `
+        <tr>
+          <td class="center mono">${idx + 1}</td>
+          <td class="mono">${code || '—'}</td>
+          <td>${name}</td>
+          <td class="center mono">${new Intl.NumberFormat('lo-LA').format(qty)}</td>
+          <td class="center">${unit || '—'}</td>
+          <td class="right mono">${formatAmount(unitPrice, billCurrency)}</td>
+          <td class="right mono">${lineDisc > 0 ? '-' + formatAmount(lineDisc, billCurrency) : '—'}</td>
+          <td class="right mono"><strong>${formatAmount(lineTotal, billCurrency)}</strong></td>
+        </tr>
+      `
+    }).join('')
+
+    const body = `
+      <div class="header">
+        <div class="brand">
+          ${company?.logo_url ? `<img class="logo" src="${location.origin}${company.logo_url}" />` : ''}
+          <div>
+            <div class="company">${company?.name || 'POS'}</div>
+            ${company?.slogan ? `<div class="sm muted">${company.slogan}</div>` : ''}
+            ${company?.address ? `<div class="sm muted">${company.address}</div>` : ''}
+            ${contactLine ? `<div class="sm muted">${contactLine}</div>` : ''}
+            ${idLine ? `<div class="xs muted">${idLine}</div>` : ''}
+          </div>
+        </div>
+        <div class="docbox">
+          <div class="doctitle">ໃບບິນຊື້ເຂົ້າ</div>
+          <div class="sm muted">PURCHASE INVOICE</div>
+          <div class="sm"><strong>ເລກທີ:</strong> ${docNo || 'N/A'}</div>
+          <div class="sm"><strong>ວັນທີ:</strong> ${formatDisplayDate(docDate)}</div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="section">
+          <div class="label">Supplier</div>
+          <div class="value">${supplierName || 'N/A'}</div>
+          <div class="sm muted">ຜູ້ສະໜອງ</div>
+        </div>
+        <div class="section">
+          <div class="grid2">
+            <div>
+              <div class="label">Payment</div>
+              <div class="value">${paymentType}</div>
+            </div>
+            <div>
+              <div class="label">Currency</div>
+              <div class="value">${billCurrency}</div>
+              ${isForeign ? `<div class="xs muted">1 ${billCurrency} = ${formatRate(exRate)} ₭</div>` : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th class="center" style="width:32px">#</th>
+            <th style="width:82px">ລະຫັດ</th>
+            <th>ລາຍການ</th>
+            <th class="center" style="width:58px">ຈຳນວນ</th>
+            <th class="center" style="width:56px">ຫົວໜ່ວຍ</th>
+            <th class="right" style="width:112px">ລາຄາ</th>
+            <th class="right" style="width:96px">ຫຼຸດ</th>
+            <th class="right" style="width:120px">ລວມ</th>
+          </tr>
+        </thead>
+        <tbody>${itemRows || '<tr><td colspan="8" class="center muted">ບໍ່ມີລາຍການ</td></tr>'}</tbody>
+      </table>
+
+      <div class="summary">
+        <div class="sumrow"><span>ລວມຍ່ອຍ</span><strong class="mono">${formatAmount(displaySubtotal, billCurrency)}</strong></div>
+        <div class="sumrow"><span>ສ່ວນຫຼຸດ</span><strong class="mono">${displayDiscount > 0 ? '-' : ''}${formatAmount(displayDiscount, billCurrency)}</strong></div>
+        <div class="sumrow grand"><span>ລວມທັງໝົດ</span><span class="mono">${formatAmount(displayTotal, billCurrency)}</span></div>
+        ${isForeign ? `<div class="sumrow"><span>ລວມກີບ</span><strong class="mono">${formatAmount(totalLAK, 'LAK')}</strong></div>` : ''}
+      </div>
+
+      ${form.note || purchaseData?.note ? `<div class="note"><strong>ໝາຍເຫດ:</strong> ${form.note || purchaseData.note}</div>` : ''}
+
+      <div class="signatures">
+        <div class="sig">ຜູ້ຈັດຊື້</div>
+        <div class="sig">ຜູ້ກວດຮັບ</div>
+        <div class="sig">ຜູ້ອະນຸມັດ</div>
+      </div>
+    `
+
+    printA4Html(`ໃບບິນຊື້ເຂົ້າ ${docNo || ''}`, body)
+  } catch (error) {
+    console.error('A4 purchase receipt error:', error)
+    alert('Failed to print A4: ' + error.message)
   }
 }
 

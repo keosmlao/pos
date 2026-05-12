@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { calculatePromotions } from '../utils/promotions'
 import { useCompanyProfile } from '../utils/useCompanyProfile'
 import { connectCashDrawer, isCashDrawerSupported, openCashDrawer } from '../utils/cashDrawer'
+import { useLocations } from '../utils/useLocations'
+import SearchSelect from './SearchSelect'
 
 const API = '/api'
 
@@ -52,9 +54,19 @@ const categoryMeta = {
   'ອຸປະກອນອື່ນໆ': { icon: '🛠️', tint: 'bg-rose-100 text-rose-900 border-rose-200' }
 }
 
+const DEFAULT_MEMBER = {
+  id: null,
+  member_code: 'GENERAL',
+  name: 'ລູກຄ້າທົ່ວໄປ',
+  phone: '',
+  points: 0,
+  isDefault: true,
+}
+
 export default function POS({ user, onLogout }) {
   const router = useRouter()
   const company = useCompanyProfile()
+  const laoLocations = useLocations()
   const searchInputRef = useRef(null)
   const lastScannedBarcodeRef = useRef('')
   const [categories, setCategories] = useState([])
@@ -71,6 +83,13 @@ export default function POS({ user, onLogout }) {
   const [discount, setDiscount] = useState(0)
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [customerNote, setCustomerNote] = useState('')
+  const [creditCustomer, setCreditCustomer] = useState({ name: '', phone: '', dueDate: '' })
+  const [members, setMembers] = useState([])
+  const [memberSearch, setMemberSearch] = useState('')
+  const [selectedMember, setSelectedMember] = useState(DEFAULT_MEMBER)
+  const [memberForm, setMemberForm] = useState({ name: '', phone: '', province: '', district: '', village: '' })
+  const [creatingMember, setCreatingMember] = useState(false)
+  const [showMemberModal, setShowMemberModal] = useState(false)
   const [showCatalog, setShowCatalog] = useState(false)
   const [lastScan, setLastScan] = useState(null)
   const [flash, setFlash] = useState(0)
@@ -85,8 +104,25 @@ export default function POS({ user, onLogout }) {
   const [drawerBusy, setDrawerBusy] = useState(false)
   const [drawerReady, setDrawerReady] = useState(false)
   const [cashDrawerSupported, setCashDrawerSupported] = useState(false)
+  const [loyaltySettings, setLoyaltySettings] = useState({
+    loyalty_enabled: true,
+    points_per_amount: 10000,
+    points_redeem_value: 0,
+    min_points_to_redeem: 0,
+  })
+  const [pointsToRedeem, setPointsToRedeem] = useState(0)
+  const [receiptSize, setReceiptSize] = useState(() => {
+    if (typeof window === 'undefined') return '80mm'
+    return localStorage.getItem('pos_receipt_size') || '80mm'
+  })
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('pos_receipt_size', receiptSize)
+  }, [receiptSize])
+  const [debtAlerts, setDebtAlerts] = useState(null)
+  const [showDebtAlerts, setShowDebtAlerts] = useState(false)
   const customerWinRef = useRef(null)
   const bcRef = useRef(null)
+  const customerStateRef = useRef(null)
 
   const fetchProducts = useCallback(async () => {
     const params = new URLSearchParams()
@@ -107,6 +143,17 @@ export default function POS({ user, onLogout }) {
       setCurrencies(Array.isArray(list) ? list.filter(c => c.enabled) : [])
     }).catch(() => setCurrencies([]))
   }, [])
+  const loadMembers = useCallback((q = '') => {
+    const params = new URLSearchParams()
+    if (q.trim()) params.set('search', q.trim())
+    fetch(`${API}/members?${params}`).then(r => r.json()).then(list => {
+      setMembers(Array.isArray(list) ? list : [])
+    }).catch(() => setMembers([]))
+  }, [])
+  useEffect(() => {
+    const t = setTimeout(() => loadMembers(memberSearch), 180)
+    return () => clearTimeout(t)
+  }, [loadMembers, memberSearch])
   const reloadPromotions = useCallback(() => {
     fetch(`${API}/admin/promotions`).then(r => r.json()).then(list => {
       const active = Array.isArray(list) ? list.filter(p => p.active !== false) : []
@@ -125,9 +172,46 @@ export default function POS({ user, onLogout }) {
   }, [reloadPromotions])
   useEffect(() => { fetchProducts() }, [fetchProducts])
   useEffect(() => { setCashDrawerSupported(isCashDrawerSupported()) }, [])
+  useEffect(() => {
+    fetch(`${API}/loyalty`).then(r => r.json()).then(data => {
+      if (data && typeof data === 'object') setLoyaltySettings(s => ({ ...s, ...data }))
+    }).catch(() => {})
+  }, [])
+  useEffect(() => { setPointsToRedeem(0) }, [selectedMember?.id])
+
+  const loadDebtAlerts = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/customer-debts/alerts`)
+      const data = await res.json()
+      setDebtAlerts(data)
+      return data
+    } catch {
+      setDebtAlerts(null)
+      return null
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const data = await loadDebtAlerts()
+      if (cancelled || !data) return
+      const overdue = data.counts?.overdue || 0
+      const today = data.counts?.today || 0
+      if (overdue + today === 0) return
+      const todayKey = new Date().toISOString().slice(0, 10)
+      const shownKey = localStorage.getItem('pos_debt_alerts_shown')
+      if (shownKey !== todayKey) {
+        localStorage.setItem('pos_debt_alerts_shown', todayKey)
+        setShowDebtAlerts(true)
+      }
+    })()
+    const t = setInterval(loadDebtAlerts, 5 * 60 * 1000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [loadDebtAlerts])
 
   // Refocus scan input ONLY when all modals just closed (no polling to avoid stealing focus from other inputs)
-  const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary
+  const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary || showMemberModal || showDebtAlerts
   useEffect(() => {
     if (anyModalOpen) return
     const tmr = setTimeout(() => {
@@ -208,43 +292,142 @@ export default function POS({ user, onLogout }) {
   const promoTotalDisc = promoLineDiscTotal + promoCartDisc
   const afterPromos = cartTotal - promoTotalDisc
   const manualDiscountAmount = (afterPromos * discount) / 100
-  const discountAmount = manualDiscountAmount + promoTotalDisc
-  const finalTotal = afterPromos - manualDiscountAmount
+  const afterManualDisc = afterPromos - manualDiscountAmount
+  const redeemValue = Math.max(0, Number(loyaltySettings.points_redeem_value) || 0)
+  const memberPointsAvail = Number(selectedMember?.points) || 0
+  const maxRedeemByPrice = redeemValue > 0 ? Math.floor(afterManualDisc / redeemValue) : 0
+  const maxRedeemable = Math.min(memberPointsAvail, maxRedeemByPrice)
+  const pointsUsed = Math.max(0, Math.min(Number(pointsToRedeem) || 0, maxRedeemable))
+  const pointsDiscountAmount = pointsUsed * redeemValue
+  const discountAmount = manualDiscountAmount + promoTotalDisc + pointsDiscountAmount
+  const finalTotal = Math.max(0, afterManualDisc - pointsDiscountAmount)
   const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart])
+  const customerDisplayState = useMemo(() => ({
+    type: 'state',
+    cart: cart.map(i => ({ product_id: i.product_id, name: i.name, code: i.code, price: i.price, quantity: i.quantity })),
+    subtotal: cartTotal,
+    discount,
+    discountAmount,
+    finalTotal,
+    cartCount,
+  }), [cart, cartTotal, discount, discountAmount, finalTotal, cartCount])
+
+  useEffect(() => {
+    customerStateRef.current = customerDisplayState
+  }, [customerDisplayState])
+
+  const postCustomerState = useCallback(() => {
+    const bc = bcRef.current
+    const state = customerStateRef.current
+    if (!bc || !state) return
+    try { bc.postMessage(state) } catch {}
+  }, [])
 
   // Open BroadcastChannel once per mount
   useEffect(() => {
     try { bcRef.current = new BroadcastChannel('sml-pos') } catch { return }
+    bcRef.current.onmessage = (e) => {
+      const msg = e.data
+      if (!msg || !msg.type) return
+      if (msg.type === 'hello' || msg.type === 'ping') {
+        postCustomerState()
+      }
+    }
     return () => {
       try { bcRef.current?.close() } catch {}
       bcRef.current = null
     }
-  }, [])
+  }, [postCustomerState])
 
   // Broadcast state to customer display
   useEffect(() => {
-    const bc = bcRef.current
-    if (!bc) return
-    try {
-      bc.postMessage({
-        type: 'state',
-        cart: cart.map(i => ({ product_id: i.product_id, name: i.name, code: i.code, price: i.price, quantity: i.quantity })),
-        subtotal: cartTotal,
-        discount,
-        discountAmount,
-        finalTotal,
-        cartCount,
-      })
-    } catch {}
-  }, [cart, cartTotal, discount, discountAmount, finalTotal, cartCount])
+    postCustomerState()
+  }, [customerDisplayState, postCustomerState])
 
-  const openCustomerDisplay = () => {
-    if (customerWinRef.current && !customerWinRef.current.closed) {
-      customerWinRef.current.focus(); return
+  const openCustomerDisplay = async () => {
+    const customerUrl = `${window.location.origin}/customer`
+    const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+    if (!window.isSecureContext && !isLocalHost) {
+      showToast('ຕ້ອງເປີດຜ່ານ localhost ຫຼື HTTPS ກ່ອນຈຶ່ງໃຊ້ຫຼາຍຈໍໄດ້', 'error')
+      return
     }
-    const w = window.open('/customer', 'sml-customer-display', 'width=1280,height=800')
-    if (!w) { showToast('ບໍ່ສາມາດເປີດຈໍລູກຄ້າ — ກະລຸນາອະນຸຍາດ popup', 'error'); return }
+    if (!('getScreenDetails' in window)) {
+      showToast('Browser ນີ້ບໍ່ຮອງຮັບ — ກະລຸນາໃຊ້ Chrome ຫຼື Edge', 'error')
+      return
+    }
+
+    if (navigator.permissions?.query) {
+      try {
+        const perm = await navigator.permissions.query({ name: 'window-management' })
+        if (perm.state === 'denied') {
+          showToast('ສິດ Window Management ຖືກ block — ກົດ icon ໃນ URL bar ເພື່ອອະນຸຍາດ', 'error')
+          return
+        }
+      } catch {}
+    }
+
+    let details
+    try {
+      details = await window.getScreenDetails()
+    } catch {
+      showToast('ກະລຸນາອະນຸຍາດສິດ "Manage windows on all your displays"', 'error')
+      return
+    }
+
+    const current = details.currentScreen
+    const otherScreens = details.screens.filter(s => s !== current)
+    const secondary =
+      otherScreens.find(s => !s.isInternal && !s.isPrimary) ||
+      otherScreens.find(s => !s.isInternal) ||
+      otherScreens[0] ||
+      null
+
+    if (!secondary) {
+      showToast('ບໍ່ພົບຈໍທີ່ 2 — ກວດ Extended display mode ໃນລະບົບ', 'error')
+      return
+    }
+
+    const bounds = {
+      left: Math.round(Number(secondary.availLeft ?? secondary.left ?? 0)),
+      top: Math.round(Number(secondary.availTop ?? secondary.top ?? 0)),
+      width: Math.round(Number(secondary.availWidth ?? secondary.width ?? 1280)),
+      height: Math.round(Number(secondary.availHeight ?? secondary.height ?? 800)),
+    }
+
+    if (customerWinRef.current && !customerWinRef.current.closed) {
+      try { customerWinRef.current.close() } catch {}
+      customerWinRef.current = null
+    }
+
+    const features = `popup=yes,toolbar=no,location=no,status=no,menubar=no,scrollbars=no,resizable=yes,left=${bounds.left},top=${bounds.top},width=${bounds.width},height=${bounds.height}`
+    const w = window.open(customerUrl, `sml-customer-display-${Date.now()}`, features)
+    if (!w) { showToast('ບໍ່ສາມາດເປີດ popup — ກະລຸນາອະນຸຍາດ popup ໃນ browser', 'error'); return }
     customerWinRef.current = w
+
+    const positionAndFullscreen = () => {
+      try {
+        if (w.screenX !== bounds.left || w.screenY !== bounds.top) {
+          w.moveTo(bounds.left, bounds.top)
+          w.resizeTo(bounds.width, bounds.height)
+        }
+        const el = w.document?.documentElement
+        if (el?.requestFullscreen) {
+          el.requestFullscreen({ screen: secondary }).catch(() => {
+            try { el.requestFullscreen().catch(() => {}) } catch {}
+          })
+        }
+      } catch {}
+    }
+
+    try { w.addEventListener('load', positionAndFullscreen, { once: true }) } catch {}
+    setTimeout(positionAndFullscreen, 200)
+    setTimeout(positionAndFullscreen, 700)
+    setTimeout(positionAndFullscreen, 1500)
+
+    const label = secondary.label || `ຈໍທີ່ 2 (${bounds.width}×${bounds.height})`
+    showToast(`ເປີດຈໍລູກຄ້າຢູ່ ${label}`, 'success')
+    setTimeout(postCustomerState, 400)
+    setTimeout(postCustomerState, 1200)
   }
 
   const setupCashDrawer = async () => {
@@ -281,10 +464,50 @@ export default function POS({ user, onLogout }) {
     }
   }
 
+  const createMemberQuick = async () => {
+    const name = memberForm.name.trim()
+    if (!name) { showToast('ກະລຸນາປ້ອນຊື່ສະມາຊິກ', 'error'); return }
+    if (!memberForm.province || !memberForm.district || !memberForm.village) { showToast('ກະລຸນາເລືອກແຂວງ/ເມືອງ/ບ້ານ', 'error'); return }
+    setCreatingMember(true)
+    try {
+      const res = await fetch(`${API}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          phone: memberForm.phone.trim(),
+          province: memberForm.province,
+          district: memberForm.district,
+          village: memberForm.village,
+        })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        showToast(data.error || 'ສ້າງສະມາຊິກບໍ່ສຳເລັດ', 'error')
+        return
+      }
+      setSelectedMember(data)
+      setMemberSearch('')
+      setMemberForm({ name: '', phone: '', province: '', district: '', village: '' })
+      setShowMemberModal(false)
+      loadMembers('')
+      showToast('ສ້າງສະມາຊິກສຳເລັດ', 'success')
+    } finally {
+      setCreatingMember(false)
+    }
+  }
+
   const handleCheckout = async () => {
+    if (!selectedMember) { showToast('ກະລຸນາເລືອກສະມາຊິກກ່ອນອອກບິນ', 'error'); return }
+    const isCredit = paymentMethod === 'credit'
+    const creditName = creditCustomer.name.trim() || selectedMember?.name || ''
+    if (isCredit && !creditName) { showToast('ກະລຸນາປ້ອນຊື່ລູກຄ້າສຳລັບບິນເຊື່ອ', 'error'); return }
+    if (isCredit && !creditCustomer.dueDate) { showToast('ກະລຸນາກຳນົດວັນຄົບກຳນົດຊຳລະ', 'error'); return }
     const useMulti = payments.length > 0
     let paid, paymentsPayload = null
-    if (useMulti) {
+    if (isCredit) {
+      paid = 0
+    } else if (useMulti) {
       paymentsPayload = payments.map(p => {
         const cur = currencies.find(c => c.code === p.currency) || { rate: 1 }
         const amount = Number(p.amount) || 0
@@ -295,7 +518,9 @@ export default function POS({ user, onLogout }) {
     } else {
       paid = Number(amountPaid) || finalTotal
     }
-    if (paid < finalTotal) { showToast('ຈຳນວນເງິນບໍ່ພຽງພໍ', 'error'); return }
+    if (!isCredit && paid < finalTotal) { showToast('ຈຳນວນເງິນບໍ່ພຽງພໍ', 'error'); return }
+    const minRedeem = Number(loyaltySettings.min_points_to_redeem) || 0
+    if (pointsUsed > 0 && pointsUsed < minRedeem) { showToast(`ໃຊ້ແຕ້ມຂັ້ນຕ່ຳ ${formatNumber(minRedeem)}`, 'error'); return }
     // Build items: normal cart + same-product BOGO extras + cross-product bonus lines (all price=0 for stock deduction)
     const checkoutItems = []
     for (const it of cart) {
@@ -315,22 +540,28 @@ export default function POS({ user, onLogout }) {
       body: JSON.stringify({
         items: checkoutItems,
         total: finalTotal,
-        change_amount: paid - finalTotal,
-        payment_method: paymentsPayload && paymentsPayload.length > 1 ? 'mixed' : paymentMethod,
+        change_amount: isCredit ? 0 : paid - finalTotal,
+        payment_method: isCredit ? 'credit' : (paymentsPayload && paymentsPayload.length > 1 ? 'mixed' : paymentMethod),
         amount_paid: paid,
         discount: discountAmount,
         note: customerNote,
-        payments: paymentsPayload,
+        payments: isCredit ? null : paymentsPayload,
+        customer_name: isCredit ? creditName : null,
+        customer_phone: isCredit ? (creditCustomer.phone || selectedMember?.phone || '') : null,
+        credit_due_date: isCredit ? creditCustomer.dueDate : null,
+        member_id: selectedMember?.id || null,
+        points_used: pointsUsed,
       })
     })
     if (res.ok) {
       const order = await res.json()
-      showToast('ການຊຳລະສຳເລັດ', 'success')
-      const shouldOpenDrawer = paymentMethod === 'cash' || (paymentsPayload && paymentsPayload.length > 0)
+      showToast(isCredit ? 'ອອກບິນເຊື່ອສຳເລັດ' : 'ການຊຳລະສຳເລັດ', 'success')
+      const shouldOpenDrawer = !isCredit && (paymentMethod === 'cash' || (paymentsPayload && paymentsPayload.length > 0))
       if (shouldOpenDrawer) kickCashDrawer()
       try { bcRef.current?.postMessage({ type: 'complete', order }) } catch {}
       setShowReceipt(order); setCart([]); setAmountPaid(''); setShowCheckout(false)
-      setDiscount(0); setCustomerNote(''); setLastScan(null); setPayments([])
+      setDiscount(0); setCustomerNote(''); setCreditCustomer({ name: '', phone: '', dueDate: '' }); setLastScan(null); setPayments([]); setSelectedMember(DEFAULT_MEMBER); setPointsToRedeem(0)
+      loadMembers('')
       fetchProducts()
     } else { const err = await res.json(); showToast(err.error, 'error') }
   }
@@ -398,9 +629,12 @@ export default function POS({ user, onLogout }) {
     }
   }
 
-  const printReceipt = (order) => {
+  const printReceipt = (order, sizeOverride) => {
     if (!order) return
-    const methodText = order.payment_method === 'cash' ? 'ເງິນສົດ' : order.payment_method === 'transfer' ? 'ໂອນ' : order.payment_method === 'qr' ? 'QR' : order.payment_method
+    const size = sizeOverride || receiptSize || '80mm'
+    const isPaper = size === 'a4' || size === 'a5'
+    const methodText = order.payment_method === 'cash' ? 'ເງິນສົດ' : order.payment_method === 'transfer' ? 'ໂອນ' : order.payment_method === 'qr' ? 'QR' : order.payment_method === 'credit' ? 'ຂາຍເຊື່ອ' : order.payment_method
+    const isCreditOrder = order.payment_method === 'credit'
     const dt = new Date(order.created_at || Date.now())
     const dateStr = dt.toLocaleString('lo-LA')
     const orderPayments = Array.isArray(order.payments)
@@ -408,6 +642,25 @@ export default function POS({ user, onLogout }) {
       : typeof order.payments === 'string'
         ? (() => { try { return JSON.parse(order.payments) } catch { return [] } })()
         : []
+
+    const itemsArr = order.items || []
+    const billLabel = order.bill_number || `#${order.id}`
+
+    const html = isPaper
+      ? buildPaperReceipt({ order, size, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel })
+      : buildThermalReceipt({ order, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel })
+
+    const winSize = size === 'a4' ? 'width=900,height=1100'
+      : size === 'a5' ? 'width=720,height=900'
+      : 'width=360,height=700'
+    const win = window.open('', '_blank', winSize)
+    if (!win) { showToast('ບໍ່ສາມາດເປີດປ່ອງພິມໄດ້', 'error'); return }
+    win.document.open()
+    win.document.write(html)
+    win.document.close()
+  }
+
+  const buildThermalReceipt = ({ order, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel }) => {
     const paymentLines = orderPayments.map(p => {
       const currency = p.currency || 'LAK'
       const rate = Number(p.rate) || 1
@@ -420,7 +673,7 @@ export default function POS({ user, onLogout }) {
         </div>
       `
     }).join('')
-    const lines = (order.items || []).map(it => `
+    const lines = itemsArr.map(it => `
       <div class="row">
         <div class="name">${(it.name || it.product_name || '—')}</div>
         <div class="qtyrow">
@@ -430,32 +683,36 @@ export default function POS({ user, onLogout }) {
       </div>
     `).join('')
 
-    const html = `<!doctype html>
-    <html><head><meta charset="utf-8"><title>ໃບບິນ #${order.id}</title>
+    return `<!doctype html>
+    <html><head><meta charset="utf-8"><title>ໃບບິນ ${billLabel}</title>
     <style>
       @page { size: 80mm auto; margin: 0 }
       * { box-sizing: border-box; font-family: 'Noto Sans Lao','Phetsarath OT',system-ui,sans-serif; }
-      body { margin: 0; padding: 6mm 4mm; width: 80mm; color: #000; font-size: 12px; line-height: 1.35; }
+      html, body { margin: 0; padding: 0; width: 80mm; }
+      body { padding: 4mm 3mm; width: 72mm; max-width: 72mm; color: #000; font-size: 11px; line-height: 1.3; overflow: hidden; }
+      img { max-width: 52mm !important; height: auto; object-fit: contain; }
       .center { text-align: center }
       .bold { font-weight: 800 }
-      .xl { font-size: 16px }
-      .lg { font-size: 14px }
-      .sm { font-size: 11px }
-      .xs { font-size: 10px; color: #666 }
+      .xl { font-size: 14px }
+      .lg { font-size: 12px }
+      .sm { font-size: 10px }
+      .xs { font-size: 9px; color: #666 }
       .divider { border-top: 1px dashed #000; margin: 6px 0 }
       .double { border-top: 2px solid #000; margin: 6px 0 }
-      .row { margin: 3px 0 }
-      .name { font-weight: 700 }
-      .qtyrow { display: flex; justify-content: space-between; font-family: monospace; }
-      .total { display: flex; justify-content: space-between; margin: 2px 0; font-family: monospace; }
-      .total-label { }
+      .row { margin: 2px 0; break-inside: avoid; }
+      .name { font-weight: 700; overflow-wrap: anywhere; word-break: break-word; }
+      .qtyrow { display: flex; justify-content: space-between; gap: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+      .qtyrow span:first-child { min-width: 0; overflow-wrap: anywhere; }
+      .qtyrow span:last-child { flex-shrink: 0; text-align: right; }
+      .total { display: flex; justify-content: space-between; gap: 6px; margin: 2px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+      .total span:first-child { min-width: 0; overflow-wrap: anywhere; }
+      .total span:last-child { flex-shrink: 0; text-align: right; }
       .total-value { font-variant-numeric: tabular-nums }
-      .payrow { display: flex; justify-content: space-between; gap: 8px; margin: 2px 0; font-size: 10px; font-family: monospace; }
-      .grand { font-size: 16px; font-weight: 800; }
-      .note { font-size: 10px; color: #333; margin-top: 4px; padding: 4px; border: 1px dashed #000; }
-      @media print { .no-print { display: none } }
+      .payrow { display: flex; justify-content: space-between; gap: 4px; margin: 2px 0; font-size: 9px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .grand { font-size: 13px; font-weight: 800; }
+      .note { font-size: 9px; color: #333; margin-top: 4px; padding: 4px; border: 1px dashed #000; overflow-wrap: anywhere; }
     </style></head><body>
-      ${company.logo_url ? `<div class="center"><img src="${location.origin}${company.logo_url}" style="max-height:40px;max-width:60mm;margin:0 auto 4px" /></div>` : ''}
+      ${company.logo_url ? `<div class="center"><img src="${location.origin}${company.logo_url}" style="max-height:40px;max-width:52mm;margin:0 auto 4px" /></div>` : ''}
       <div class="center bold xl">${company.name || 'POS'}</div>
       ${company.slogan ? `<div class="center xs">${company.slogan}</div>` : ''}
       ${company.address ? `<div class="center xs">${company.address}</div>` : ''}
@@ -463,26 +720,36 @@ export default function POS({ user, onLogout }) {
       ${(company.tax_id || company.business_reg_no) ? `<div class="center xs">${[company.tax_id && `TAX: ${company.tax_id}`, company.business_reg_no && `REG: ${company.business_reg_no}`].filter(Boolean).join(' · ')}</div>` : ''}
       <div class="divider"></div>
 
-      <div class="sm"><span class="bold">ໃບບິນ:</span> #${order.id}</div>
+      <div class="sm"><span class="bold">ໃບບິນ:</span> ${billLabel}</div>
       <div class="sm"><span class="bold">ວັນທີ:</span> ${dateStr}</div>
       <div class="sm"><span class="bold">ພະນັກງານ:</span> ${user?.display_name || '—'}</div>
       <div class="sm"><span class="bold">ວິທີຊຳລະ:</span> ${methodText}</div>
+      ${order.member_id ? `
+        <div class="sm"><span class="bold">ສະມາຊິກ:</span> ${order.customer_name || '—'}</div>
+        ${Number(order.member_points_used) > 0 ? `<div class="sm"><span class="bold">ໃຊ້ແຕ້ມ:</span> −${formatNumber(order.member_points_used)} (${formatPrice(order.member_points_discount || 0)})</div>` : ''}
+        ${Number(order.member_points_earned) > 0 ? `<div class="sm"><span class="bold">ຄະແນນໄດ້ຮັບ:</span> +${formatNumber(order.member_points_earned)}</div>` : ''}
+      ` : ''}
+      ${isCreditOrder ? `
+        <div class="sm"><span class="bold">ລູກຄ້າ:</span> ${order.customer_name || '—'}</div>
+        ${order.customer_phone ? `<div class="sm"><span class="bold">ເບີໂທ:</span> ${order.customer_phone}</div>` : ''}
+        ${order.credit_due_date ? `<div class="sm"><span class="bold">ກຳນົດຊຳລະ:</span> ${new Date(order.credit_due_date).toLocaleDateString('lo-LA')}</div>` : ''}
+      ` : ''}
       <div class="divider"></div>
 
       ${lines || '<div class="xs">ບໍ່ມີລາຍການ</div>'}
 
       <div class="divider"></div>
-      <div class="total"><span class="total-label">ລວມຍ່ອຍ</span><span class="total-value">${formatPrice(order.total)}</span></div>
-      ${Number(order.discount) > 0 ? `<div class="total"><span class="total-label">ສ່ວນຫຼຸດ</span><span class="total-value">−${formatPrice(order.discount)}</span></div>` : ''}
+      <div class="total"><span>ລວມຍ່ອຍ</span><span class="total-value">${formatPrice(order.total)}</span></div>
+      ${Number(order.discount) > 0 ? `<div class="total"><span>ສ່ວນຫຼຸດ</span><span class="total-value">−${formatPrice(order.discount)}</span></div>` : ''}
       <div class="double"></div>
       <div class="total grand"><span>ລວມທັງໝົດ</span><span class="total-value">${formatPrice(order.total)}</span></div>
       <div class="divider"></div>
-      <div class="total"><span>ຮັບເງິນ</span><span class="total-value">${formatPrice(order.amount_paid)}</span></div>
+      <div class="total"><span>${isCreditOrder ? 'ຮັບແລ້ວ' : 'ຮັບເງິນ'}</span><span class="total-value">${formatPrice(order.amount_paid)}</span></div>
       ${paymentLines ? `
         <div class="xs bold" style="margin-top:4px;">ລາຍລະອຽດການຮັບເງິນ / Rate</div>
         ${paymentLines}
       ` : ''}
-      <div class="total bold"><span>ເງິນທອນ</span><span class="total-value">${formatPrice(order.change_amount)}</span></div>
+      <div class="total bold"><span>${isCreditOrder ? 'ຍອດຄ້າງ' : 'ເງິນທອນ'}</span><span class="total-value">${formatPrice(isCreditOrder ? Number(order.total) - Number(order.amount_paid || 0) : order.change_amount)}</span></div>
 
       ${order.note ? `<div class="note">📝 ${order.note}</div>` : ''}
 
@@ -500,16 +767,175 @@ export default function POS({ user, onLogout }) {
         window.onload = () => { window.print(); setTimeout(() => window.close(), 400); }
       </script>
     </body></html>`
+  }
 
-    const win = window.open('', '_blank', 'width=360,height=700')
-    if (!win) { showToast('ບໍ່ສາມາດເປີດປ່ອງພິມໄດ້', 'error'); return }
-    win.document.open()
-    win.document.write(html)
-    win.document.close()
+  const buildPaperReceipt = ({ order, size, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel }) => {
+    const isA4 = size === 'a4'
+    const itemRows = itemsArr.map((it, i) => {
+      const qty = Number(it.quantity) || 0
+      const price = Number(it.price) || 0
+      const total = qty * price
+      return `
+        <tr>
+          <td class="num">${i + 1}</td>
+          <td class="prod">${(it.name || it.product_name || '—')}</td>
+          <td class="qty">${formatNumber(qty)}</td>
+          <td class="money">${formatNumber(price)}</td>
+          <td class="money">${formatNumber(total)}</td>
+        </tr>
+      `
+    }).join('')
+    const paymentRows = orderPayments.map(p => {
+      const currency = p.currency || 'LAK'
+      const rate = Number(p.rate) || 1
+      const amount = Number(p.amount) || 0
+      const amountLak = Number(p.amount_lak) || amount * rate
+      return `<tr><td>${currency}</td><td class="money">${formatNumber(amount)}</td><td>@ ${formatNumber(rate)}</td><td class="money">${formatPrice(amountLak)}</td></tr>`
+    }).join('')
+    const outstanding = isCreditOrder ? Math.max(0, Number(order.total) - Number(order.amount_paid || 0)) : Number(order.change_amount || 0)
+
+    return `<!doctype html>
+    <html><head><meta charset="utf-8"><title>ໃບບິນ ${billLabel}</title>
+    <style>
+      @page { size: ${isA4 ? 'A4' : 'A5'} portrait; margin: ${isA4 ? '12mm' : '8mm'} }
+      * { box-sizing: border-box; font-family: 'Noto Sans Lao','Phetsarath OT',system-ui,sans-serif; }
+      html, body { margin: 0; padding: 0; color: #111; font-size: ${isA4 ? '12px' : '11px'}; line-height: 1.45 }
+      .receipt { width: 100% }
+      header.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 12px }
+      .brand { display: flex; align-items: center; gap: 12px; min-width: 0 }
+      .brand img { max-height: ${isA4 ? '64px' : '52px'}; max-width: ${isA4 ? '120px' : '90px'}; object-fit: contain }
+      .brand .name { font-size: ${isA4 ? '20px' : '16px'}; font-weight: 800; letter-spacing: .2px }
+      .brand .info { font-size: ${isA4 ? '11px' : '10px'}; color: #444; line-height: 1.4 }
+      .doc { text-align: right }
+      .doc h1 { margin: 0; font-size: ${isA4 ? '22px' : '18px'}; font-weight: 900; letter-spacing: 1px; color: #b91c1c }
+      .doc .meta { margin-top: 4px; font-size: ${isA4 ? '11px' : '10px'}; color: #444 }
+      .doc .meta b { color: #111 }
+      .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 12px; font-size: ${isA4 ? '11px' : '10px'} }
+      .meta-grid .row { display: flex; gap: 6px; align-items: baseline }
+      .meta-grid .label { color: #64748b; font-weight: 700; min-width: ${isA4 ? '70px' : '60px'} }
+      .meta-grid .value { color: #111; font-weight: 600; word-break: break-word }
+      table.items { width: 100%; border-collapse: collapse; margin: 8px 0 }
+      table.items thead th { background: #111; color: #fff; padding: 6px 8px; font-size: ${isA4 ? '11px' : '10px'}; font-weight: 700; text-align: left; letter-spacing: .3px }
+      table.items thead th.qty, table.items thead th.money { text-align: right }
+      table.items tbody td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; font-size: ${isA4 ? '12px' : '11px'} }
+      table.items td.num { width: 28px; color: #64748b; font-variant-numeric: tabular-nums }
+      table.items td.prod { font-weight: 600 }
+      table.items td.qty, table.items td.money { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
+      .totals { display: grid; grid-template-columns: 1fr ${isA4 ? '220px' : '180px'}; gap: 16px; margin-top: 10px }
+      .totals .left { font-size: ${isA4 ? '11px' : '10px'}; color: #475569 }
+      .totals .bank b { color: #111 }
+      .totals .right { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden }
+      .totals .right .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; font-size: ${isA4 ? '12px' : '11px'} }
+      .totals .right .row + .row { border-top: 1px dashed #e2e8f0 }
+      .totals .right .row .v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
+      .totals .right .grand { background: #fef2f2; color: #991b1b; font-weight: 900; font-size: ${isA4 ? '14px' : '13px'}; border-top: 2px solid #fca5a5 }
+      .totals .right .outstanding { background: #fffbeb; color: #92400e; font-weight: 800 }
+      .totals .right .change { background: #f0fdf4; color: #166534; font-weight: 800 }
+      .payments { margin-top: 12px; font-size: ${isA4 ? '11px' : '10px'} }
+      .payments h4 { margin: 0 0 6px; font-size: ${isA4 ? '11px' : '10px'}; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: .5px }
+      .payments table { width: 100%; border-collapse: collapse }
+      .payments td { padding: 4px 8px; border-bottom: 1px dotted #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
+      .payments td.money { text-align: right }
+      .note { margin-top: 12px; padding: 8px 12px; border: 1px dashed #94a3b8; border-radius: 6px; font-size: ${isA4 ? '11px' : '10px'}; color: #334155 }
+      .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: ${isA4 ? '40px' : '30px'} }
+      .sign .box { text-align: center; font-size: ${isA4 ? '11px' : '10px'}; color: #475569 }
+      .sign .line { margin-bottom: 6px; height: 28px; border-bottom: 1px solid #94a3b8 }
+      footer.bottom { margin-top: ${isA4 ? '24px' : '16px'}; padding-top: 8px; border-top: 1px solid #cbd5e1; text-align: center; font-size: ${isA4 ? '11px' : '10px'}; color: #475569 }
+    </style></head><body>
+      <div class="receipt">
+        <header class="top">
+          <div class="brand">
+            ${company.logo_url ? `<img src="${location.origin}${company.logo_url}" alt="logo" />` : ''}
+            <div>
+              <div class="name">${company.name || 'POS'}</div>
+              ${company.slogan ? `<div class="info">${company.slogan}</div>` : ''}
+              ${company.address ? `<div class="info">${company.address}</div>` : ''}
+              ${(company.phone || company.email) ? `<div class="info">${[company.phone, company.email].filter(Boolean).join(' · ')}</div>` : ''}
+              ${(company.tax_id || company.business_reg_no) ? `<div class="info">${[company.tax_id && `TAX: ${company.tax_id}`, company.business_reg_no && `REG: ${company.business_reg_no}`].filter(Boolean).join(' · ')}</div>` : ''}
+            </div>
+          </div>
+          <div class="doc">
+            <h1>${isCreditOrder ? 'ໃບບິນເຊື່ອ' : 'ໃບບິນຂາຍ'}</h1>
+            <div class="meta"><b>ເລກບິນ:</b> ${billLabel}</div>
+            <div class="meta"><b>ວັນທີ:</b> ${dateStr}</div>
+          </div>
+        </header>
+
+        <div class="meta-grid">
+          <div class="row"><span class="label">ພະນັກງານ</span><span class="value">${user?.display_name || '—'}</span></div>
+          <div class="row"><span class="label">ວິທີຊຳລະ</span><span class="value">${methodText}</span></div>
+          ${order.member_id ? `<div class="row"><span class="label">ສະມາຊິກ</span><span class="value">${order.customer_name || '—'}</span></div>` : ''}
+          ${order.member_id && Number(order.member_points_earned) > 0 ? `<div class="row"><span class="label">ໄດ້ແຕ້ມ</span><span class="value">+${formatNumber(order.member_points_earned)}</span></div>` : ''}
+          ${isCreditOrder ? `<div class="row"><span class="label">ລູກຄ້າ</span><span class="value">${order.customer_name || '—'}</span></div>` : ''}
+          ${isCreditOrder && order.customer_phone ? `<div class="row"><span class="label">ເບີໂທ</span><span class="value">${order.customer_phone}</span></div>` : ''}
+          ${isCreditOrder && order.credit_due_date ? `<div class="row"><span class="label">ກຳນົດຊຳລະ</span><span class="value">${new Date(order.credit_due_date).toLocaleDateString('lo-LA')}</span></div>` : ''}
+        </div>
+
+        <table class="items">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>ສິນຄ້າ</th>
+              <th class="qty">ຈຳນວນ</th>
+              <th class="money">ລາຄາ</th>
+              <th class="money">ລວມ</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemRows || '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:12px">ບໍ່ມີລາຍການ</td></tr>'}
+          </tbody>
+        </table>
+
+        <div class="totals">
+          <div class="left">
+            ${order.member_id && Number(order.member_points_used) > 0 ? `<div>ໃຊ້ແຕ້ມ: <b>−${formatNumber(order.member_points_used)}</b> (${formatPrice(order.member_points_discount || 0)})</div>` : ''}
+            ${Array.isArray(company.bank_accounts) && company.bank_accounts.length > 0 ? `
+              <div class="bank" style="margin-top:8px">
+                <b>ບັນຊີຊຳລະ:</b>
+                ${company.bank_accounts.map(a => `<div>• ${[a.bank_name, a.account_name].filter(Boolean).join(' — ')}${a.account_number ? `: ${a.account_number}` : ''}</div>`).join('')}
+              </div>
+            ` : ''}
+          </div>
+          <div class="right">
+            <div class="row"><span>ລວມຍ່ອຍ</span><span class="v">${formatPrice(order.total)}</span></div>
+            ${Number(order.discount) > 0 ? `<div class="row"><span>ສ່ວນຫຼຸດ</span><span class="v">−${formatPrice(order.discount)}</span></div>` : ''}
+            <div class="row grand"><span>ລວມທັງໝົດ</span><span class="v">${formatPrice(order.total)}</span></div>
+            <div class="row"><span>${isCreditOrder ? 'ຮັບແລ້ວ' : 'ຮັບເງິນ'}</span><span class="v">${formatPrice(order.amount_paid)}</span></div>
+            <div class="row ${isCreditOrder ? 'outstanding' : 'change'}"><span>${isCreditOrder ? 'ຍອດຄ້າງ' : 'ເງິນທອນ'}</span><span class="v">${formatPrice(outstanding)}</span></div>
+          </div>
+        </div>
+
+        ${paymentRows ? `
+          <div class="payments">
+            <h4>ລາຍລະອຽດການຮັບເງິນ</h4>
+            <table>${paymentRows}</table>
+          </div>
+        ` : ''}
+
+        ${order.note ? `<div class="note"><b>ໝາຍເຫດ:</b> ${order.note}</div>` : ''}
+
+        ${isA4 ? `
+          <div class="sign">
+            <div class="box"><div class="line"></div>ລາຍເຊັນຜູ້ຮັບເງິນ</div>
+            <div class="box"><div class="line"></div>ລາຍເຊັນລູກຄ້າ</div>
+          </div>
+        ` : ''}
+
+        <footer class="bottom">★ ຂໍຂອບໃຈທີ່ໃຊ້ບໍລິການ ★ · ກະລຸນາຮັກສາໃບບິນໄວ້ເພື່ອປ່ຽນ/ຄືນສິນຄ້າ</footer>
+      </div>
+      <script>
+        window.onload = () => { window.print(); setTimeout(() => window.close(), 400); }
+      </script>
+    </body></html>`
   }
 
   const quickAmounts = [5000, 10000, 20000, 50000, 100000]
   const catalogProducts = useMemo(() => products.filter(p => p.qty_on_hand > 0), [products])
+  const memberProvinces = Object.keys(laoLocations)
+  const memberDistricts = memberForm.province ? Object.keys(laoLocations[memberForm.province] || {}) : []
+  const memberVillages = memberForm.province && memberForm.district ? (laoLocations[memberForm.province]?.[memberForm.district] || []) : []
+  const setMemberProvince = (province) => setMemberForm({ ...memberForm, province, district: '', village: '' })
+  const setMemberDistrict = (district) => setMemberForm({ ...memberForm, district, village: '' })
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-slate-900 text-slate-100 text-[13px]">
@@ -564,6 +990,31 @@ export default function POS({ user, onLogout }) {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
             <span className="hidden md:inline">ສະຫຼຸບວັນນີ້</span>
           </button>
+          {(() => {
+            const c = debtAlerts?.counts || { overdue: 0, today: 0, upcoming: 0 }
+            const alertCount = c.overdue + c.today
+            const hasUrgent = c.overdue > 0
+            const total = alertCount + c.upcoming
+            return (
+              <button onClick={async () => { await loadDebtAlerts(); setShowDebtAlerts(true) }}
+                className={`relative px-2 sm:px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 ${
+                  hasUrgent ? 'bg-rose-600 hover:bg-rose-500 text-white animate-pulse' :
+                  alertCount > 0 ? 'bg-amber-500 hover:bg-amber-400 text-slate-950' :
+                  'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+                title="ໜີ້ຄ້າງສຳລະ">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                <span className="hidden md:inline">ໜີ້ຄ້າງ</span>
+                {total > 0 && (
+                  <span className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-extrabold flex items-center justify-center ${
+                    hasUrgent ? 'bg-white text-rose-600 ring-2 ring-rose-600' :
+                    alertCount > 0 ? 'bg-slate-950 text-amber-300 ring-2 ring-amber-500' :
+                    'bg-slate-950 text-slate-300 ring-2 ring-slate-700'
+                  }`}>{total > 99 ? '99+' : total}</span>
+                )}
+              </button>
+            )
+          })()}
           <button onClick={loadOrders}
             className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="ປະຫວັດ">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -648,7 +1099,7 @@ export default function POS({ user, onLogout }) {
             <div className="flex items-center gap-3">
               <span className="text-red-300">Section 02 · ໃບບິນ</span>
               <span className="text-slate-600">·</span>
-              <span>ໃບບິນ #{new Date().toISOString().split('T')[0].replace(/-/g, '').slice(2)}</span>
+              <span>ວັນທີ {new Date().toLocaleDateString('lo-LA')}</span>
               <span className="text-slate-600">·</span>
               <span>ລາຍການ <span className="text-white">{cart.length}</span></span>
               <span className="text-slate-600">·</span>
@@ -819,7 +1270,7 @@ export default function POS({ user, onLogout }) {
         </main>
 
         {/* Right: summary + actions */}
-        <aside className="w-full md:w-[300px] lg:w-[360px] max-h-[45vh] md:max-h-none shrink-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-lg shadow-slate-950/30 flex flex-col">
+        <aside className="w-full md:w-[300px] lg:w-[360px] max-h-[45vh] md:max-h-none shrink-0 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950 shadow-lg shadow-slate-950/30 flex flex-col">
           <section className="m-3 mb-0 rounded-xl border border-slate-800 bg-slate-900/70 p-4">
             <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-3">Section 03 · ສະຫຼຸບຍອດ</div>
             <div className="space-y-1.5 text-[13px] font-mono-t">
@@ -853,6 +1304,36 @@ export default function POS({ user, onLogout }) {
                 </span>
                 <span className="text-rose-400">{manualDiscountAmount > 0 ? `−${formatPrice(manualDiscountAmount)}` : '0 ₭'}</span>
               </div>
+              {loyaltySettings.loyalty_enabled !== false && redeemValue > 0 && !selectedMember?.isDefault && memberPointsAvail > 0 && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-amber-300">
+                    <span>⭐ ໃຊ້ແຕ້ມສະສົມ</span>
+                    <span className="font-mono">ມີ {formatNumber(memberPointsAvail)} ແຕ້ມ</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="0" max={maxRedeemable} value={pointsToRedeem}
+                      onChange={e => {
+                        const v = Math.max(0, Math.min(maxRedeemable, parseInt(e.target.value, 10) || 0))
+                        setPointsToRedeem(v)
+                      }}
+                      placeholder="0"
+                      className="flex-1 px-2 py-1 bg-slate-900 border border-amber-500/30 rounded text-amber-200 font-mono-t text-sm font-extrabold text-right outline-none focus:border-amber-400" />
+                    <button type="button" onClick={() => setPointsToRedeem(maxRedeemable)}
+                      className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 rounded text-amber-200 text-[10px] font-extrabold">MAX</button>
+                    {pointsUsed > 0 && (
+                      <button type="button" onClick={() => setPointsToRedeem(0)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 text-[10px] font-extrabold">ລ້າງ</button>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-amber-400/80">1 ແຕ້ມ = {formatPrice(redeemValue)}</span>
+                    <span className="text-rose-400 font-mono-t font-extrabold">{pointsDiscountAmount > 0 ? `−${formatPrice(pointsDiscountAmount)}` : '0 ₭'}</span>
+                  </div>
+                  {Number(loyaltySettings.min_points_to_redeem) > 0 && pointsUsed > 0 && pointsUsed < Number(loyaltySettings.min_points_to_redeem) && (
+                    <div className="text-[10px] text-rose-400">ຂັ້ນຕ່ຳ {formatNumber(loyaltySettings.min_points_to_redeem)} ແຕ້ມ</div>
+                  )}
+                </div>
+              )}
             </div>
             <div className="mt-3 pt-3 border-t-2 border-red-500/30">
               <div className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-1">ລວມທັງໝົດ</div>
@@ -862,13 +1343,42 @@ export default function POS({ user, onLogout }) {
 
           <section className="m-3 mb-0 rounded-xl border border-slate-800 bg-slate-900/70 p-4">
             <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-2">Section 04 · ວິທີຊຳລະ</div>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="mb-3 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold">ສະມາຊິກ</div>
+                {!selectedMember?.isDefault && (
+                  <button onClick={() => setSelectedMember(DEFAULT_MEMBER)}
+                    className="text-[10px] font-bold text-rose-300 hover:text-rose-200">ກັບຄ່າເລີ່ມ</button>
+                )}
+              </div>
+              <button type="button" onClick={() => { setShowMemberModal(true); loadMembers(memberSearch) }}
+                className={`w-full rounded-md border p-2 text-left transition ${selectedMember?.isDefault ? 'border-slate-700 bg-slate-900/70 hover:border-slate-600' : 'border-emerald-500/30 bg-emerald-500/10 hover:border-emerald-400/50'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className={`truncate text-xs font-extrabold ${selectedMember?.isDefault ? 'text-slate-100' : 'text-emerald-100'}`}>{selectedMember?.name || DEFAULT_MEMBER.name}</div>
+                    <div className={`text-[10px] font-mono ${selectedMember?.isDefault ? 'text-slate-500' : 'text-emerald-300'}`}>
+                      {selectedMember?.member_code || DEFAULT_MEMBER.member_code}{selectedMember?.phone ? ` · ${selectedMember.phone}` : ''}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className={selectedMember?.isDefault ? 'text-[10px] text-slate-500' : 'text-[10px] text-emerald-300'}>Points</div>
+                    <div className={`font-mono-t text-sm font-extrabold ${selectedMember?.isDefault ? 'text-slate-300' : 'text-emerald-100'}`}>{formatNumber(selectedMember?.points || 0)}</div>
+                  </div>
+                </div>
+                <div className="mt-2 text-[10px] font-bold text-slate-400">ກົດເພື່ອເລືອກຈາກ modal</div>
+              </button>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
               {[
                 { key: 'cash', icon: '💵', label: 'ສົດ' },
                 { key: 'transfer', icon: '🏦', label: 'ໂອນ' },
-                { key: 'qr', icon: '📱', label: 'QR' }
+                { key: 'qr', icon: '📱', label: 'QR' },
+                { key: 'credit', icon: '🧾', label: 'ເຊື່ອ' }
               ].map(m => (
-                <button key={m.key} onClick={() => setPaymentMethod(m.key)}
+                <button key={m.key} onClick={() => {
+                  setPaymentMethod(m.key)
+                  if (m.key === 'credit') { setPayments([]); setAmountPaid('') }
+                }}
                   className={`py-2 rounded-md text-[11px] font-bold transition border ${
                     paymentMethod === m.key ? 'bg-red-500 text-slate-950 border-red-400' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-600'
                   }`}>
@@ -881,7 +1391,9 @@ export default function POS({ user, onLogout }) {
 
           <section className="m-3 mt-auto rounded-xl border border-slate-800 bg-slate-900/70 p-4">
             <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-3">Section 05 · ດຳເນີນການ</div>
-            <button onClick={() => { setAmountPaid(String(finalTotal)); setShowCheckout(true) }}
+            <button onClick={() => {
+                setAmountPaid(String(finalTotal)); setShowCheckout(true)
+              }}
               disabled={cart.length === 0}
               className="w-full h-20 bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-white rounded-xl font-extrabold text-xl tracking-wider flex items-center justify-center gap-3 shadow-2xl shadow-red-500/20 disabled:shadow-none transition-all active:scale-[0.98]">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 12h.01M17 12h.01"/></svg>
@@ -900,6 +1412,80 @@ export default function POS({ user, onLogout }) {
           </section>
         </aside>
       </div>
+
+      {/* Member Modal */}
+      {showMemberModal && (
+        <Modal onClose={() => setShowMemberModal(false)} title="ເລືອກສະມາຊິກ" size="lg">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_280px] gap-4">
+            <div className="space-y-3">
+              <button type="button" onClick={() => { setSelectedMember(DEFAULT_MEMBER); setShowMemberModal(false) }}
+                className={`w-full rounded-xl border p-3 text-left transition ${selectedMember?.isDefault ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50 hover:border-slate-400'}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-extrabold text-slate-900">ລູກຄ້າທົ່ວໄປ</div>
+                    <div className="text-[11px] text-slate-500 font-mono">GENERAL</div>
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-500">Default</span>
+                </div>
+              </button>
+              <input type="text" value={memberSearch}
+                onChange={e => setMemberSearch(e.target.value)}
+                placeholder="ຄົ້ນຫາດ້ວຍ ຊື່, ເບີໂທ, ລະຫັດ..."
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-red-500" />
+              <div className="max-h-[420px] overflow-y-auto space-y-2">
+                {members.map(m => (
+                  <button key={m.id} onClick={() => { setSelectedMember(m); setMemberSearch(''); setShowMemberModal(false) }}
+                    className={`w-full rounded-xl border p-3 text-left transition ${selectedMember?.id === m.id ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-400'}`}>
+                    <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="truncate text-sm font-extrabold text-slate-900">{m.name}</div>
+                        <div className="text-[11px] text-slate-500 font-mono">{m.member_code}{m.phone ? ` · ${m.phone}` : ''}</div>
+                        <div className="text-[10px] text-slate-400 truncate">{[m.village, m.district, m.province].filter(Boolean).join(', ')}</div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                        <div className="text-[10px] text-emerald-600 font-bold">Points</div>
+                        <div className="font-mono-t text-sm font-extrabold text-emerald-700">{formatNumber(m.points || 0)}</div>
+                    </div>
+                  </div>
+                  </button>
+                ))}
+                {members.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">
+                    ບໍ່ພົບສະມາຊິກ. ເພີ່ມໃໝ່ດ້ານຂວາ.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-3">ເພີ່ມສະມາຊິກໃໝ່</div>
+              <div className="space-y-2">
+                <input type="text" value={memberForm.name}
+                  onChange={e => setMemberForm({ ...memberForm, name: e.target.value })}
+                  placeholder="ຊື່ສະມາຊິກ *"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-red-500" />
+                <input type="text" value={memberForm.phone}
+                  onChange={e => setMemberForm({ ...memberForm, phone: e.target.value })}
+                  placeholder="ເບີໂທ"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-red-500" />
+                <SearchSelect value={memberForm.province} onChange={setMemberProvince}
+                  options={memberProvinces.map(p => ({ value: p, label: p }))}
+                  placeholder="ແຂວງ *" />
+                <SearchSelect value={memberForm.district} onChange={setMemberDistrict}
+                  options={memberDistricts.map(d => ({ value: d, label: d }))}
+                  placeholder={memberForm.province ? 'ເມືອງ *' : 'ເລືອກແຂວງກ່ອນ'} />
+                <SearchSelect value={memberForm.village} onChange={village => setMemberForm({ ...memberForm, village })}
+                  options={memberVillages.map(v => ({ value: v, label: v }))}
+                  placeholder={memberForm.district ? 'ບ້ານ *' : 'ເລືອກເມືອງກ່ອນ'} />
+                <button onClick={createMemberQuick} disabled={creatingMember || !memberForm.name.trim()}
+                  className="w-full py-2.5 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-extrabold">
+                  {creatingMember ? 'ກຳລັງບັນທຶກ...' : '+ ເພີ່ມ ແລະ ເລືອກ'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Catalog overlay */}
       {showCatalog && (
@@ -985,10 +1571,11 @@ export default function POS({ user, onLogout }) {
 
       {/* Checkout Modal — redesigned */}
       {showCheckout && (() => {
+        const isCredit = paymentMethod === 'credit'
         const amountByCode = {}
-        if (payments.length > 0) {
+        if (!isCredit && payments.length > 0) {
           for (const p of payments) amountByCode[p.currency] = p.amount
-        } else if (amountPaid) {
+        } else if (!isCredit && amountPaid) {
           amountByCode['LAK'] = amountPaid
         }
 
@@ -1032,16 +1619,16 @@ export default function POS({ user, onLogout }) {
           VND: [10000, 20000, 50000, 100000, 200000, 500000],
         }
 
-        const paidNow = Object.entries(amountByCode).reduce((s, [c, v]) => {
+        const paidNow = isCredit ? 0 : Object.entries(amountByCode).reduce((s, [c, v]) => {
           const r = (currencies.find(x => x.code === c) || { rate: 1 }).rate
           return s + (Number(v) || 0) * (Number(r) || 1)
         }, 0)
         const remaining = Math.max(0, finalTotal - paidNow)
         const change = Math.max(0, paidNow - finalTotal)
-        const fullyPaid = paidNow >= finalTotal && finalTotal > 0
+        const fullyPaid = isCredit ? (creditCustomer.name.trim().length > 0 || !!selectedMember) && !!creditCustomer.dueDate : paidNow >= finalTotal && finalTotal > 0
 
         return (
-        <Modal onClose={() => setShowCheckout(false)} title="ຊຳລະເງິນ" size="lg">
+        <Modal onClose={() => setShowCheckout(false)} title={isCredit ? 'ອອກບິນເຊື່ອ' : 'ຊຳລະເງິນ'} size="lg">
           <div className="space-y-3">
             {/* HERO — total + live status + progress */}
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white p-5">
@@ -1054,7 +1641,12 @@ export default function POS({ user, onLogout }) {
                   {discount > 0 && <div className="text-[10px] text-slate-500 mt-0.5">ຫຼຸດ {discount}% = −{formatPrice(discountAmount)}</div>}
                 </div>
                 <div className="text-right">
-                  {!fullyPaid ? (
+                  {isCredit ? (
+                    <>
+                      <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">ຍອດຄ້າງຮັບ</div>
+                      <div className="text-3xl font-extrabold font-mono-t mt-1 text-amber-300">{formatPrice(finalTotal)}</div>
+                    </>
+                  ) : !fullyPaid ? (
                     <>
                       <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">ຍັງຂາດ</div>
                       <div className={`text-3xl font-extrabold font-mono-t mt-1 ${paidNow > 0 ? 'text-amber-400' : 'text-slate-500'}`}>{formatPrice(remaining)}</div>
@@ -1069,12 +1661,12 @@ export default function POS({ user, onLogout }) {
               </div>
               <div className="relative mt-3 h-2 bg-white/10 rounded-full overflow-hidden">
                 <div className={`h-full transition-all duration-200 ${fullyPaid ? 'bg-emerald-400' : 'bg-red-500'}`}
-                  style={{ width: `${Math.min(100, finalTotal > 0 ? (paidNow / finalTotal) * 100 : 0)}%` }}></div>
+                  style={{ width: `${isCredit ? 100 : Math.min(100, finalTotal > 0 ? (paidNow / finalTotal) * 100 : 0)}%` }}></div>
               </div>
             </div>
 
             {/* Currency rows — always visible for every enabled currency */}
-            <div>
+            {!isCredit && <div>
               <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-2">ຮັບເງິນ</label>
               <div className="space-y-2">
                 {currencies.map(c => {
@@ -1129,18 +1721,22 @@ export default function POS({ user, onLogout }) {
                   )
                 })}
               </div>
-            </div>
+            </div>}
 
             {/* Payment method */}
             <div>
               <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-2">ວິທີຊຳລະ</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 {[
                   { key: 'cash', icon: '💵', label: 'ເງິນສົດ' },
                   { key: 'transfer', icon: '🏦', label: 'ໂອນ' },
-                  { key: 'qr', icon: '📱', label: 'QR Code' }
+                  { key: 'qr', icon: '📱', label: 'QR Code' },
+                  { key: 'credit', icon: '🧾', label: 'ຂາຍເຊື່ອ' }
                 ].map(m => (
-                  <button key={m.key} onClick={() => setPaymentMethod(m.key)}
+                  <button key={m.key} onClick={() => {
+                    setPaymentMethod(m.key)
+                    if (m.key === 'credit') { setPayments([]); setAmountPaid('') }
+                  }}
                     className={`py-2.5 rounded-xl text-xs font-bold transition border-2 ${
                       paymentMethod === m.key ? 'bg-slate-900 text-white border-slate-900 shadow' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400'
                     }`}>
@@ -1150,6 +1746,30 @@ export default function POS({ user, onLogout }) {
                 ))}
               </div>
             </div>
+
+            {isCredit && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <label className="block text-[10px] font-extrabold text-amber-700 uppercase tracking-widest mb-2">ຂໍ້ມູນລູກຄ້າເຊື່ອ</label>
+                {selectedMember && (
+                  <div className="mb-2 rounded-lg border border-amber-200 bg-white/70 px-2 py-1.5 text-xs font-bold text-amber-800">
+                    ໃຊ້ຂໍ້ມູນສະມາຊິກ: {selectedMember.name}{selectedMember.phone ? ` · ${selectedMember.phone}` : ''}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <input type="text" value={creditCustomer.name}
+                    onChange={e => setCreditCustomer({ ...creditCustomer, name: e.target.value })}
+                    placeholder={selectedMember ? 'ຊື່ລູກຄ້າ (ຖ້າຕ້ອງການປ່ຽນ)' : 'ຊື່ລູກຄ້າ *'}
+                    className="p-2.5 bg-white border border-amber-200 rounded-lg text-sm text-slate-900 outline-none focus:border-amber-500" />
+                  <input type="text" value={creditCustomer.phone}
+                    onChange={e => setCreditCustomer({ ...creditCustomer, phone: e.target.value })}
+                    placeholder="ເບີໂທ"
+                    className="p-2.5 bg-white border border-amber-200 rounded-lg text-sm text-slate-900 outline-none focus:border-amber-500" />
+                  <input type="date" value={creditCustomer.dueDate}
+                    onChange={e => setCreditCustomer({ ...creditCustomer, dueDate: e.target.value })}
+                    className="p-2.5 bg-white border border-amber-200 rounded-lg text-sm text-slate-900 outline-none focus:border-amber-500" />
+                </div>
+              </div>
+            )}
 
             {paymentMethod === 'cash' && (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
@@ -1184,7 +1804,9 @@ export default function POS({ user, onLogout }) {
             </button>
             <button onClick={handleCheckout} disabled={!fullyPaid}
               className="flex-[2] py-3 bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-xl font-extrabold shadow-lg text-sm flex items-center justify-center gap-2">
-              {fullyPaid ? (
+              {isCredit ? (
+                <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg> ຢືນຢັນອອກບິນເຊື່ອ</>
+              ) : fullyPaid ? (
                 <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg> ຢືນຢັນການຊຳລະ</>
               ) : (
                 <>ຮັບເງິນເພີ່ມ {formatPrice(remaining)}</>
@@ -1396,12 +2018,12 @@ export default function POS({ user, onLogout }) {
       {showReceipt && (
         <Modal onClose={() => setShowReceipt(null)} size="sm">
           <div className="text-center">
-            <div className="w-14 h-14 rounded-full bg-emerald-100 border-2 border-emerald-300 flex items-center justify-center mx-auto mb-3">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#065f46" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <div className={`w-14 h-14 rounded-full ${showReceipt.payment_method === 'credit' ? 'bg-amber-100 border-amber-300' : 'bg-emerald-100 border-emerald-300'} border-2 flex items-center justify-center mx-auto mb-3`}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={showReceipt.payment_method === 'credit' ? '#b45309' : '#065f46'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
-            <h3 className="text-lg font-extrabold text-slate-900">ການຊຳລະສຳເລັດ</h3>
+            <h3 className="text-lg font-extrabold text-slate-900">{showReceipt.payment_method === 'credit' ? 'ອອກບິນເຊື່ອສຳເລັດ' : 'ການຊຳລະສຳເລັດ'}</h3>
             <div className="text-[11px] text-slate-500 mt-0.5">
-              ໃບບິນ #{showReceipt.id} · {new Date(showReceipt.created_at).toLocaleString('lo-LA')}
+              ໃບບິນ {showReceipt.bill_number || `#${showReceipt.id}`} · {new Date(showReceipt.created_at).toLocaleString('lo-LA')}
             </div>
           </div>
           <div className="my-4 py-3 border-y border-dashed border-slate-300 space-y-1">
@@ -1418,27 +2040,170 @@ export default function POS({ user, onLogout }) {
             <div className="flex justify-between text-slate-500"><span>ລວມຍ່ອຍ</span><span className="font-mono-t">{formatPrice(showReceipt.total)}</span></div>
             {showReceipt.discount > 0 && <div className="flex justify-between text-rose-700"><span>ຫຼຸດ</span><span className="font-mono-t">−{formatPrice(showReceipt.discount)}</span></div>}
             <div className="flex justify-between text-slate-500"><span>ຮັບເງິນ</span><span className="font-mono-t">{formatPrice(showReceipt.amount_paid)}</span></div>
-            <div className="flex justify-between font-extrabold text-red-700 pt-2 mt-1 border-t border-slate-200">
-              <span>ເງິນທອນ</span><span className="font-mono-t">{formatPrice(showReceipt.change_amount)}</span>
+            <div className={`flex justify-between font-extrabold ${showReceipt.payment_method === 'credit' ? 'text-amber-700' : 'text-red-700'} pt-2 mt-1 border-t border-slate-200`}>
+              <span>{showReceipt.payment_method === 'credit' ? 'ຍອດຄ້າງ' : 'ເງິນທອນ'}</span>
+              <span className="font-mono-t">{formatPrice(showReceipt.payment_method === 'credit' ? Number(showReceipt.total) - Number(showReceipt.amount_paid || 0) : showReceipt.change_amount)}</span>
             </div>
           </div>
+          {showReceipt.payment_method === 'credit' && (
+            <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-2 text-xs text-amber-900">
+              <div className="font-bold text-amber-700 mb-0.5 text-[10px] uppercase tracking-wider">ລູກຄ້າເຊື່ອ</div>
+              <div>{showReceipt.customer_name || '—'}{showReceipt.customer_phone ? ` · ${showReceipt.customer_phone}` : ''}</div>
+              {showReceipt.credit_due_date && <div className="mt-0.5">ກຳນົດຊຳລະ: {new Date(showReceipt.credit_due_date).toLocaleDateString('lo-LA')}</div>}
+            </div>
+          )}
+          {showReceipt.member_id && (
+            <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-2 text-xs text-emerald-900">
+              <div className="font-bold text-emerald-700 mb-0.5 text-[10px] uppercase tracking-wider">ສະມາຊິກ</div>
+              <div>{showReceipt.customer_name || '—'}</div>
+              {Number(showReceipt.member_points_used) > 0 && (
+                <div className="mt-0.5 text-amber-700">ໃຊ້ແຕ້ມ: −{formatNumber(showReceipt.member_points_used)} ({formatPrice(showReceipt.member_points_discount || 0)})</div>
+              )}
+              <div className="mt-0.5">ຄະແນນບິນນີ້: +{formatNumber(showReceipt.member_points_earned || 0)}</div>
+            </div>
+          )}
           {showReceipt.note && (
             <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-700">
               <div className="font-bold text-slate-500 mb-0.5 text-[10px] uppercase tracking-wider">ໝາຍເຫດ</div>
               {showReceipt.note}
             </div>
           )}
-          <div className="flex gap-2 mt-4">
-            <button onClick={() => printReceipt(showReceipt)}
-              className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-              ພິມໃບບິນ
-            </button>
-            <button onClick={() => setShowReceipt(null)}
-              className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-sm">
-              ສຳເລັດ
-            </button>
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+              <span className="px-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">ຂະຫນາດ</span>
+              {[
+                { key: '80mm', label: '80mm', sub: 'Thermal' },
+                { key: 'a5', label: 'A5', sub: 'ກະດາດ' },
+                { key: 'a4', label: 'A4', sub: 'Invoice' },
+              ].map(s => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setReceiptSize(s.key)}
+                  className={`flex-1 rounded-md py-1.5 text-center text-xs font-bold transition ${
+                    receiptSize === s.key
+                      ? 'bg-red-600 text-white shadow'
+                      : 'text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  <div className="leading-none">{s.label}</div>
+                  <div className={`mt-0.5 text-[9px] font-semibold leading-none ${receiptSize === s.key ? 'text-red-100' : 'text-slate-400'}`}>{s.sub}</div>
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => printReceipt(showReceipt)}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                ພິມໃບບິນ ({receiptSize === '80mm' ? '80mm' : receiptSize.toUpperCase()})
+              </button>
+              <button onClick={() => setShowReceipt(null)}
+                className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-sm">
+                ສຳເລັດ
+              </button>
+            </div>
           </div>
+        </Modal>
+      )}
+
+      {/* Debt Alerts Modal */}
+      {showDebtAlerts && (
+        <Modal onClose={() => setShowDebtAlerts(false)} title="ແຈ້ງເຕືອນໜີ້ຄ້າງສຳລະ" size="lg">
+          {(() => {
+            const a = debtAlerts || { counts: {}, totals: {}, overdue: [], today: [], upcoming: [], undated: [] }
+            const fmt = formatPrice
+            const fmtN = formatNumber
+            const daysText = (d) => {
+              if (d == null) return 'ບໍ່ມີວັນຄົບກຳນົດ'
+              if (d < 0) return `ເກີນ ${fmtN(Math.abs(d))} ວັນ`
+              if (d === 0) return 'ກຳນົດມື້ນີ້'
+              return `ເຫຼືອ ${fmtN(d)} ວັນ`
+            }
+            const sections = [
+              { key: 'overdue', title: '🔴 ເກີນກຳນົດ', items: a.overdue, total: a.totals?.overdue || 0, tone: 'rose' },
+              { key: 'today', title: '🟠 ກຳນົດມື້ນີ້', items: a.today, total: a.totals?.today || 0, tone: 'amber' },
+              { key: 'upcoming', title: `🟡 ໃກ້ຄົບກຳນົດ (≤${a.upcoming_days || 7} ວັນ)`, items: a.upcoming, total: a.totals?.upcoming || 0, tone: 'yellow' },
+              { key: 'undated', title: '⚪ ບໍ່ມີວັນຄົບກຳນົດ', items: a.undated, total: a.totals?.undated || 0, tone: 'slate' },
+            ]
+            const tones = {
+              rose: { bg: 'bg-rose-50 border-rose-200', text: 'text-rose-700', amount: 'text-rose-700', badge: 'bg-rose-600 text-white' },
+              amber: { bg: 'bg-amber-50 border-amber-200', text: 'text-amber-800', amount: 'text-amber-700', badge: 'bg-amber-500 text-white' },
+              yellow: { bg: 'bg-yellow-50 border-yellow-200', text: 'text-yellow-800', amount: 'text-yellow-700', badge: 'bg-yellow-500 text-white' },
+              slate: { bg: 'bg-slate-50 border-slate-200', text: 'text-slate-700', amount: 'text-slate-700', badge: 'bg-slate-500 text-white' },
+            }
+            const grandTotal = (a.totals?.overdue || 0) + (a.totals?.today || 0) + (a.totals?.upcoming || 0) + (a.totals?.undated || 0)
+            const grandCount = a.counts?.total || 0
+            if (grandCount === 0) {
+              return (
+                <div className="text-center py-10">
+                  <div className="text-4xl mb-2">✅</div>
+                  <div className="text-base font-extrabold text-emerald-700">ບໍ່ມີໜີ້ຄ້າງສຳລະ</div>
+                  <div className="text-xs text-slate-500 mt-1">ລູກຄ້າທຸກຄົນຊຳລະຄົບແລ້ວ</div>
+                </div>
+              )
+            }
+            return (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {sections.map(s => {
+                    const t = tones[s.tone]
+                    return (
+                      <div key={s.key} className={`rounded-xl border p-2.5 ${t.bg}`}>
+                        <div className={`text-[10px] font-extrabold uppercase tracking-wider ${t.text}`}>{s.title}</div>
+                        <div className={`mt-1 text-xl font-extrabold ${t.amount}`}>{fmtN(s.items.length)}</div>
+                        <div className={`text-[11px] font-bold font-mono-t ${t.amount}`}>{fmt(s.total)}</div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="rounded-lg bg-slate-900 text-white px-3 py-2 flex items-center justify-between text-sm">
+                  <span className="font-extrabold">ລວມໜີ້ຄ້າງທັງໝົດ</span>
+                  <span className="font-mono-t font-extrabold">{fmtN(grandCount)} ບິນ · {fmt(grandTotal)}</span>
+                </div>
+                {sections.filter(s => s.items.length > 0).map(s => {
+                  const t = tones[s.tone]
+                  return (
+                    <div key={s.key} className="rounded-xl border border-slate-200 overflow-hidden">
+                      <div className={`px-3 py-2 flex items-center justify-between text-xs font-extrabold ${t.bg} ${t.text}`}>
+                        <span>{s.title} · {fmtN(s.items.length)} ບິນ</span>
+                        <span className="font-mono-t">{fmt(s.total)}</span>
+                      </div>
+                      <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                        {s.items.map(it => (
+                          <div key={it.id} className="px-3 py-2 flex items-center gap-3 hover:bg-slate-50">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-[11px] font-extrabold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">{it.bill_number || `#${it.id}`}</span>
+                                <span className="font-bold text-slate-900 truncate">{it.customer_name}</span>
+                              </div>
+                              <div className="text-[11px] text-slate-500 mt-0.5">
+                                {it.customer_phone ? `${it.customer_phone} · ` : ''}
+                                {it.credit_due_date ? `ກຳນົດ ${new Date(it.credit_due_date).toLocaleDateString('lo-LA')}` : '—'}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className={`text-sm font-extrabold font-mono-t ${t.amount}`}>{fmt(it.remaining)}</div>
+                              <div className={`mt-0.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-extrabold ${t.badge}`}>{daysText(it.days_until_due)}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+                <div className="flex gap-2 pt-2">
+                  <button onClick={() => { router.push('/admin/customer-debts'); setShowDebtAlerts(false) }}
+                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-sm">
+                    ໄປໜ້າຈັດການໜີ້ລູກຄ້າ
+                  </button>
+                  <button onClick={() => setShowDebtAlerts(false)}
+                    className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-sm">
+                    ປິດ
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
         </Modal>
       )}
 
@@ -1468,7 +2233,7 @@ export default function POS({ user, onLogout }) {
                 </div>
               </div>
               {/* Payment method breakdown */}
-              <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+              <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
                 <div className="bg-white border border-slate-200 rounded-lg p-2 flex items-center justify-between">
                   <span className="font-bold text-slate-600">💵 ສົດ</span>
                   <span className="font-mono-t"><span className="font-extrabold">{dailySummary.today.cash_count}</span> · <span className="text-emerald-700">{formatPrice(dailySummary.today.cash_revenue)}</span></span>
@@ -1480,6 +2245,10 @@ export default function POS({ user, onLogout }) {
                 <div className="bg-white border border-slate-200 rounded-lg p-2 flex items-center justify-between">
                   <span className="font-bold text-slate-600">📱 QR</span>
                   <span className="font-mono-t"><span className="font-extrabold">{dailySummary.today.qr_count}</span> · <span className="text-emerald-700">{formatPrice(dailySummary.today.qr_revenue)}</span></span>
+                </div>
+                <div className="bg-white border border-amber-200 rounded-lg p-2 flex items-center justify-between">
+                  <span className="font-bold text-amber-700">🧾 ເຊື່ອ</span>
+                  <span className="font-mono-t"><span className="font-extrabold">{dailySummary.today.credit_count || 0}</span> · <span className="text-amber-700">{formatPrice(dailySummary.today.credit_revenue || 0)}</span></span>
                 </div>
               </div>
               {/* Top items today */}
@@ -1519,13 +2288,17 @@ export default function POS({ user, onLogout }) {
                 <div key={order.id} className="bg-white border border-slate-200 rounded-xl p-3 hover:border-slate-400 transition">
                   <div className="flex justify-between items-start mb-2 gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[10px] font-mono-t bg-red-100 text-red-900 font-extrabold px-2 py-0.5 rounded shrink-0">#{order.id}</span>
+                      <span className="text-[10px] font-mono-t bg-red-100 text-red-900 font-extrabold px-2 py-0.5 rounded shrink-0">{order.bill_number || `#${order.id}`}</span>
                       <div className="min-w-0">
                         <div className="text-sm font-bold text-slate-900">
-                          {order.payment_method === 'cash' ? '💵 ເງິນສົດ' : order.payment_method === 'transfer' ? '🏦 ໂອນ' : '📱 QR'}
+                          {order.payment_method === 'cash' ? '💵 ເງິນສົດ' : order.payment_method === 'transfer' ? '🏦 ໂອນ' : order.payment_method === 'credit' ? '🧾 ຂາຍເຊື່ອ' : '📱 QR'}
+                          {order.member_id && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">ສະມາຊິກ</span>}
                           {isToday && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">ມື້ນີ້</span>}
                         </div>
-                        <div className="text-[10px] text-slate-500">{new Date(order.created_at).toLocaleString('lo-LA')}</div>
+                        <div className="text-[10px] text-slate-500">
+                          {new Date(order.created_at).toLocaleString('lo-LA')}
+                          {order.payment_method === 'credit' && order.customer_name ? ` · ${order.customer_name}` : ''}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -1553,6 +2326,12 @@ export default function POS({ user, onLogout }) {
                   {order.note && (
                     <div className="mt-2 text-[11px] text-slate-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
                       📝 {order.note}
+                    </div>
+                  )}
+                  {order.payment_method === 'credit' && (
+                    <div className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                      ຍອດຄ້າງ {formatPrice(Number(order.total) - Number(order.amount_paid || 0))}
+                      {order.credit_due_date ? ` · ກຳນົດ ${new Date(order.credit_due_date).toLocaleDateString('lo-LA')}` : ''}
                     </div>
                   )}
                 </div>

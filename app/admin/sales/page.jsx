@@ -23,6 +23,7 @@ const methodMeta = {
   transfer: { icon: '🏦', label: 'ໂອນ', color: 'blue' },
   qr: { icon: '📱', label: 'QR', color: 'violet' },
   mixed: { icon: '🎯', label: 'ປະສົມ', color: 'amber' },
+  credit: { icon: '🧾', label: 'ເຊື່ອ', color: 'rose' },
 }
 
 export default function Sales() {
@@ -75,7 +76,7 @@ export default function Sales() {
       const q = search.toLowerCase().trim()
       if (q) {
         const items = Array.isArray(o.items) ? o.items : []
-        const hay = `${o.id} ${items.map(i => i?.product_name || '').join(' ')} ${o.note || ''}`.toLowerCase()
+        const hay = `${o.id} ${items.map(i => i?.product_name || '').join(' ')} ${o.note || ''} ${o.customer_name || ''} ${o.customer_phone || ''}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
       if (methodFilter && o.payment_method !== methodFilter) return false
@@ -89,12 +90,15 @@ export default function Sales() {
     const count = filtered.length
     const avg = count > 0 ? total / count : 0
     const methods = {}
-    for (const m of ['cash', 'transfer', 'qr', 'mixed']) {
+    for (const m of ['cash', 'transfer', 'qr', 'mixed', 'credit']) {
       const items = filtered.filter(o => (o.payment_method || 'cash') === m)
       methods[m] = { count: items.length, total: items.reduce((s, o) => s + (Number(o.total) || 0), 0) }
     }
+    const creditRemaining = filtered
+      .filter(o => o.payment_method === 'credit')
+      .reduce((s, o) => s + Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0)), 0)
     const itemsCount = filtered.reduce((s, o) => s + (Array.isArray(o.items) ? o.items.reduce((ss, it) => ss + (Number(it?.quantity) || 0), 0) : 0), 0)
-    return { total, discount, count, avg, methods, itemsCount }
+    return { total, discount, count, avg, methods, itemsCount, creditRemaining }
   }, [filtered])
 
   // Top products
@@ -134,6 +138,7 @@ export default function Sales() {
     { l: '💵 ສົດ', v: fmtNum(stats.methods.cash.count), sub: fmtCompact(stats.methods.cash.total), color: 'emerald' },
     { l: '🏦 ໂອນ', v: fmtNum(stats.methods.transfer.count), sub: fmtCompact(stats.methods.transfer.total), color: 'blue' },
     { l: '📱 QR', v: fmtNum(stats.methods.qr.count), sub: fmtCompact(stats.methods.qr.total), color: 'violet' },
+    { l: '🧾 ເຊື່ອ', v: fmtNum(stats.methods.credit.count), sub: `ຄ້າງ ${fmtCompact(stats.creditRemaining)}`, color: 'rose' },
     { l: 'ສ່ວນຫຼຸດ', v: fmtCompact(stats.discount), sub: stats.total > 0 ? `${(stats.discount / stats.total * 100).toFixed(1)}% ຂອງລວມ` : '—', color: 'amber' },
   ]
   const kpiColor = {
@@ -149,7 +154,7 @@ export default function Sales() {
   useEffect(() => { setPage(1) }, [search, methodFilter, perPage])
 
   const exportCSV = () => {
-    const headers = ['id', 'datetime', 'payment_method', 'items_count', 'subtotal', 'discount', 'total', 'amount_paid', 'change']
+    const headers = ['id', 'datetime', 'payment_method', 'customer_name', 'customer_phone', 'credit_due_date', 'credit_remaining', 'items_count', 'subtotal', 'discount', 'total', 'amount_paid', 'change']
     const lines = [headers.join(',')]
     for (const o of filtered) {
       const items = Array.isArray(o.items) ? o.items : []
@@ -157,6 +162,8 @@ export default function Sales() {
       const subtotal = (Number(o.total) || 0) + (Number(o.discount) || 0)
       lines.push([
         o.id, `"${new Date(o.created_at).toLocaleString('lo-LA')}"`, o.payment_method || 'cash',
+        `"${o.customer_name || ''}"`, `"${o.customer_phone || ''}"`, o.credit_due_date || '',
+        o.payment_method === 'credit' ? Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0)) : 0,
         itemsCount, subtotal, o.discount || 0, o.total, o.amount_paid || 0, o.change_amount || 0
       ].join(','))
     }
@@ -171,7 +178,7 @@ export default function Sales() {
   }
 
   const handleDelete = async (order) => {
-    if (!confirm(`ລົບບິນ #${order.id}?\nສະຕ໊ອກສິນຄ້າໃນບິນນີ້ຈະຖືກຄືນ.`)) return
+    if (!confirm(`ລົບບິນ ${order.bill_number || `#${order.id}`}?\nສະຕ໊ອກສິນຄ້າໃນບິນນີ້ຈະຖືກຄືນ.`)) return
     setDeletingId(order.id)
     try {
       const res = await fetch(`${API}/orders/${order.id}`, { method: 'DELETE' })
@@ -214,7 +221,7 @@ export default function Sales() {
       </div>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
         {kpis.map((k, i) => (
           <div key={i} className={`rounded-lg border p-3 ${kpiColor[k.color]}`}>
             <div className="text-[10px] font-bold uppercase tracking-wider opacity-70">{k.l}</div>
@@ -315,7 +322,7 @@ export default function Sales() {
       <div className="bg-white border border-slate-200 rounded-lg p-2 mb-3 flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[240px]">
           <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input type="text" placeholder="ຄົ້ນຫາ ID, ຊື່ສິນຄ້າ, ໝາຍເຫດ..." value={search}
+          <input type="text" placeholder="ຄົ້ນຫາ ID, ຊື່ສິນຄ້າ, ລູກຄ້າ, ໝາຍເຫດ..." value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs outline-none focus:border-red-500" />
         </div>
@@ -325,6 +332,7 @@ export default function Sales() {
             { key: 'cash', label: `💵 ສົດ · ${stats.methods.cash.count}`, cls: 'bg-emerald-500 text-white' },
             { key: 'transfer', label: `🏦 ໂອນ · ${stats.methods.transfer.count}`, cls: 'bg-red-500 text-white' },
             { key: 'qr', label: `📱 QR · ${stats.methods.qr.count}`, cls: 'bg-violet-500 text-white' },
+            { key: 'credit', label: `🧾 ເຊື່ອ · ${stats.methods.credit.count}`, cls: 'bg-rose-500 text-white' },
             ...(stats.methods.mixed.count > 0 ? [{ key: 'mixed', label: `🎯 ປະສົມ · ${stats.methods.mixed.count}`, cls: 'bg-amber-500 text-white' }] : []),
           ].map(s => (
             <button key={s.key} onClick={() => setMethodFilter(s.key)}
@@ -359,6 +367,7 @@ export default function Sales() {
                   <th className="text-left py-2 px-3 w-16">ID</th>
                   <th className="text-left py-2 px-3 whitespace-nowrap">ວັນທີ/ເວລາ</th>
                   <th className="text-center py-2 px-3 w-20">ວິທີ</th>
+                  <th className="text-left py-2 px-3 whitespace-nowrap">ລູກຄ້າ</th>
                   <th className="text-right py-2 px-3 w-16">ຊິ້ນ</th>
                   <th className="text-right py-2 px-3 whitespace-nowrap">ຫຼຸດ</th>
                   <th className="text-right py-2 px-3 whitespace-nowrap">ຍອດລວມ</th>
@@ -380,13 +389,13 @@ export default function Sales() {
                   )
                 })}
                 {paged.length === 0 && (
-                  <tr><td colSpan="10" className="text-center text-slate-300 py-12 text-xs">ບໍ່ມີຂໍ້ມູນການຂາຍ</td></tr>
+                  <tr><td colSpan="11" className="text-center text-slate-300 py-12 text-xs">ບໍ່ມີຂໍ້ມູນການຂາຍ</td></tr>
                 )}
               </tbody>
               {filtered.length > 0 && (
                 <tfoot className="sticky bottom-0 bg-slate-50 border-t-2 border-slate-200">
                   <tr className="text-[11px] font-extrabold">
-                    <td colSpan="5" className="py-2 px-3 text-right text-slate-500 uppercase tracking-wider">ລວມ ({filtered.length} ບິນ)</td>
+                    <td colSpan="6" className="py-2 px-3 text-right text-slate-500 uppercase tracking-wider">ລວມ ({filtered.length} ບິນ)</td>
                     <td className="py-2 px-3 text-right font-mono text-amber-700">{fmtPrice(stats.discount)}</td>
                     <td className="py-2 px-3 text-right font-mono text-emerald-700">{fmtPrice(stats.total)}</td>
                     <td colSpan="3"></td>
@@ -436,7 +445,7 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
           <span className={`inline-block transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
         </td>
         <td className="py-1.5 px-3">
-          <span className="font-mono text-[11px] font-extrabold bg-red-50 text-red-700 px-1.5 py-0.5 rounded">#{o.id}</span>
+          <span className="font-mono text-[11px] font-extrabold bg-red-50 text-red-700 px-1.5 py-0.5 rounded">{o.bill_number || `#${o.id}`}</span>
         </td>
         <td className="py-1.5 px-3 text-[11px] font-mono text-slate-500 whitespace-nowrap">{fmtDT(o.created_at)}</td>
         <td className="py-1.5 px-3 text-center">
@@ -444,13 +453,27 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
             {m.icon} {m.label}
           </span>
         </td>
+        <td className="py-1.5 px-3 text-[11px] text-slate-600">
+          {o.payment_method === 'credit' ? (
+            <div className="leading-tight">
+              <div className="font-bold text-rose-700 truncate max-w-[160px]">{o.customer_name || '—'}</div>
+              <div className="text-[10px] text-slate-400">
+                {o.credit_due_date ? `ຄົບ ${new Date(o.credit_due_date).toLocaleDateString('lo-LA')}` : 'ບໍ່ມີວັນຄົບ'}
+              </div>
+            </div>
+          ) : (
+            <span className="text-slate-300">—</span>
+          )}
+        </td>
         <td className="py-1.5 px-3 text-right font-mono font-bold text-slate-700">{fmtNum(itemsCount)}</td>
         <td className="py-1.5 px-3 text-right font-mono text-amber-700">
           {Number(o.discount) > 0 ? `−${fmtNum(o.discount)}` : <span className="text-slate-300">—</span>}
         </td>
         <td className="py-1.5 px-3 text-right font-mono font-extrabold text-emerald-700">{fmtNum(o.total)}</td>
         <td className="py-1.5 px-3 text-right font-mono text-slate-500">{fmtNum(o.amount_paid)}</td>
-        <td className="py-1.5 px-3 text-right font-mono text-slate-500">{fmtNum(o.change_amount)}</td>
+        <td className={`py-1.5 px-3 text-right font-mono ${o.payment_method === 'credit' ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+          {o.payment_method === 'credit' ? fmtNum(Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0))) : fmtNum(o.change_amount)}
+        </td>
         <td className="py-1.5 px-3 text-right">
           <button
             onClick={(e) => { e.stopPropagation(); onDelete() }}
@@ -466,7 +489,7 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
       </tr>
       {isExpanded && (
         <tr className="bg-slate-50/50">
-          <td colSpan="10" className="px-3 py-2">
+          <td colSpan="11" className="px-3 py-2">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">ລາຍການໃນບິນ ({(o.items || []).length})</div>
             <table className="w-full text-[11px]">
               <thead>
@@ -491,6 +514,11 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
             {o.note && (
               <div className="mt-2 text-[11px] text-slate-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
                 📝 {o.note}
+              </div>
+            )}
+            {o.payment_method === 'credit' && (
+              <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
+                🧾 ບິນເຊື່ອ · {o.customer_name || '—'}{o.customer_phone ? ` · ${o.customer_phone}` : ''} · ຍອດຄ້າງ {fmtPrice(Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0)))}
               </div>
             )}
           </td>

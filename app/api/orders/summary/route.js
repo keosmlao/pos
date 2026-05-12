@@ -18,7 +18,9 @@ export const GET = handle(async () => {
       COUNT(*) FILTER (WHERE payment_method = 'transfer')::int AS transfer_count,
       COALESCE(SUM(total) FILTER (WHERE payment_method = 'transfer'), 0)::float AS transfer_revenue,
       COUNT(*) FILTER (WHERE payment_method = 'qr')::int AS qr_count,
-      COALESCE(SUM(total) FILTER (WHERE payment_method = 'qr'), 0)::float AS qr_revenue
+      COALESCE(SUM(total) FILTER (WHERE payment_method = 'qr'), 0)::float AS qr_revenue,
+      COUNT(*) FILTER (WHERE payment_method = 'credit')::int AS credit_count,
+      COALESCE(SUM(total) FILTER (WHERE payment_method = 'credit'), 0)::float AS credit_revenue
     FROM orders
     WHERE created_at::date = CURRENT_DATE
   `);

@@ -21,13 +21,23 @@ const menuSections = [
     ],
   },
   {
-    title: 'ຊື້ / ຂາຍ',
+    title: 'ຊື້',
     items: [
       { path: '/admin/purchases', icon: '\u{1F6D2}', label: 'ລະບົບຊື້ເຂົ້າ' },
-      { path: '/admin/debts', icon: '\u{1F4B3}', label: 'ຊຳລະໜີ້' },
+      { path: '/admin/debts', icon: '\u{1F4B3}', label: 'ໜີ້ຜູ້ສະໜອງ' },
+      { path: '/admin/debt-payments/supplier', icon: '\u{1F4B8}', label: 'ຊຳລະໃຫ້ເຈົ້າໜີ້' },
+    ],
+  },
+  {
+    title: 'ຂາຍ',
+    items: [
       { path: '/admin/pricing', icon: '\u{1F4B2}', label: 'ກຳນົດລາຄາຂາຍ' },
       { path: '/admin/promotions', icon: '\u{1F381}', label: 'ໂປຣໂມຊັ່ນ' },
+      { path: '/admin/members', icon: '\u{1Faaa}', label: 'ສະມາຊິກ' },
+      { path: '/admin/loyalty', icon: '\u{2B50}', label: 'ຕັ້ງຄ່າແຕ້ມສະສົມ' },
       { path: '/admin/sales', icon: '\u{1F4CB}', label: 'ປະຫວັດການຂາຍ' },
+      { path: '/admin/customer-debts', icon: '\u{1F9FE}', label: 'ໜີ້ລູກຄ້າ' },
+      { path: '/admin/debt-payments/customer', icon: '\u{1F4B5}', label: 'ຊຳລະຈາກລູກໜີ້' },
       { path: '/admin/cash-handovers', icon: '\u{1F4B0}', label: 'ລາຍການສົ່ງເງິນ' },
     ],
   },
@@ -36,7 +46,9 @@ const menuSections = [
     items: [
       { path: '/admin/users', icon: '\u{1F464}', label: 'User ແລະ ສິດ' },
       { path: '/admin/currencies', icon: '\u{1F4B1}', label: 'ສະກຸນເງິນ / ອັດຕາ' },
+      { path: '/admin/locations', icon: '\u{1F4CD}', label: 'ແຂວງ / ເມືອງ / ບ້ານ' },
       { path: '/admin/company', icon: '\u{1F3E2}', label: 'ຂໍ້ມູນບໍລິສັດ' },
+      { path: '/admin/bill-format', icon: '\u{1F9FE}', label: 'ຮູບແບບເລກບິນ' },
     ],
   },
 ];

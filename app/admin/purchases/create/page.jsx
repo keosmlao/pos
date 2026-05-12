@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import SearchSelect from '@/components/SearchSelect'
-import { generateAndPrintPurchaseReceipt } from '@/utils/receiptPdfGenerator'
+import { generateAndPrintPurchaseA4 } from '@/utils/receiptPdfGenerator'
 
 const API = '/api'
 
@@ -251,7 +251,7 @@ export default function PurchaseCreate() {
       setShowSuccess(true)
       setTimeout(async () => {
         try {
-          await generateAndPrintPurchaseReceipt(data, form, items,
+          await generateAndPrintPurchaseA4(data, form, items,
             selectedSupplier?.name || 'Unknown',
             subtotal, discountAmount, itemsTotal, form.currency)
         } catch (err) { console.error('Print failed:', err) }

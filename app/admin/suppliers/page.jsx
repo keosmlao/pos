@@ -2,7 +2,7 @@
 
 
 import { useState, useEffect, useMemo } from 'react'
-import laoLocations from '@/data/laoLocations'
+import { useLocations } from '@/utils/useLocations'
 import SearchSelect from '@/components/SearchSelect'
 
 const API = '/api'
@@ -15,6 +15,7 @@ const emptyForm = {
 }
 
 export default function Suppliers() {
+  const laoLocations = useLocations()
   const [suppliers, setSuppliers] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)

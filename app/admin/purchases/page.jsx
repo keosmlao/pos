@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { generateAndPrintPurchaseReceipt, generateAndPrintPaymentReceipt } from '@/utils/receiptPdfGenerator'
+import { generateAndPrintPurchaseA4, generateAndPrintPaymentReceipt } from '@/utils/receiptPdfGenerator'
 
 const API = '/api'
 
@@ -409,7 +409,7 @@ export default function Purchases() {
 
   const handlePrint = async (purchase) => {
     try {
-      await generateAndPrintPurchaseReceipt(
+      await generateAndPrintPurchaseA4(
         purchase,
         {
           ref_number: purchase.ref_number,
