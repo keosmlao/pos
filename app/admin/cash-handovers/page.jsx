@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react'
+import { AdminHero } from '@/components/admin/ui/AdminHero'
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0)
@@ -118,18 +119,12 @@ export default function CashHandovers() {
   }
 
   return (
-    <div className="text-[13px]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ລາຍການສົ່ງເງິນປະຈຳວັນ</h2>
-          <span className="text-[11px] text-slate-400">·</span>
-          <span className="text-xs text-slate-500">{fmtNum(rows.length)} ລາຍການ</span>
-          {stats.pendingCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-amber-500 text-white rounded animate-pulse">⏳ {stats.pendingCount} ລໍຮັບ</span>}
-          {stats.overCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-amber-50 text-amber-600 rounded">{stats.overCount} ເກີນ</span>}
-          {stats.shortCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-rose-50 text-rose-600 rounded">{stats.shortCount} ຂາດ</span>}
-        </div>
-      </div>
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Cash handovers"
+        title="💰 ລາຍການສົ່ງເງິນປະຈຳວັນ"
+        subtitle={`${fmtNum(rows.length)} ລາຍການ${stats.pendingCount > 0 ? ` · ⏳ ${stats.pendingCount} ລໍຮັບ` : ''}${stats.overCount > 0 ? ` · ${stats.overCount} ເກີນ` : ''}${stats.shortCount > 0 ? ` · ${stats.shortCount} ຂາດ` : ''}`}
+      />
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">

@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok, readJson, fail } from '@/lib/api';
-import { ensureCompanyProfileSchema } from '@/lib/migrations';
+import { ensureCompanyProfileSchema, ensureMembersSchema } from '@/lib/migrations';
+import { recomputeAllMemberTiers } from '@/lib/memberTiers';
 
 const LOYALTY_FIELDS = [
   'loyalty_enabled',
@@ -12,6 +13,7 @@ const LOYALTY_FIELDS = [
   'tier_silver_threshold',
   'tier_gold_threshold',
   'tier_platinum_threshold',
+  'points_lifetime_months',
 ];
 
 export const GET = handle(async () => {
@@ -33,6 +35,7 @@ export const PUT = handle(async (request) => {
   const silver = Math.max(0, parseInt(body.tier_silver_threshold, 10) || 0);
   const gold = Math.max(0, parseInt(body.tier_gold_threshold, 10) || 0);
   const platinum = Math.max(0, parseInt(body.tier_platinum_threshold, 10) || 0);
+  const lifetimeMonths = Math.max(0, Math.min(120, parseInt(body.points_lifetime_months, 10) || 0));
 
   if (!(silver <= gold && gold <= platinum)) {
     return fail(400, 'Tier thresholds must be silver <= gold <= platinum');
@@ -47,10 +50,16 @@ export const PUT = handle(async (request) => {
        tier_silver_threshold = $5,
        tier_gold_threshold = $6,
        tier_platinum_threshold = $7,
+       points_lifetime_months = $8,
        updated_at = NOW()
      WHERE id = 1
      RETURNING ${LOYALTY_FIELDS.join(', ')}`,
-    [enabled, perAmount, redeemValue, minRedeem, silver, gold, platinum]
+    [enabled, perAmount, redeemValue, minRedeem, silver, gold, platinum, lifetimeMonths]
   );
-  return ok(result.rows[0]);
+
+  await ensureMembersSchema();
+  let promoted = 0;
+  try { promoted = await recomputeAllMemberTiers(); } catch {}
+
+  return ok({ ...result.rows[0], tiers_recomputed: promoted });
 });

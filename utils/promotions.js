@@ -55,7 +55,7 @@ function itemMatchesScope(item, promo) {
  *   appliedPromos: [{id, name, type, amount}]
  * }}
  */
-export function calculatePromotions(cart, promotions, products = []) {
+export function calculatePromotions(cart, promotions, products = [], activeCouponCodes = []) {
   const result = {
     lineDiscounts: {},
     priceOverrides: {},
@@ -85,9 +85,22 @@ export function calculatePromotions(cart, promotions, products = []) {
     })
   }
 
+  // Coupon-gated promos only apply when their code is activated by the cashier
+  const codeSet = new Set(
+    (Array.isArray(activeCouponCodes) ? activeCouponCodes : [])
+      .map(c => String(c || '').trim().toUpperCase())
+      .filter(Boolean)
+  )
+  const passesCodeGate = (promo) => {
+    if (!promo.requires_code) return true
+    const c = String(promo.code || '').trim().toUpperCase()
+    return c ? codeSet.has(c) : false
+  }
+
   // Sort by priority desc (higher first), then by most restrictive first
   const active = promotions
     .filter(isScheduleActive)
+    .filter(passesCodeGate)
     .sort((a, b) => (b.priority || 0) - (a.priority || 0))
 
   // Track which promo ids were applied exclusively to avoid stacking

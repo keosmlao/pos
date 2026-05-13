@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
-import { ensurePendingInvoicesSchema } from '@/lib/migrations';
+import { ensureCompanyProfileSchema, ensurePendingInvoicesSchema } from '@/lib/migrations';
+import { allocateDocumentNumber } from '@/lib/billNumber';
 
 export const GET = handle(async () => {
   await ensurePendingInvoicesSchema();
@@ -30,6 +31,7 @@ export const GET = handle(async () => {
 
 export const POST = handle(async (request) => {
   await ensurePendingInvoicesSchema();
+  await ensureCompanyProfileSchema();
   const body = await readJson(request);
   const {
     supplier_id, total, paid, currency, payment_method, invoice_file, note,
@@ -61,11 +63,16 @@ export const POST = handle(async (request) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    let resolvedRefNumber = String(ref_number || '').trim() || null;
+    if (!resolvedRefNumber) {
+      const settingsRes = await client.query('SELECT * FROM company_profile WHERE id = 1');
+      resolvedRefNumber = await allocateDocumentNumber(client, 'purchase', settingsRes.rows[0] || {});
+    }
 
     const purchaseResult = await client.query(
       `INSERT INTO purchases (supplier_id, total, paid, status, currency, payment_method, invoice_file, note, ref_number, payment_type, due_date, exchange_rate, original_total, discount_amount, subtotal, sml_doc_no, sml_doc_date, source)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
-      [supplier_id, normalizedTotal, normalizedPaid, normalizedStatus, currency || 'LAK', normalizedPaymentMethod, invoice_file, note, ref_number, normalizedPaymentType, normalizedDueDate, normalizedExchangeRate, normalizedOriginalTotal, normalizedDiscountAmount, normalizedSubtotal, sml_doc_no || null, sml_doc_date || null, sml_doc_no ? 'sml' : 'manual']
+      [supplier_id, normalizedTotal, normalizedPaid, normalizedStatus, currency || 'LAK', normalizedPaymentMethod, invoice_file, note, resolvedRefNumber, normalizedPaymentType, normalizedDueDate, normalizedExchangeRate, normalizedOriginalTotal, normalizedDiscountAmount, normalizedSubtotal, sml_doc_no || null, sml_doc_date || null, sml_doc_no ? 'sml' : 'manual']
     );
     const purchase = purchaseResult.rows[0];
 

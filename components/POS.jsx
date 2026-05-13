@@ -6,12 +6,48 @@ import { calculatePromotions } from '../utils/promotions'
 import { useCompanyProfile } from '../utils/useCompanyProfile'
 import { connectCashDrawer, isCashDrawerSupported, openCashDrawer } from '../utils/cashDrawer'
 import { useLocations } from '../utils/useLocations'
+import { useBranches } from '../utils/useBranches'
+import { firstAccessibleAdminPath } from '../utils/adminPermissions'
+import { normalizeVatSettings, applyVat } from '../lib/vat'
+import { applyRounding } from '../lib/rounding'
 import SearchSelect from './SearchSelect'
 
 const API = '/api'
+const POS_DRAFT_KEY = 'pos_sale_draft_v1'
 
 function formatPrice(price) { return new Intl.NumberFormat('lo-LA').format(price) + ' ₭' }
 function formatNumber(n) { return new Intl.NumberFormat('lo-LA').format(n) }
+function dateAfterDays(days) {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+function daysUntilDate(dateText) {
+  if (!dateText) return ''
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const due = new Date(dateText)
+  if (Number.isNaN(due.getTime())) return ''
+  due.setHours(0, 0, 0, 0)
+  return Math.round((due.getTime() - today.getTime()) / 86400000)
+}
+
+function readPosDraft() {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(POS_DRAFT_KEY)
+    if (!raw) return null
+    const draft = JSON.parse(raw)
+    return draft && typeof draft === 'object' ? draft : null
+  } catch {
+    return null
+  }
+}
+
+function clearPosDraft() {
+  if (typeof window === 'undefined') return
+  try { localStorage.removeItem(POS_DRAFT_KEY) } catch {}
+}
 
 function Toast({ message, type, onClose }) {
   useEffect(() => {
@@ -29,7 +65,7 @@ function Toast({ message, type, onClose }) {
 }
 
 function Modal({ children, onClose, title, size = 'md' }) {
-  const sizes = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-3xl' }
+  const sizes = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-3xl', '2xl': 'max-w-3xl' }
   return (
     <div className="fixed inset-0 bg-slate-950/70 backdrop-blur flex items-center justify-center z-50 p-4 animate-fade-in text-slate-900" onClick={onClose}>
       <div className={`bg-white text-slate-900 rounded-2xl shadow-2xl w-full ${sizes[size]} max-h-[90vh] overflow-hidden flex flex-col animate-scale-in`} onClick={e => e.stopPropagation()}>
@@ -67,26 +103,43 @@ export default function POS({ user, onLogout }) {
   const router = useRouter()
   const company = useCompanyProfile()
   const laoLocations = useLocations()
+  const { branches, activeBranch, activeBranchId, setActiveBranchId } = useBranches()
+  const initialDraftRef = useRef(null)
+  if (initialDraftRef.current === null) initialDraftRef.current = readPosDraft() || {}
+  const initialDraft = initialDraftRef.current
   const searchInputRef = useRef(null)
   const lastScannedBarcodeRef = useRef('')
   const [categories, setCategories] = useState([])
   const [products, setProducts] = useState([])
-  const [cart, setCart] = useState([])
+  const [cart, setCart] = useState(() => Array.isArray(initialDraft.cart) ? initialDraft.cart : [])
   const [selectedCategory, setSelectedCategory] = useState(null)
   const [search, setSearch] = useState('')
   const [showCheckout, setShowCheckout] = useState(false)
-  const [amountPaid, setAmountPaid] = useState('')
+  const [amountPaid, setAmountPaid] = useState(() => initialDraft.amountPaid || '')
   const [showReceipt, setShowReceipt] = useState(null)
   const [showOrders, setShowOrders] = useState(false)
   const [orders, setOrders] = useState([])
+  const [showReturn, setShowReturn] = useState(false)
+  const [returnSearch, setReturnSearch] = useState('')
+  const [returnLookup, setReturnLookup] = useState(null)
+  const [returnQty, setReturnQty] = useState({})
+  const [returnMethod, setReturnMethod] = useState('cash')
+  const [returnNote, setReturnNote] = useState('')
+  const [returnBusy, setReturnBusy] = useState(false)
   const [toast, setToast] = useState(null)
-  const [discount, setDiscount] = useState(0)
-  const [paymentMethod, setPaymentMethod] = useState('cash')
-  const [customerNote, setCustomerNote] = useState('')
-  const [creditCustomer, setCreditCustomer] = useState({ name: '', phone: '', dueDate: '' })
+  const [discount, setDiscount] = useState(() => Number(initialDraft.discount) || 0)
+  const [discountMode, setDiscountMode] = useState(() => initialDraft.discountMode === 'amount' ? 'amount' : 'percent') // 'percent' | 'amount'
+  const [paymentMethod, setPaymentMethod] = useState(() => initialDraft.paymentMethod || 'cash')
+  const [customerNote, setCustomerNote] = useState(() => initialDraft.customerNote || '')
+  const [creditCustomer, setCreditCustomer] = useState(() => ({
+    name: '',
+    phone: '',
+    dueDate: dateAfterDays(30),
+    ...(initialDraft.creditCustomer || {}),
+  }))
   const [members, setMembers] = useState([])
   const [memberSearch, setMemberSearch] = useState('')
-  const [selectedMember, setSelectedMember] = useState(DEFAULT_MEMBER)
+  const [selectedMember, setSelectedMember] = useState(() => initialDraft.selectedMember || DEFAULT_MEMBER)
   const [memberForm, setMemberForm] = useState({ name: '', phone: '', province: '', district: '', village: '' })
   const [creatingMember, setCreatingMember] = useState(false)
   const [showMemberModal, setShowMemberModal] = useState(false)
@@ -94,7 +147,7 @@ export default function POS({ user, onLogout }) {
   const [lastScan, setLastScan] = useState(null)
   const [flash, setFlash] = useState(0)
   const [currencies, setCurrencies] = useState([])
-  const [payments, setPayments] = useState([]) // [{ currency, amount }]
+  const [payments, setPayments] = useState(() => Array.isArray(initialDraft.payments) ? initialDraft.payments : []) // [{ currency, amount }]
   const [promotions, setPromotions] = useState([])
   const [dailySummary, setDailySummary] = useState(null)
   const [showDailySummary, setShowDailySummary] = useState(false)
@@ -110,7 +163,8 @@ export default function POS({ user, onLogout }) {
     points_redeem_value: 0,
     min_points_to_redeem: 0,
   })
-  const [pointsToRedeem, setPointsToRedeem] = useState(0)
+  const [pointsToRedeem, setPointsToRedeem] = useState(() => Number(initialDraft.pointsToRedeem) || 0)
+  const [activeCurrencyCode, setActiveCurrencyCode] = useState('LAK')
   const [receiptSize, setReceiptSize] = useState(() => {
     if (typeof window === 'undefined') return '80mm'
     return localStorage.getItem('pos_receipt_size') || '80mm'
@@ -118,6 +172,28 @@ export default function POS({ user, onLogout }) {
   useEffect(() => {
     if (typeof window !== 'undefined') localStorage.setItem('pos_receipt_size', receiptSize)
   }, [receiptSize])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (cart.length === 0) {
+      clearPosDraft()
+      return
+    }
+    try {
+      localStorage.setItem(POS_DRAFT_KEY, JSON.stringify({
+        cart,
+        amountPaid,
+        discount,
+        discountMode,
+        paymentMethod,
+        customerNote,
+        creditCustomer,
+        selectedMember,
+        payments,
+        pointsToRedeem,
+        savedAt: new Date().toISOString(),
+      }))
+    } catch {}
+  }, [cart, amountPaid, discount, discountMode, paymentMethod, customerNote, creditCustomer, selectedMember, payments, pointsToRedeem])
   const [debtAlerts, setDebtAlerts] = useState(null)
   const [showDebtAlerts, setShowDebtAlerts] = useState(false)
   const customerWinRef = useRef(null)
@@ -178,6 +254,15 @@ export default function POS({ user, onLogout }) {
     }).catch(() => {})
   }, [])
   useEffect(() => { setPointsToRedeem(0) }, [selectedMember?.id])
+  useEffect(() => {
+    if (selectedMember?.isDefault && paymentMethod === 'credit') {
+      setPaymentMethod('cash')
+    }
+  }, [selectedMember?.isDefault, paymentMethod])
+  useEffect(() => {
+    if (paymentMethod !== 'credit') return
+    setCreditCustomer(c => c.dueDate ? c : { ...c, dueDate: dateAfterDays(30) })
+  }, [paymentMethod])
 
   const loadDebtAlerts = useCallback(async () => {
     try {
@@ -198,7 +283,8 @@ export default function POS({ user, onLogout }) {
       if (cancelled || !data) return
       const overdue = data.counts?.overdue || 0
       const today = data.counts?.today || 0
-      if (overdue + today === 0) return
+      const upcoming = data.counts?.upcoming || 0
+      if (overdue + today + upcoming === 0) return
       const todayKey = new Date().toISOString().slice(0, 10)
       const shownKey = localStorage.getItem('pos_debt_alerts_shown')
       if (shownKey !== todayKey) {
@@ -211,7 +297,7 @@ export default function POS({ user, onLogout }) {
   }, [loadDebtAlerts])
 
   // Refocus scan input ONLY when all modals just closed (no polling to avoid stealing focus from other inputs)
-  const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary || showMemberModal || showDebtAlerts
+  const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary || showMemberModal || showDebtAlerts || showReturn
   useEffect(() => {
     if (anyModalOpen) return
     const tmr = setTimeout(() => {
@@ -227,7 +313,16 @@ export default function POS({ user, onLogout }) {
   const findBarcodeMatch = useCallback((barcode, source = products) => {
     const normalizedBarcode = normalizeBarcode(barcode)
     if (!normalizedBarcode) return null
-    return source.find(product => normalizeBarcode(product.barcode) === normalizedBarcode) || null
+    // First: product-level barcode
+    const product = source.find(p => normalizeBarcode(p.barcode) === normalizedBarcode)
+    if (product) return { product, variant: null }
+    // Then: variant barcode
+    for (const p of source) {
+      const variants = Array.isArray(p.variants) ? p.variants : []
+      const v = variants.find(x => normalizeBarcode(x.barcode) === normalizedBarcode)
+      if (v) return { product: p, variant: v }
+    }
+    return null
   }, [normalizeBarcode, products])
 
   const flashScreen = () => {
@@ -235,12 +330,16 @@ export default function POS({ user, onLogout }) {
     setTimeout(() => setFlash(f => Math.max(0, f - 1)), 300)
   }
 
-  const handleBarcodeAutoAdd = (product, barcode) => {
+  const handleBarcodeAutoAdd = (match, barcode) => {
     const normalizedBarcode = normalizeBarcode(barcode)
-    if (!product || !normalizedBarcode) return
+    if (!match || !normalizedBarcode) return
     lastScannedBarcodeRef.current = normalizedBarcode
-    addToCart(product)
-    setLastScan({ product, at: Date.now() })
+    if (match.variant) {
+      addVariantToCart(match.product, match.variant)
+    } else {
+      addToCart(match.product)
+    }
+    setLastScan({ product: match.product, variant: match.variant, at: Date.now() })
     flashScreen()
     setSearch('')
     requestAnimationFrame(() => searchInputRef.current?.focus())
@@ -249,22 +348,43 @@ export default function POS({ user, onLogout }) {
   const addToCart = (product) => {
     if (product.qty_on_hand <= 0) { showToast('ສິນຄ້າໝົດສະຕ໊ອກ', 'error'); return }
     setCart(prev => {
-      const existing = prev.find(item => item.product_id === product.id)
+      const existing = prev.find(item => item.product_id === product.id && !item.variant_id)
       if (existing) {
         if (existing.quantity >= product.qty_on_hand) { showToast('ເກີນຈຳນວນສະຕ໊ອກ', 'error'); return prev }
-        return prev.map(item => item.product_id === product.id ? { ...item, quantity: item.quantity + 1 } : item)
+        return prev.map(item => item === existing ? { ...item, quantity: item.quantity + 1 } : item)
       }
       return [...prev, {
         product_id: product.id, name: product.product_name, code: product.product_code,
         price: Number(product.selling_price), unit: product.unit, quantity: 1, stock: product.qty_on_hand,
         category: product.category, brand: product.brand,
+        variant_id: null, variant_name: null,
       }]
     })
   }
 
-  const updateQuantity = (productId, delta) => {
+  const addVariantToCart = (product, variant) => {
+    if (variant.qty_on_hand <= 0) { showToast(`ສິນຄ້າ "${variant.variant_name}" ໝົດ`, 'error'); return }
+    const price = variant.selling_price != null ? Number(variant.selling_price) : Number(product.selling_price)
+    setCart(prev => {
+      const existing = prev.find(item => item.variant_id === variant.id)
+      if (existing) {
+        if (existing.quantity >= variant.qty_on_hand) { showToast('ເກີນຈຳນວນສະຕ໊ອກ', 'error'); return prev }
+        return prev.map(item => item === existing ? { ...item, quantity: item.quantity + 1 } : item)
+      }
+      return [...prev, {
+        product_id: product.id, name: `${product.product_name} · ${variant.variant_name}`,
+        code: variant.variant_code || product.product_code,
+        price, unit: product.unit, quantity: 1, stock: variant.qty_on_hand,
+        category: product.category, brand: product.brand,
+        variant_id: variant.id, variant_name: variant.variant_name,
+      }]
+    })
+  }
+
+  const updateQuantity = (productId, delta, variantId = null) => {
     setCart(prev => prev.map(item => {
-      if (item.product_id !== productId) return item
+      const matches = item.product_id === productId && (item.variant_id || null) === (variantId || null)
+      if (!matches) return item
       const newQty = item.quantity + delta
       if (newQty <= 0) return null
       if (newQty > item.stock) { showToast('ເກີນຈຳນວນສະຕ໊ອກ', 'error'); return item }
@@ -286,12 +406,111 @@ export default function POS({ user, onLogout }) {
   }, [search, products, findBarcodeMatch, normalizeBarcode, showCatalog])
 
   const cartTotal = useMemo(() => cart.reduce((s, i) => s + i.price * i.quantity, 0), [cart])
-  const promoResult = useMemo(() => calculatePromotions(cart, promotions, products), [cart, promotions, products])
+  const [activeCoupons, setActiveCoupons] = useState([]) // [{ code, name, id }]
+  const [couponInput, setCouponInput] = useState('')
+  const [couponBusy, setCouponBusy] = useState(false)
+  const activeCouponCodes = useMemo(() => activeCoupons.map(c => c.code), [activeCoupons])
+
+  const applyCoupon = useCallback(async (raw) => {
+    const code = String(raw || couponInput || '').trim().toUpperCase()
+    if (!code) return
+    if (activeCoupons.some(c => c.code === code)) { showToast('Coupon ນີ້ໃຊ້ແລ້ວ', 'error'); return }
+    setCouponBusy(true)
+    try {
+      const res = await fetch(`${API}/coupons/lookup?code=${encodeURIComponent(code)}`)
+      const data = await res.json()
+      if (!res.ok) { showToast(data.error || 'ບໍ່ພົບ Coupon', 'error'); setCouponBusy(false); return }
+      setActiveCoupons(prev => [...prev, { id: data.id, code, name: data.name }])
+      setCouponInput('')
+      showToast(`✓ ໃຊ້ ${data.name}`, 'success')
+    } catch {
+      showToast('ບໍ່ສາມາດກວດສອບ Coupon', 'error')
+    }
+    setCouponBusy(false)
+  }, [couponInput, activeCoupons])
+
+  const removeCoupon = useCallback((code) => {
+    setActiveCoupons(prev => prev.filter(c => c.code !== code))
+  }, [])
+
+  // Park & Recall ----------------------------------------------------------
+  const [showParkedModal, setShowParkedModal] = useState(false)
+  const [parkedCarts, setParkedCarts] = useState([])
+
+  const loadParkedCarts = useCallback(async () => {
+    try {
+      const params = new URLSearchParams()
+      if (activeBranchId) params.set('branch_id', activeBranchId)
+      const res = await fetch(`${API}/parked-carts?${params}`)
+      const data = await res.json()
+      setParkedCarts(Array.isArray(data) ? data : [])
+    } catch {
+      setParkedCarts([])
+    }
+  }, [activeBranchId])
+
+  useEffect(() => { loadParkedCarts() }, [loadParkedCarts])
+
+  const parkCurrentCart = useCallback(async () => {
+    if (cart.length === 0) { showToast('ກະຣຸນາເພີ່ມສິນຄ້າກ່ອນ', 'error'); return }
+    const defaultName = selectedMember && !selectedMember.isDefault
+      ? selectedMember.name
+      : `Park ${new Date().toLocaleTimeString('lo-LA', { hour: '2-digit', minute: '2-digit' })}`
+    const name = window.prompt('ຊື່ບີນພັກ (ສຳລັບອ້າງອີງ)', defaultName)
+    if (name === null) return
+    try {
+      const res = await fetch(`${API}/parked-carts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim() || defaultName,
+          cart,
+          discount,
+          discount_mode: discountMode,
+          member_id: selectedMember?.id || null,
+          branch_id: activeBranchId || null,
+          note: customerNote || null,
+        })
+      })
+      if (res.ok) {
+        showToast('ພັກບີນແລ້ວ', 'success')
+        setCart([]); setDiscount(0); setCustomerNote('')
+        loadParkedCarts()
+      } else {
+        showToast('ພັກບີນບໍ່ສຳເລັດ', 'error')
+      }
+    } catch {
+      showToast('ພັກບີນບໍ່ສຳເລັດ', 'error')
+    }
+  }, [cart, discount, discountMode, selectedMember, activeBranchId, customerNote, loadParkedCarts])
+
+  const recallParkedCart = useCallback(async (p) => {
+    if (cart.length > 0 && !window.confirm('ບີນປະຈຸບັນຍັງມີສິນຄ້າ — ໂຫຼດບີນພັກຈະທົດແທນ. ດຳເນີນຕໍ່?')) return
+    setCart(Array.isArray(p.cart) ? p.cart : [])
+    setDiscount(Number(p.discount) || 0)
+    setDiscountMode(p.discount_mode === 'amount' ? 'amount' : 'percent')
+    if (p.note) setCustomerNote(p.note)
+    try { await fetch(`${API}/parked-carts/${p.id}`, { method: 'DELETE' }) } catch {}
+    setShowParkedModal(false)
+    loadParkedCarts()
+    showToast('ໂຫຼດບີນພັກສຳເລັດ', 'success')
+  }, [cart, loadParkedCarts])
+
+  const deleteParkedCart = useCallback(async (id) => {
+    if (!window.confirm('ລົບບີນພັກນີ້?')) return
+    try { await fetch(`${API}/parked-carts/${id}`, { method: 'DELETE' }) } catch {}
+    loadParkedCarts()
+  }, [loadParkedCarts])
+
+  const promoResult = useMemo(() => calculatePromotions(cart, promotions, products, activeCouponCodes), [cart, promotions, products, activeCouponCodes])
   const promoLineDiscTotal = useMemo(() => Object.values(promoResult.lineDiscounts || {}).reduce((a, b) => a + b, 0), [promoResult])
   const promoCartDisc = promoResult.cartDiscount || 0
   const promoTotalDisc = promoLineDiscTotal + promoCartDisc
   const afterPromos = cartTotal - promoTotalDisc
-  const manualDiscountAmount = (afterPromos * discount) / 100
+  const manualDiscountAmount = Math.max(0, Math.min(
+    afterPromos,
+    discountMode === 'amount' ? (Number(discount) || 0) : (afterPromos * (Number(discount) || 0)) / 100
+  ))
   const afterManualDisc = afterPromos - manualDiscountAmount
   const redeemValue = Math.max(0, Number(loyaltySettings.points_redeem_value) || 0)
   const memberPointsAvail = Number(selectedMember?.points) || 0
@@ -300,8 +519,28 @@ export default function POS({ user, onLogout }) {
   const pointsUsed = Math.max(0, Math.min(Number(pointsToRedeem) || 0, maxRedeemable))
   const pointsDiscountAmount = pointsUsed * redeemValue
   const discountAmount = manualDiscountAmount + promoTotalDisc + pointsDiscountAmount
-  const finalTotal = Math.max(0, afterManualDisc - pointsDiscountAmount)
+  const netBeforeVat = Math.max(0, afterManualDisc - pointsDiscountAmount)
+  const vatSettings = useMemo(() => normalizeVatSettings(company), [company])
+  const vatBreakdown = useMemo(() => applyVat(netBeforeVat, vatSettings), [netBeforeVat, vatSettings])
+  const vatAmount = vatBreakdown.vatAmount
+  const subtotalExVat = vatBreakdown.subtotalExVat
+  const rounding = useMemo(() => applyRounding(vatBreakdown.total, company), [vatBreakdown.total, company])
+  const roundingAdjustment = rounding.adjustment
+  const finalTotal = rounding.rounded
   const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart])
+  const selectedReturnItems = useMemo(() => {
+    return (returnLookup?.items || []).map(item => {
+      const qty = Math.max(0, Math.min(Number(returnQty[item.order_item_id]) || 0, Number(item.returnable_qty) || 0))
+      return {
+        ...item,
+        selected_qty: qty,
+        selected_amount: qty * (Number(item.price) || 0),
+      }
+    }).filter(item => item.selected_qty > 0)
+  }, [returnLookup, returnQty])
+  const returnRefundTotal = useMemo(() => {
+    return selectedReturnItems.reduce((sum, item) => sum + item.selected_amount, 0)
+  }, [selectedReturnItems])
   const customerDisplayState = useMemo(() => ({
     type: 'state',
     cart: cart.map(i => ({ product_id: i.product_id, name: i.name, code: i.code, price: i.price, quantity: i.quantity })),
@@ -500,8 +739,9 @@ export default function POS({ user, onLogout }) {
   const handleCheckout = async () => {
     if (!selectedMember) { showToast('ກະລຸນາເລືອກສະມາຊິກກ່ອນອອກບິນ', 'error'); return }
     const isCredit = paymentMethod === 'credit'
+    if (isCredit && selectedMember?.isDefault) { showToast('ກະລຸນາເລືອກສະມາຊິກກ່ອນຂາຍຕິດໜີ້', 'error'); return }
     const creditName = creditCustomer.name.trim() || selectedMember?.name || ''
-    if (isCredit && !creditName) { showToast('ກະລຸນາປ້ອນຊື່ລູກຄ້າສຳລັບບິນເຊື່ອ', 'error'); return }
+    if (isCredit && !creditName) { showToast('ກະລຸນາປ້ອນຊື່ລູກຄ້າສຳລັບບິນຕິດໜີ້', 'error'); return }
     if (isCredit && !creditCustomer.dueDate) { showToast('ກະລຸນາກຳນົດວັນຄົບກຳນົດຊຳລະ', 'error'); return }
     const useMulti = payments.length > 0
     let paid, paymentsPayload = null
@@ -524,16 +764,15 @@ export default function POS({ user, onLogout }) {
     // Build items: normal cart + same-product BOGO extras + cross-product bonus lines (all price=0 for stock deduction)
     const checkoutItems = []
     for (const it of cart) {
-      checkoutItems.push({ product_id: it.product_id, quantity: it.quantity, price: it.price })
+      checkoutItems.push({ product_id: it.product_id, variant_id: it.variant_id || null, quantity: it.quantity, price: it.price })
       const freeQty = promoResult.freeItems?.[it.product_id] || 0
-      // Only add free if NOT already covered by cross-product bonus (same product from cart)
       const inBonus = (promoResult.bonusLines || []).some(bl => bl.product_id === it.product_id)
       if (freeQty > 0 && !inBonus) {
-        checkoutItems.push({ product_id: it.product_id, quantity: freeQty, price: 0 })
+        checkoutItems.push({ product_id: it.product_id, variant_id: null, quantity: freeQty, price: 0 })
       }
     }
     for (const bl of (promoResult.bonusLines || [])) {
-      checkoutItems.push({ product_id: bl.product_id, quantity: bl.qty, price: 0 })
+      checkoutItems.push({ product_id: bl.product_id, variant_id: null, quantity: bl.qty, price: 0 })
     }
     const res = await fetch(`${API}/orders`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -551,16 +790,20 @@ export default function POS({ user, onLogout }) {
         credit_due_date: isCredit ? creditCustomer.dueDate : null,
         member_id: selectedMember?.id || null,
         points_used: pointsUsed,
+        coupon_codes: activeCouponCodes,
+        applied_promo_ids: (promoResult.appliedPromos || []).map(p => p.id),
+        branch_id: activeBranchId || null,
       })
     })
     if (res.ok) {
       const order = await res.json()
-      showToast(isCredit ? 'ອອກບິນເຊື່ອສຳເລັດ' : 'ການຊຳລະສຳເລັດ', 'success')
+      showToast(isCredit ? 'ອອກບິນຕິດໜີ້ສຳເລັດ' : 'ການຊຳລະສຳເລັດ', 'success')
       const shouldOpenDrawer = !isCredit && (paymentMethod === 'cash' || (paymentsPayload && paymentsPayload.length > 0))
       if (shouldOpenDrawer) kickCashDrawer()
       try { bcRef.current?.postMessage({ type: 'complete', order }) } catch {}
+      clearPosDraft()
       setShowReceipt(order); setCart([]); setAmountPaid(''); setShowCheckout(false)
-      setDiscount(0); setCustomerNote(''); setCreditCustomer({ name: '', phone: '', dueDate: '' }); setLastScan(null); setPayments([]); setSelectedMember(DEFAULT_MEMBER); setPointsToRedeem(0)
+      setDiscount(0); setDiscountMode('percent'); setCustomerNote(''); setCreditCustomer({ name: '', phone: '', dueDate: dateAfterDays(30) }); setLastScan(null); setPayments([]); setSelectedMember(DEFAULT_MEMBER); setPointsToRedeem(0); setActiveCoupons([]); setCouponInput('')
       loadMembers('')
       fetchProducts()
     } else { const err = await res.json(); showToast(err.error, 'error') }
@@ -575,6 +818,72 @@ export default function POS({ user, onLogout }) {
     try { setDailySummary(await sRes.json()) } catch { setDailySummary(null) }
     setShowOrders(true)
   }
+
+  const lookupReturnOrder = async (term = returnSearch) => {
+    const q = String(term || '').trim()
+    if (!q) { showToast('ກະລຸນາປ້ອນເລກບິນ', 'error'); return }
+    setReturnBusy(true)
+    try {
+      const res = await fetch(`${API}/returns/lookup?q=${encodeURIComponent(q)}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setReturnLookup(null)
+        setReturnQty({})
+        showToast(data.error || 'ບໍ່ພົບບິນ', 'error')
+        return
+      }
+      setReturnLookup(data)
+      setReturnQty({})
+    } finally {
+      setReturnBusy(false)
+    }
+  }
+
+  const openReturnModal = (order = null) => {
+    const bill = order ? (order.bill_number || String(order.id)) : ''
+    setShowReturn(true)
+    setReturnLookup(null)
+    setReturnQty({})
+    setReturnMethod('cash')
+    setReturnNote('')
+    setReturnSearch(bill)
+    if (bill) setTimeout(() => lookupReturnOrder(bill), 0)
+  }
+
+  const submitReturn = async () => {
+    if (!returnLookup?.order?.id) { showToast('ກະລຸນາຄົ້ນຫາບິນກ່ອນ', 'error'); return }
+    if (selectedReturnItems.length === 0) { showToast('ກະລຸນາໃສ່ຈຳນວນສິນຄ້າທີ່ຮັບຄືນ', 'error'); return }
+    setReturnBusy(true)
+    try {
+      const res = await fetch(`${API}/returns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_id: returnLookup.order.id,
+          refund_method: returnMethod,
+          note: returnNote,
+          created_by: user?.display_name || user?.username || null,
+          items: selectedReturnItems.map(item => ({ order_item_id: item.order_item_id, quantity: item.selected_qty })),
+        })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        showToast(data.error || 'ບັນທຶກການຮັບຄືນບໍ່ສຳເລັດ', 'error')
+        return
+      }
+      showToast(`ຮັບຄືນສຳເລັດ ${data.return_number || ''}`, 'success')
+      fetchProducts()
+      if (showOrders) loadOrders()
+      setReturnLookup(null)
+      setReturnQty({})
+      setReturnSearch('')
+      setReturnNote('')
+      setShowReturn(false)
+    } finally {
+      setReturnBusy(false)
+    }
+  }
+
   const openDailySummary = async () => {
     try {
       const [sRes, hRes] = await Promise.all([
@@ -633,7 +942,7 @@ export default function POS({ user, onLogout }) {
     if (!order) return
     const size = sizeOverride || receiptSize || '80mm'
     const isPaper = size === 'a4' || size === 'a5'
-    const methodText = order.payment_method === 'cash' ? 'ເງິນສົດ' : order.payment_method === 'transfer' ? 'ໂອນ' : order.payment_method === 'qr' ? 'QR' : order.payment_method === 'credit' ? 'ຂາຍເຊື່ອ' : order.payment_method
+    const methodText = order.payment_method === 'cash' ? 'ເງິນສົດ' : order.payment_method === 'transfer' ? 'ໂອນ' : order.payment_method === 'qr' ? 'QR' : order.payment_method === 'credit' ? 'ຂາຍຕິດໜີ້' : order.payment_method
     const isCreditOrder = order.payment_method === 'credit'
     const dt = new Date(order.created_at || Date.now())
     const dateStr = dt.toLocaleString('lo-LA')
@@ -646,9 +955,24 @@ export default function POS({ user, onLogout }) {
     const itemsArr = order.items || []
     const billLabel = order.bill_number || `#${order.id}`
 
+    const orderVatAmount = Number(order.vat_amount) || 0
+    const orderVatRate = Number(order.vat_rate) || 0
+    const orderDiscount = Number(order.discount) || 0
+    const orderTotalNum = Number(order.total) || 0
+    const orderSubtotalEx = Number(order.subtotal) || 0
+    const isVatInclusive = order.vat_mode === 'inclusive'
+    const hasVat = orderVatAmount > 0 && orderVatRate > 0
+    const itemsGross = hasVat
+      ? (isVatInclusive ? orderTotalNum + orderDiscount : orderSubtotalEx + orderDiscount)
+      : (orderSubtotalEx > 0 ? orderSubtotalEx + orderDiscount : orderTotalNum + orderDiscount)
+    const vatLabelText = hasVat
+      ? `${company.vat_label || 'VAT'} ${orderVatRate}%${isVatInclusive ? ' (ລວມໃນ)' : ''}`
+      : ''
+    const vatInfo = { hasVat, vatAmount: orderVatAmount, vatLabelText, itemsGross, isVatInclusive }
+
     const html = isPaper
-      ? buildPaperReceipt({ order, size, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel })
-      : buildThermalReceipt({ order, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel })
+      ? buildPaperReceipt({ order, size, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel, vatInfo })
+      : buildThermalReceipt({ order, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel, vatInfo })
 
     const winSize = size === 'a4' ? 'width=900,height=1100'
       : size === 'a5' ? 'width=720,height=900'
@@ -660,7 +984,7 @@ export default function POS({ user, onLogout }) {
     win.document.close()
   }
 
-  const buildThermalReceipt = ({ order, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel }) => {
+  const buildThermalReceipt = ({ order, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel, vatInfo }) => {
     const paymentLines = orderPayments.map(p => {
       const currency = p.currency || 'LAK'
       const rate = Number(p.rate) || 1
@@ -739,8 +1063,9 @@ export default function POS({ user, onLogout }) {
       ${lines || '<div class="xs">ບໍ່ມີລາຍການ</div>'}
 
       <div class="divider"></div>
-      <div class="total"><span>ລວມຍ່ອຍ</span><span class="total-value">${formatPrice(order.total)}</span></div>
+      <div class="total"><span>ລວມຍ່ອຍ</span><span class="total-value">${formatPrice(vatInfo.itemsGross)}</span></div>
       ${Number(order.discount) > 0 ? `<div class="total"><span>ສ່ວນຫຼຸດ</span><span class="total-value">−${formatPrice(order.discount)}</span></div>` : ''}
+      ${vatInfo.hasVat ? `<div class="total"><span>${vatInfo.vatLabelText}</span><span class="total-value">${vatInfo.isVatInclusive ? '' : '+'}${formatPrice(vatInfo.vatAmount)}</span></div>` : ''}
       <div class="double"></div>
       <div class="total grand"><span>ລວມທັງໝົດ</span><span class="total-value">${formatPrice(order.total)}</span></div>
       <div class="divider"></div>
@@ -769,7 +1094,7 @@ export default function POS({ user, onLogout }) {
     </body></html>`
   }
 
-  const buildPaperReceipt = ({ order, size, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel }) => {
+  const buildPaperReceipt = ({ order, size, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel, vatInfo }) => {
     const isA4 = size === 'a4'
     const itemRows = itemsArr.map((it, i) => {
       const qty = Number(it.quantity) || 0
@@ -855,7 +1180,7 @@ export default function POS({ user, onLogout }) {
             </div>
           </div>
           <div class="doc">
-            <h1>${isCreditOrder ? 'ໃບບິນເຊື່ອ' : 'ໃບບິນຂາຍ'}</h1>
+            <h1>${isCreditOrder ? 'ໃບບິນຕິດໜີ້' : 'ໃບບິນຂາຍ'}</h1>
             <div class="meta"><b>ເລກບິນ:</b> ${billLabel}</div>
             <div class="meta"><b>ວັນທີ:</b> ${dateStr}</div>
           </div>
@@ -897,8 +1222,9 @@ export default function POS({ user, onLogout }) {
             ` : ''}
           </div>
           <div class="right">
-            <div class="row"><span>ລວມຍ່ອຍ</span><span class="v">${formatPrice(order.total)}</span></div>
+            <div class="row"><span>ລວມຍ່ອຍ</span><span class="v">${formatPrice(vatInfo.itemsGross)}</span></div>
             ${Number(order.discount) > 0 ? `<div class="row"><span>ສ່ວນຫຼຸດ</span><span class="v">−${formatPrice(order.discount)}</span></div>` : ''}
+            ${vatInfo.hasVat ? `<div class="row"><span>${vatInfo.vatLabelText}</span><span class="v">${vatInfo.isVatInclusive ? '' : '+'}${formatPrice(vatInfo.vatAmount)}</span></div>` : ''}
             <div class="row grand"><span>ລວມທັງໝົດ</span><span class="v">${formatPrice(order.total)}</span></div>
             <div class="row"><span>${isCreditOrder ? 'ຮັບແລ້ວ' : 'ຮັບເງິນ'}</span><span class="v">${formatPrice(order.amount_paid)}</span></div>
             <div class="row ${isCreditOrder ? 'outstanding' : 'change'}"><span>${isCreditOrder ? 'ຍອດຄ້າງ' : 'ເງິນທອນ'}</span><span class="v">${formatPrice(outstanding)}</span></div>
@@ -938,7 +1264,7 @@ export default function POS({ user, onLogout }) {
   const setMemberDistrict = (district) => setMemberForm({ ...memberForm, district, village: '' })
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-slate-900 text-slate-100 text-[13px]">
+    <div className="pos-root flex flex-col h-screen overflow-hidden bg-slate-900 text-slate-100 text-[13px]">
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
         @keyframes scale-in { from { opacity: 0; transform: scale(.95) } to { opacity: 1; transform: scale(1) } }
@@ -955,10 +1281,39 @@ export default function POS({ user, onLogout }) {
         .font-mono-t { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' }
         ::-webkit-scrollbar { width: 6px; height: 6px }
         ::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, .3); border-radius: 3px }
+        @media (max-width: 1100px) and (max-height: 820px) {
+          .pos-root { font-size: 12px; }
+          .pos-header { min-height: 38px; padding-left: 8px; padding-right: 8px; gap: 6px; }
+          .pos-header button { padding: 4px 8px; }
+          .pos-header .pos-admin-button { padding: 4px 10px; }
+          .pos-scan { padding: 5px 8px; }
+          .pos-scan-panel { padding: 6px 8px; border-radius: 10px; }
+          .pos-scan-title { display: none; }
+          .pos-scan-input { height: 34px; font-size: 13px; border-width: 1px; }
+          .pos-scan-icon { display: none; }
+          .pos-shell { gap: 6px; padding: 6px; }
+          .pos-invoice-header { padding: 7px 10px; }
+          .pos-cart-table th { padding-top: 6px; padding-bottom: 6px; }
+          .pos-cart-table td { padding-top: 6px; padding-bottom: 6px; }
+          .pos-summary { width: 260px; max-height: none; }
+          .pos-summary-card { margin: 6px 6px 0; padding: 8px; border-radius: 10px; }
+          .pos-summary-card:last-child { margin-bottom: 6px; }
+          .pos-summary-card .text-\\[10px\\] { font-size: 9px; }
+          .pos-summary-card .text-\\[11px\\] { font-size: 10px; }
+          .pos-discount-box { padding: 8px; gap: 6px; }
+          .pos-discount-box .space-y-3 { gap: 6px; }
+          .pos-discount-box input { height: 34px; font-size: 16px; padding-top: 4px; padding-bottom: 4px; }
+          .pos-discount-box button { height: 34px; }
+          .pos-discount-box .grid button { height: 30px; font-size: 11px; }
+          .pos-total-display { font-size: 24px; }
+          .pos-pay-method { padding-top: 5px; padding-bottom: 5px; font-size: 10px; }
+          .pos-pay-method .text-base { font-size: 13px; }
+          .pos-checkout-button { height: 48px; font-size: 15px; border-radius: 10px; }
+        }
       ` }} />
 
       {/* Header slim dark */}
-      <header className="min-h-11 bg-slate-950 border-b border-slate-800 flex items-center px-2 sm:px-4 gap-2 sm:gap-3 shrink-0">
+      <header className="pos-header min-h-11 bg-slate-950 border-b border-slate-800 flex items-center px-2 sm:px-4 gap-2 sm:gap-3 shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center text-white font-black text-[11px] overflow-hidden">
             {company.logo_url
@@ -967,6 +1322,21 @@ export default function POS({ user, onLogout }) {
           </div>
           <span className="font-extrabold tracking-wide text-xs">{company.name || 'POS'}</span>
           <span className="hidden md:inline text-[10px] text-slate-500 ml-1">· {user.display_name}</span>
+          {branches.length > 1 && (
+            <select
+              value={activeBranchId || ''}
+              onChange={e => setActiveBranchId(Number(e.target.value) || null)}
+              title="ສາຂາ"
+              className="ml-2 h-6 px-2 bg-amber-500/10 border border-amber-500/40 rounded text-[11px] font-bold text-amber-200 outline-none focus:border-amber-300"
+            >
+              {branches.filter(b => b.active !== false).map(b => (
+                <option key={b.id} value={b.id} className="bg-slate-900">🏬 {b.name}</option>
+              ))}
+            </select>
+          )}
+          {branches.length === 1 && activeBranch && (
+            <span className="ml-2 hidden md:inline text-[10px] font-bold text-amber-300/80">🏬 {activeBranch.name}</span>
+          )}
           {promotions.length > 0 && (
             <button onClick={reloadPromotions} title="ໂຫຼດໂປຣໂມຊັ່ນໃໝ່"
               className="hidden md:flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 bg-violet-500/20 text-violet-300 border border-violet-500/40 rounded hover:bg-violet-500/30">
@@ -991,10 +1361,10 @@ export default function POS({ user, onLogout }) {
             <span className="hidden md:inline">ສະຫຼຸບວັນນີ້</span>
           </button>
           {(() => {
-            const c = debtAlerts?.counts || { overdue: 0, today: 0, upcoming: 0 }
-            const alertCount = c.overdue + c.today
-            const hasUrgent = c.overdue > 0
-            const total = alertCount + c.upcoming
+            const c = debtAlerts?.counts || { overdue: 0, today: 0, upcoming: 0, later: 0, undated: 0 }
+            const alertCount = (c.overdue || 0) + (c.today || 0)
+            const hasUrgent = (c.overdue || 0) > 0
+            const total = c.total || (alertCount + (c.upcoming || 0) + (c.later || 0) + (c.undated || 0))
             return (
               <button onClick={async () => { await loadDebtAlerts(); setShowDebtAlerts(true) }}
                 className={`relative px-2 sm:px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 ${
@@ -1015,14 +1385,19 @@ export default function POS({ user, onLogout }) {
               </button>
             )
           })()}
+          <button onClick={() => openReturnModal()}
+            className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="ຮັບຄືນສິນຄ້າ / ຄືນເງິນ">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
+            <span className="hidden md:inline">ຮັບຄືນ</span>
+          </button>
           <button onClick={loadOrders}
             className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="ປະຫວັດ">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             <span className="hidden md:inline">ປະຫວັດ</span>
           </button>
-          {user.role === 'admin' && (
-            <button onClick={() => router.push('/admin')}
-              className="hidden sm:inline-block px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold">
+          {(user.role === 'admin' || firstAccessibleAdminPath(user)) && (
+            <button onClick={() => router.push(firstAccessibleAdminPath(user) || '/admin')}
+              className="pos-admin-button hidden sm:inline-block px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold">
               Admin
             </button>
           )}
@@ -1034,68 +1409,69 @@ export default function POS({ user, onLogout }) {
       </header>
 
       {/* Scan bar */}
-      <div key={flash} className={`bg-slate-900 border-b-2 ${flash > 0 ? 'border-red-400 animate-scan-flash' : 'border-slate-800'} px-4 py-3 shrink-0 relative`}>
-        <section className="max-w-6xl mx-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 shadow-lg shadow-slate-950/30">
-          <div className="mb-2 flex items-center justify-between gap-3 text-[10px] font-extrabold uppercase tracking-wider">
+      <div key={flash} className={`pos-scan bg-slate-900 border-b ${flash > 0 ? 'border-red-400 animate-scan-flash' : 'border-slate-800'} px-2 py-2 shrink-0 relative`}>
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="w-11 shrink-0"></div>
+          <div className="flex-1 flex items-center justify-between gap-3 text-[10px] font-extrabold uppercase tracking-wider">
             <div className="flex items-center gap-2 text-red-300">
               <span className="h-1.5 w-1.5 rounded-full bg-red-400"></span>
               <span>Section 01 · ສະແກນສິນຄ້າ</span>
             </div>
             <span className="text-slate-500">Barcode / Product code / Name</span>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="relative shrink-0">
-              <div className="w-11 h-11 rounded-full bg-red-500/10 border-2 border-red-500/40 flex items-center justify-center">
-                <svg className="text-red-400" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="2" height="10"/><rect x="6" y="7" width="1" height="10"/><rect x="9" y="7" width="3" height="10"/><rect x="14" y="7" width="1" height="10"/><rect x="17" y="7" width="2" height="10"/><rect x="21" y="7" width="1" height="10"/></svg>
-              </div>
-              <span className="absolute inset-0 rounded-full border-2 border-red-400 animate-pulse-ring pointer-events-none"></span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative shrink-0">
+            <div className="pos-scan-icon w-11 h-11 rounded-full bg-red-500/10 border-2 border-red-500/40 flex items-center justify-center">
+              <svg className="text-red-400" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="2" height="10"/><rect x="6" y="7" width="1" height="10"/><rect x="9" y="7" width="3" height="10"/><rect x="14" y="7" width="1" height="10"/><rect x="17" y="7" width="2" height="10"/><rect x="21" y="7" width="1" height="10"/></svg>
             </div>
-            <div className="flex-1 relative">
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="ສະແກນ barcode ຫຼື ພິມລະຫັດ / ຊື່..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key !== 'Enter') return
-                  const bc = normalizeBarcode(e.currentTarget.value)
-                  if (!bc) return
-                  const m = findBarcodeMatch(bc)
-                  if (!m) { showToast(`ບໍ່ພົບລະຫັດ: ${bc}`, 'error'); setSearch(''); return }
-                  e.preventDefault()
-                  handleBarcodeAutoAdd(m, bc)
-                }}
-                autoFocus
-                className="w-full h-12 px-4 bg-slate-950 border-2 border-red-500/30 text-red-100 placeholder:text-slate-500 rounded-lg text-base font-mono-t font-bold outline-none focus:border-red-400 focus:ring-4 focus:ring-red-500/20"
-              />
-              {search && (
-                <button onClick={() => setSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded hover:bg-slate-700 flex items-center justify-center text-slate-400">✕</button>
-              )}
-            </div>
-            <div className="hidden md:flex flex-col text-[10px] text-slate-500 uppercase tracking-wider font-bold gap-0.5">
-              <span>← Enter</span>
-              <span>ເພື່ອເພີ່ມ</span>
-            </div>
+            <span className="absolute inset-0 rounded-full border-2 border-red-400 animate-pulse-ring pointer-events-none"></span>
           </div>
+          <div className="flex-1 relative">
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="ສະແກນ barcode / ພິມລະຫັດ / ຊື່..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => {
+                if (e.key !== 'Enter') return
+                const bc = normalizeBarcode(e.currentTarget.value)
+                if (!bc) return
+                const m = findBarcodeMatch(bc)
+                if (!m) { showToast(`ບໍ່ພົບລະຫັດ: ${bc}`, 'error'); setSearch(''); return }
+                e.preventDefault()
+                handleBarcodeAutoAdd(m, bc)
+              }}
+              autoFocus
+              className="pos-scan-input w-full h-11 px-3 bg-slate-950 border-2 border-red-500/30 text-red-100 placeholder:text-slate-500 rounded-lg text-sm font-mono-t font-bold outline-none focus:border-red-400 focus:ring-2 focus:ring-red-500/20"
+            />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded hover:bg-slate-700 flex items-center justify-center text-slate-400 text-xs">✕</button>
+            )}
+          </div>
+          <div className="hidden md:flex flex-col text-[10px] text-slate-500 uppercase tracking-wider font-bold gap-0.5 shrink-0">
+            <span>← Enter</span>
+            <span>ເພື່ອເພີ່ມ</span>
+          </div>
+        </div>
 
-          {lastScan && (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 animate-slide-in-top">
-            <span className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">ລ່າສຸດ</span>
-            <span className="text-[11px] font-bold text-red-400 truncate">{lastScan.product.product_name}</span>
-            <span className="text-[10px] text-slate-500 font-mono-t">× {cart.find(i => i.product_id === lastScan.product.id)?.quantity || 1}</span>
-            <span className="ml-auto text-[11px] font-extrabold text-red-400 font-mono-t">+{formatPrice(lastScan.product.selling_price)}</span>
-          </div>
-          )}
-        </section>
+        {lastScan && (
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 animate-slide-in-top">
+          <span className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">ລ່າສຸດ</span>
+          <span className="text-[11px] font-bold text-red-400 truncate">{lastScan.product.product_name}</span>
+          <span className="text-[10px] text-slate-500 font-mono-t">× {cart.find(i => i.product_id === lastScan.product.id)?.quantity || 1}</span>
+          <span className="ml-auto text-[11px] font-extrabold text-red-400 font-mono-t">+{formatPrice(lastScan.product.selling_price)}</span>
+        </div>
+        )}
       </div>
 
       {/* Main: Cart invoice (left) + Summary (right) */}
-      <div className="flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden gap-2 md:gap-3 bg-slate-900 p-2 md:p-3">
+      <div className="pos-shell flex flex-col md:flex-row flex-1 min-h-0 overflow-hidden gap-2 md:gap-3 bg-slate-900 p-2 md:p-3">
         {/* Invoice */}
         <main className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-lg shadow-slate-950/30">
-          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between text-[11px] text-slate-400 uppercase tracking-wider font-bold">
+          <div className="pos-invoice-header px-4 py-3 border-b border-slate-800 flex items-center justify-between text-[11px] text-slate-400 uppercase tracking-wider font-bold">
             <div className="flex items-center gap-3">
               <span className="text-red-300">Section 02 · ໃບບິນ</span>
               <span className="text-slate-600">·</span>
@@ -1122,7 +1498,7 @@ export default function POS({ user, onLogout }) {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-[13px] font-mono-t">
+              <table className="pos-cart-table w-full text-[13px] font-mono-t">
                 <thead>
                   <tr className="sticky top-0 bg-slate-950/95 backdrop-blur border-b border-slate-800 text-[10px] text-slate-500 uppercase tracking-wider">
                     <th className="text-left py-2 px-3 w-10">#</th>
@@ -1270,9 +1646,43 @@ export default function POS({ user, onLogout }) {
         </main>
 
         {/* Right: summary + actions */}
-        <aside className="w-full md:w-[300px] lg:w-[360px] max-h-[45vh] md:max-h-none shrink-0 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950 shadow-lg shadow-slate-950/30 flex flex-col">
-          <section className="m-3 mb-0 rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-            <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-3">Section 03 · ສະຫຼຸບຍອດ</div>
+        <aside className="pos-summary w-full md:w-[300px] lg:w-[360px] max-h-[43vh] md:max-h-none shrink-0 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950 shadow-lg shadow-slate-950/30 flex flex-col">
+          <section className="pos-summary-card m-2 mb-0 rounded-xl border-2 border-red-500/30 bg-gradient-to-br from-red-500/10 to-red-600/5 p-4">
+            <div className="text-[10px] text-red-300 uppercase tracking-widest font-extrabold mb-1">ມູນຄ່າລວມ</div>
+            <div className="text-5xl font-extrabold text-red-400 font-mono-t tracking-tight leading-none">{formatPrice(finalTotal)}</div>
+            <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 font-bold">
+              {/* <span>{cart.length} ລາຍການ · {cartCount} ຊິ້ນ</span> */}
+              {discountAmount > 0 && <span className="text-rose-300">−{formatPrice(discountAmount)}</span>}
+            </div>
+          </section>
+
+          <section className="pos-summary-card m-2 mb-0 rounded-lg border border-slate-800 bg-slate-900/70 p-2.5">
+            <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-2">ລູກຄ້າ / ສະມາຊິກ</div>
+            <button type="button" onClick={() => { setShowMemberModal(true); loadMembers(memberSearch) }}
+              className={`w-full rounded-md border px-2.5 py-2 text-left transition flex items-center gap-2 ${
+                selectedMember?.isDefault
+                  ? 'border-slate-700 bg-slate-950/70 hover:border-slate-600'
+                  : 'border-emerald-500/40 bg-emerald-500/10 hover:border-emerald-400/70'
+              }`} title="ເລືອກສະມາຊິກ">
+              <span className="text-base leading-none">{selectedMember?.isDefault ? '👤' : '🧑'}</span>
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className={`truncate text-xs font-extrabold ${selectedMember?.isDefault ? 'text-slate-100' : 'text-emerald-100'}`}>
+                  {selectedMember?.name || DEFAULT_MEMBER.name}
+                </div>
+                <div className={`truncate text-[10px] font-mono ${selectedMember?.isDefault ? 'text-slate-500' : 'text-emerald-300'}`}>
+                  {selectedMember?.isDefault ? 'GENERAL' : `★ ${formatNumber(selectedMember?.points || 0)} ແຕ້ມ`}
+                </div>
+              </div>
+              {!selectedMember?.isDefault && (
+                <span onClick={(e) => { e.stopPropagation(); setSelectedMember(DEFAULT_MEMBER) }}
+                  className="w-6 h-6 rounded hover:bg-rose-500/20 text-rose-300 flex items-center justify-center text-xs cursor-pointer"
+                  title="ກັບຄ່າເລີ່ມ">✕</span>
+              )}
+            </button>
+          </section>
+
+          <section className="pos-summary-card m-2 mb-0 rounded-lg border border-slate-800 bg-slate-900/70 p-2.5">
+            <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-2">Section 03 · ສະຫຼຸບຍອດ</div>
             <div className="space-y-1.5 text-[13px] font-mono-t">
               <div className="flex justify-between text-slate-400">
                 <span>ລວມຍ່ອຍ</span>
@@ -1292,18 +1702,155 @@ export default function POS({ user, onLogout }) {
                   ))}
                 </div>
               )}
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="flex items-center gap-2">
-                  <span>ຫຼຸດເພີ່ມ</span>
-                  <div className="flex items-center bg-slate-800 rounded border border-slate-700">
-                    <input type="number" value={discount}
-                      onChange={e => setDiscount(Math.min(100, Math.max(0, Number(e.target.value))))}
-                      className="w-12 px-1 py-0.5 bg-transparent text-right font-extrabold text-amber-400 outline-none text-xs" />
-                    <span className="px-1 text-[10px] text-amber-500">%</span>
+              <div className={`pos-discount-box rounded-lg border ${manualDiscountAmount > 0 ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-800 bg-slate-950/40'} p-2 space-y-1.5`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col gap-0 min-w-0">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300">ຫຼຸດເພີ່ມ</span>
+                    {discount > 0 ? (
+                      <span className="text-[9px] text-slate-400 truncate">
+                        {discountMode === 'percent'
+                          ? `${discount}% ຂອງ ${formatPrice(afterPromos)}`
+                          : afterPromos > 0 ? `≈ ${((discount / afterPromos) * 100).toFixed(1)}% ຂອງຍອດ` : ''}
+                      </span>
+                    ) : (
+                      <span className="text-[9px] text-slate-600">ບໍ່ມີສ່ວນຫຼຸດເພີ່ມ</span>
+                    )}
                   </div>
-                </span>
-                <span className="text-rose-400">{manualDiscountAmount > 0 ? `−${formatPrice(manualDiscountAmount)}` : '0 ₭'}</span>
+                  <span className={`font-mono-t text-sm font-extrabold ${manualDiscountAmount > 0 ? 'text-rose-400' : 'text-slate-600'}`}>
+                    {manualDiscountAmount > 0 ? `−${formatPrice(manualDiscountAmount)}` : '0 ₭'}
+                  </span>
+                </div>
+
+                <div className="flex items-stretch gap-1.5">
+                  <div className="flex bg-slate-900 rounded-md border border-slate-700 overflow-hidden shrink-0">
+                    {[
+                      { key: 'percent', label: '%' },
+                      { key: 'amount', label: '₭' },
+                    ].map(m => (
+                      <button key={m.key} type="button"
+                        onClick={() => { if (discountMode !== m.key) { setDiscountMode(m.key); setDiscount(0) } }}
+                        className={`w-8 h-8 text-xs font-extrabold transition ${
+                          discountMode === m.key
+                            ? 'bg-amber-500 text-slate-950'
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                        }`}>
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex-1 relative">
+                    <input type="number"
+                      value={discount || ''}
+                      min="0"
+                      max={discountMode === 'percent' ? 100 : afterPromos}
+                      step={discountMode === 'percent' ? 1 : 1000}
+                      onChange={e => {
+                        const v = Number(e.target.value)
+                        const max = discountMode === 'percent' ? 100 : afterPromos
+                        setDiscount(Math.max(0, Math.min(max, isFinite(v) ? v : 0)))
+                      }}
+                      onBlur={() => {
+                        if (discountMode === 'amount' && discount > 0) {
+                          const rounded = Math.ceil(discount / 1000) * 1000
+                          const max = afterPromos
+                          setDiscount(Math.min(max, rounded))
+                        }
+                      }}
+                      placeholder="0"
+                      className="w-full h-8 px-2 pr-7 bg-slate-900 border border-slate-700 rounded-md text-right font-mono-t font-extrabold text-amber-300 text-sm outline-none focus:border-amber-400" />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500 pointer-events-none">
+                      {discountMode === 'percent' ? '%' : '₭'}
+                    </span>
+                  </div>
+                  {discount > 0 && (
+                    <button type="button" onClick={() => setDiscount(0)}
+                      className="w-8 h-8 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-md text-xs font-bold shrink-0"
+                      title="ລ້າງ">✕</button>
+                  )}
+                </div>
+
+                {discountMode === 'percent' ? (
+                  <div className="grid grid-cols-4 gap-1">
+                    {[5, 10, 15, 20].map(p => (
+                      <button key={p} type="button"
+                        onClick={() => setDiscount(p)}
+                        className={`h-6 rounded text-[10px] font-extrabold transition ${
+                          discount === p
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-inner'
+                            : 'bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-700/50'
+                        }`}>
+                        {p}%
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 gap-1">
+                    {[1000, 5000, 10000, 50000].map(v => (
+                      <button key={v} type="button"
+                        onClick={() => setDiscount(Math.min(afterPromos, discount + v))}
+                        disabled={afterPromos <= 0}
+                        className={`h-6 rounded text-[10px] font-extrabold transition bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-amber-300 border border-slate-700/50 disabled:opacity-40`}>
+                        +{v >= 1000 ? `${v / 1000}K` : v}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+              <div className={`rounded-lg border ${activeCoupons.length > 0 ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-800 bg-slate-950/40'} p-2 space-y-1.5`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300">🎟 Coupon</span>
+                  {activeCoupons.length > 0 && (
+                    <span className="text-[9px] font-bold text-amber-400/80">{activeCoupons.length} ໃຊ້ງານ</span>
+                  )}
+                </div>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={couponInput}
+                    onChange={e => setCouponInput(e.target.value.toUpperCase())}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyCoupon() } }}
+                    placeholder="ປ້ອນ code..."
+                    className="flex-1 h-7 px-2 bg-slate-900 border border-slate-700 rounded text-amber-200 placeholder:text-slate-500 text-xs font-mono font-bold outline-none focus:border-amber-400"
+                    disabled={couponBusy}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => applyCoupon()}
+                    disabled={couponBusy || !couponInput.trim()}
+                    className="px-2.5 h-7 bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 rounded text-amber-200 text-[10px] font-extrabold transition"
+                  >ໃຊ້</button>
+                </div>
+                {activeCoupons.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {activeCoupons.map(c => (
+                      <span key={c.code} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-500/15 border border-amber-500/30 rounded text-[10px] font-bold text-amber-200">
+                        <span className="font-mono">{c.code}</span>
+                        <button onClick={() => removeCoupon(c.code)} className="text-amber-400 hover:text-rose-400">✕</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {vatSettings.enabled && (
+                <div className="rounded-md border border-cyan-500/30 bg-cyan-500/5 px-2 py-1.5 space-y-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-cyan-300">
+                    <span>{vatSettings.label} {vatSettings.rate}% {vatSettings.mode === 'inclusive' ? '· ລວມໃນ' : '· ແຍກນອກ'}</span>
+                    <span className="font-mono text-cyan-200">{formatPrice(vatAmount)}</span>
+                  </div>
+                  {vatSettings.mode === 'exclusive' && subtotalExVat > 0 && (
+                    <div className="flex items-center justify-between text-[9px] text-cyan-400/80">
+                      <span>ກ່ອນ VAT</span>
+                      <span className="font-mono">{formatPrice(subtotalExVat)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {roundingAdjustment !== 0 && (
+                <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  <span>ປັດສະຕັງ</span>
+                  <span className="font-mono">{roundingAdjustment > 0 ? '+' : ''}{formatPrice(roundingAdjustment)}</span>
+                </div>
+              )}
               {loyaltySettings.loyalty_enabled !== false && redeemValue > 0 && !selectedMember?.isDefault && memberPointsAvail > 0 && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 space-y-1.5">
                   <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-amber-300">
@@ -1335,78 +1882,36 @@ export default function POS({ user, onLogout }) {
                 </div>
               )}
             </div>
-            <div className="mt-3 pt-3 border-t-2 border-red-500/30">
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-1">ລວມທັງໝົດ</div>
-              <div className="text-4xl font-extrabold text-red-400 font-mono-t tracking-tight leading-none">{formatPrice(finalTotal)}</div>
-            </div>
           </section>
 
-          <section className="m-3 mb-0 rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-            <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-2">Section 04 · ວິທີຊຳລະ</div>
-            <div className="mb-3 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold">ສະມາຊິກ</div>
-                {!selectedMember?.isDefault && (
-                  <button onClick={() => setSelectedMember(DEFAULT_MEMBER)}
-                    className="text-[10px] font-bold text-rose-300 hover:text-rose-200">ກັບຄ່າເລີ່ມ</button>
-                )}
-              </div>
-              <button type="button" onClick={() => { setShowMemberModal(true); loadMembers(memberSearch) }}
-                className={`w-full rounded-md border p-2 text-left transition ${selectedMember?.isDefault ? 'border-slate-700 bg-slate-900/70 hover:border-slate-600' : 'border-emerald-500/30 bg-emerald-500/10 hover:border-emerald-400/50'}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className={`truncate text-xs font-extrabold ${selectedMember?.isDefault ? 'text-slate-100' : 'text-emerald-100'}`}>{selectedMember?.name || DEFAULT_MEMBER.name}</div>
-                    <div className={`text-[10px] font-mono ${selectedMember?.isDefault ? 'text-slate-500' : 'text-emerald-300'}`}>
-                      {selectedMember?.member_code || DEFAULT_MEMBER.member_code}{selectedMember?.phone ? ` · ${selectedMember.phone}` : ''}
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <div className={selectedMember?.isDefault ? 'text-[10px] text-slate-500' : 'text-[10px] text-emerald-300'}>Points</div>
-                    <div className={`font-mono-t text-sm font-extrabold ${selectedMember?.isDefault ? 'text-slate-300' : 'text-emerald-100'}`}>{formatNumber(selectedMember?.points || 0)}</div>
-                  </div>
-                </div>
-                <div className="mt-2 text-[10px] font-bold text-slate-400">ກົດເພື່ອເລືອກຈາກ modal</div>
-              </button>
-            </div>
-            <div className="grid grid-cols-4 gap-1.5">
-              {[
-                { key: 'cash', icon: '💵', label: 'ສົດ' },
-                { key: 'transfer', icon: '🏦', label: 'ໂອນ' },
-                { key: 'qr', icon: '📱', label: 'QR' },
-                { key: 'credit', icon: '🧾', label: 'ເຊື່ອ' }
-              ].map(m => (
-                <button key={m.key} onClick={() => {
-                  setPaymentMethod(m.key)
-                  if (m.key === 'credit') { setPayments([]); setAmountPaid('') }
-                }}
-                  className={`py-2 rounded-md text-[11px] font-bold transition border ${
-                    paymentMethod === m.key ? 'bg-red-500 text-slate-950 border-red-400' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-600'
-                  }`}>
-                  <div className="text-base leading-none mb-0.5">{m.icon}</div>
-                  <div>{m.label}</div>
+          <section className="pos-summary-card m-2 mt-auto rounded-lg border border-slate-800 bg-slate-900/70 p-2.5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold">Section 05 · ດຳເນີນການ</div>
+              {parkedCarts.length > 0 && (
+                <button
+                  onClick={() => setShowParkedModal(true)}
+                  className="text-[10px] font-extrabold px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded hover:bg-amber-500/30"
+                >
+                  🅿️ {parkedCarts.length}
                 </button>
-              ))}
+              )}
             </div>
-          </section>
-
-          <section className="m-3 mt-auto rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-            <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-3">Section 05 · ດຳເນີນການ</div>
             <button onClick={() => {
                 setAmountPaid(String(finalTotal)); setShowCheckout(true)
               }}
               disabled={cart.length === 0}
-              className="w-full h-20 bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-white rounded-xl font-extrabold text-xl tracking-wider flex items-center justify-center gap-3 shadow-2xl shadow-red-500/20 disabled:shadow-none transition-all active:scale-[0.98]">
+              className="pos-checkout-button w-full h-12 bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-white rounded-lg font-extrabold text-base tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-500/20 disabled:shadow-none transition-all active:scale-[0.98]">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 12h.01M17 12h.01"/></svg>
               PAY
             </button>
-            <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              <button onClick={parkCurrentCart} disabled={cart.length === 0}
+                className="py-2 bg-amber-500/15 hover:bg-amber-500/25 disabled:bg-slate-800/50 disabled:text-slate-600 text-amber-200 border border-amber-500/30 rounded-md text-[11px] font-extrabold transition">
+                🅿️ ພັກບີນ
+              </button>
               <button onClick={() => setCart([])} disabled={cart.length === 0}
                 className="py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/50 disabled:text-slate-600 text-slate-300 rounded-md text-[11px] font-bold transition">
                 ✕ ລ້າງ
-              </button>
-              <button onClick={() => setShowCatalog(true)}
-                className="py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md text-[11px] font-bold">
-                + ເພີ່ມດ້ວຍມື
               </button>
             </div>
           </section>
@@ -1483,6 +1988,56 @@ export default function POS({ user, onLogout }) {
                 </button>
               </div>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Parked Carts Modal */}
+      {showParkedModal && (
+        <Modal onClose={() => setShowParkedModal(false)} title="🅿️ ບີນພັກໄວ້" size="xl">
+          <div className="space-y-2">
+            {parkedCarts.length === 0 ? (
+              <div className="text-center py-12 text-slate-400 text-sm">ບໍ່ມີບີນພັກ</div>
+            ) : (
+              parkedCarts.map(p => {
+                const itemsArr = Array.isArray(p.cart) ? p.cart : []
+                const total = itemsArr.reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0)
+                const itemCount = itemsArr.reduce((s, it) => s + (Number(it.quantity) || 0), 0)
+                return (
+                  <div key={p.id} className="border border-slate-200 rounded-lg p-3 hover:border-amber-400 hover:bg-amber-50/30 transition">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-extrabold text-slate-900 truncate">{p.name || 'ບໍ່ມີຊື່'}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          {p.username && <span className="mr-2">👤 {p.username}</span>}
+                          <span className="mr-2">📦 {itemCount} ຊິ້ນ</span>
+                          <span>{new Date(p.updated_at || p.created_at).toLocaleString('lo-LA')}</span>
+                        </div>
+                        <div className="text-sm font-mono font-extrabold text-red-600 mt-1">{formatPrice(total)}</div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {itemsArr.slice(0, 6).map((it, i) => (
+                            <span key={i} className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded">
+                              {it.name} ×{it.quantity}
+                            </span>
+                          ))}
+                          {itemsArr.length > 6 && <span className="text-[10px] text-slate-400">+{itemsArr.length - 6}</span>}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1.5 shrink-0">
+                        <button
+                          onClick={() => recallParkedCart(p)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded"
+                        >ໂຫຼດ</button>
+                        <button
+                          onClick={() => deleteParkedCart(p.id)}
+                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold rounded"
+                        >ລົບ</button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
           </div>
         </Modal>
       )}
@@ -1626,162 +2181,261 @@ export default function POS({ user, onLogout }) {
         const remaining = Math.max(0, finalTotal - paidNow)
         const change = Math.max(0, paidNow - finalTotal)
         const fullyPaid = isCredit ? (creditCustomer.name.trim().length > 0 || !!selectedMember) && !!creditCustomer.dueDate : paidNow >= finalTotal && finalTotal > 0
+        const creditDueDays = daysUntilDate(creditCustomer.dueDate)
+
+        const progress = isCredit ? 100 : Math.min(100, finalTotal > 0 ? (paidNow / finalTotal) * 100 : 0)
+        const activeCur = currencies.find(c => c.code === activeCurrencyCode) || currencies[0] || { code: 'LAK', symbol: '₭', rate: 1 }
+        const activeVal = amountByCode[activeCur.code] || ''
+        const activeLak = (Number(activeVal) || 0) * (Number(activeCur.rate) || 1)
+        const denoms = denomMap[activeCur.code] || []
+
+        const numpadPress = (digit) => {
+          const cur = String(amountByCode[activeCur.code] || '')
+          let next = cur
+          if (digit === 'C') next = ''
+          else if (digit === '⌫') next = cur.slice(0, -1)
+          else if (digit === '00') next = (cur === '' || cur === '0') ? '0' : cur + '00'
+          else if (digit === '.') { if (!cur.includes('.')) next = cur === '' ? '0.' : cur + '.' }
+          else next = (cur === '0') ? String(digit) : cur + String(digit)
+          setAmountFor(activeCur.code, next)
+        }
 
         return (
-        <Modal onClose={() => setShowCheckout(false)} title={isCredit ? 'ອອກບິນເຊື່ອ' : 'ຊຳລະເງິນ'} size="lg">
-          <div className="space-y-3">
-            {/* HERO — total + live status + progress */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white p-5">
-              <div className="absolute -right-16 -top-16 w-48 h-48 bg-red-500/20 rounded-full blur-3xl pointer-events-none"></div>
-              <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
-              <div className="relative grid grid-cols-2 gap-4 items-end">
-                <div>
-                  <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">ຍອດຕ້ອງຊຳລະ</div>
-                  <div className="text-3xl font-extrabold font-mono-t mt-1 text-red-400">{formatPrice(finalTotal)}</div>
-                  {discount > 0 && <div className="text-[10px] text-slate-500 mt-0.5">ຫຼຸດ {discount}% = −{formatPrice(discountAmount)}</div>}
+        <Modal onClose={() => setShowCheckout(false)} title={isCredit ? 'ອອກບິນຕິດໜີ້' : 'ຊຳລະເງິນ'} size="2xl">
+          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-3">
+            {/* LEFT: info + tenders + method */}
+            <div className="space-y-2">
+              {/* HERO */}
+              <div className={`rounded-lg border p-2 ${
+                fullyPaid ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200 bg-slate-50'
+              }`}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider">ຕ້ອງຊຳລະ</span>
+                  <span className="text-2xl font-extrabold font-mono-t text-slate-900 tracking-tight">{formatPrice(finalTotal)}</span>
                 </div>
-                <div className="text-right">
-                  {isCredit ? (
-                    <>
-                      <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">ຍອດຄ້າງຮັບ</div>
-                      <div className="text-3xl font-extrabold font-mono-t mt-1 text-amber-300">{formatPrice(finalTotal)}</div>
-                    </>
-                  ) : !fullyPaid ? (
-                    <>
-                      <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest">ຍັງຂາດ</div>
-                      <div className={`text-3xl font-extrabold font-mono-t mt-1 ${paidNow > 0 ? 'text-amber-400' : 'text-slate-500'}`}>{formatPrice(remaining)}</div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-[10px] text-amber-200 font-extrabold uppercase tracking-widest">💰 ເງິນທອນ</div>
-                      <div className="text-3xl font-extrabold font-mono-t mt-1 text-amber-300">{formatPrice(change)}</div>
-                    </>
-                  )}
+                {discount > 0 && (
+                  <div className="text-[9px] font-bold text-rose-600 text-right">✂️ ຫຼຸດ −{formatPrice(discountAmount)}</div>
+                )}
+                <div className="mt-1.5 h-1 bg-slate-200/70 rounded-full overflow-hidden">
+                  <div className={`h-full transition-all duration-300 ${fullyPaid ? 'bg-emerald-500' : 'bg-amber-400'}`}
+                    style={{ width: `${progress}%` }}></div>
+                </div>
+                <div className="grid grid-cols-3 gap-1 mt-1.5 text-center">
+                  <div>
+                    <div className="text-[8px] text-slate-400 font-extrabold uppercase leading-none">ຮັບແລ້ວ</div>
+                    <div className="text-[11px] font-extrabold font-mono-t text-slate-800 mt-0.5">{formatPrice(paidNow)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[8px] text-slate-400 font-extrabold uppercase leading-none">{isCredit ? 'ຄ້າງຮັບ' : 'ຍັງຂາດ'}</div>
+                    <div className={`text-[11px] font-extrabold font-mono-t mt-0.5 ${!fullyPaid ? 'text-amber-600' : 'text-slate-400'}`}>{formatPrice(!fullyPaid || isCredit ? remaining || finalTotal : 0)}</div>
+                  </div>
+                  <div>
+                    <div className={`text-[8px] font-extrabold uppercase leading-none ${change > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{change > 0 ? '💰 ທອນ' : 'ເງິນທອນ'}</div>
+                    <div className={`text-[11px] font-extrabold font-mono-t mt-0.5 ${change > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{formatPrice(change)}</div>
+                  </div>
                 </div>
               </div>
-              <div className="relative mt-3 h-2 bg-white/10 rounded-full overflow-hidden">
-                <div className={`h-full transition-all duration-200 ${fullyPaid ? 'bg-emerald-400' : 'bg-red-500'}`}
-                  style={{ width: `${isCredit ? 100 : Math.min(100, finalTotal > 0 ? (paidNow / finalTotal) * 100 : 0)}%` }}></div>
-              </div>
-            </div>
 
-            {/* Currency rows — always visible for every enabled currency */}
-            {!isCredit && <div>
-              <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-2">ຮັບເງິນ</label>
-              <div className="space-y-2">
-                {currencies.map(c => {
-                  const val = amountByCode[c.code] || ''
-                  const lak = (Number(val) || 0) * (Number(c.rate) || 1)
-                  const denoms = denomMap[c.code] || []
-                  const active = !!val && Number(val) > 0
+              {/* Payment method */}
+              <div className="grid grid-cols-4 gap-1">
+                {[
+                  { key: 'cash', icon: '💵', label: 'ສົດ', color: 'emerald' },
+                  { key: 'transfer', icon: '🏦', label: 'ໂອນ', color: 'blue' },
+                  { key: 'qr', icon: '📱', label: 'QR', color: 'violet' },
+                  { key: 'credit', icon: '🧾', label: 'ຕິດໜີ້', color: 'amber' }
+                ].map(m => {
+                  const active = paymentMethod === m.key
+                  const isCreditDisabled = m.key === 'credit' && !!selectedMember?.isDefault
+                  const activeClasses = {
+                    emerald: 'border-emerald-500 bg-emerald-50 text-emerald-800',
+                    blue: 'border-blue-500 bg-blue-50 text-blue-800',
+                    violet: 'border-violet-500 bg-violet-50 text-violet-800',
+                    amber: 'border-amber-500 bg-amber-50 text-amber-800',
+                  }
                   return (
-                    <div key={c.code}
-                      className={`rounded-2xl border-2 p-3 transition ${active ? 'border-red-300 bg-red-50/40' : 'border-slate-200 bg-slate-50/50'}`}>
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className={`shrink-0 w-14 h-14 rounded-xl flex flex-col items-center justify-center ${active ? 'bg-slate-900 text-white' : 'bg-white border-2 border-slate-200 text-slate-700'}`}>
-                          <span className="text-xl font-black leading-none">{c.symbol}</span>
-                          <span className="text-[9px] font-mono font-bold mt-0.5 opacity-80">{c.code}</span>
-                        </div>
-                        <input type="text" inputMode="decimal" pattern="[0-9]*"
-                          value={val}
-                          onChange={e => setAmountFor(c.code, e.target.value)}
-                          placeholder="0"
-                          className="flex-1 min-w-0 h-14 px-3 bg-white border-2 border-slate-200 rounded-xl text-right text-2xl font-extrabold font-mono-t text-slate-900 outline-none focus:border-slate-900 placeholder:text-slate-300" />
-                        <div className="shrink-0 w-24 text-right">
-                          {c.code !== 'LAK' && active && (
-                            <>
-                              <div className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">≈ LAK</div>
-                              <div className="text-xs font-extrabold font-mono-t text-emerald-700 truncate">{formatNumber(Math.round(lak))}</div>
-                            </>
-                          )}
-                          {c.code === 'LAK' && (
-                            <div className="text-[9px] text-slate-400 font-bold">@ 1 ກີບ</div>
-                          )}
-                        </div>
-                        <button onClick={() => fillExact(c.code)} title="ຍອດທີ່ຍັງຂາດ"
-                          className="shrink-0 w-12 h-14 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold flex items-center justify-center">
-                          = ພໍດີ
-                        </button>
-                        {active && (
-                          <button onClick={() => setAmountFor(c.code, '')} title="ລ້າງ"
-                            className="shrink-0 w-9 h-14 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 flex items-center justify-center">✕</button>
-                        )}
-                      </div>
-                      {denoms.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {denoms.map(d => (
-                            <button key={d} onClick={() => addDenomination(c.code, d)}
-                              className="px-2.5 py-1 bg-white hover:bg-red-50 hover:text-red-700 text-slate-600 border border-slate-200 hover:border-red-200 rounded-md text-[11px] font-extrabold font-mono-t transition">
-                              +{d >= 1000 ? (d / 1000) + 'K' : d}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <button key={m.key}
+                      disabled={isCreditDisabled}
+                      title={isCreditDisabled ? 'ກະລຸນາເລືອກສະມາຊິກກ່ອນ (ຕິດໜີ້ບໍ່ໄດ້ສຳລັບລູກຄ້າທົ່ວໄປ)' : ''}
+                      onClick={() => {
+                        if (isCreditDisabled) return
+                        setPaymentMethod(m.key)
+                        if (m.key === 'credit') {
+                          setPayments([])
+                          setAmountPaid('')
+                          setCreditCustomer(c => c.dueDate ? c : { ...c, dueDate: dateAfterDays(30) })
+                        }
+                      }}
+                      className={`py-1.5 rounded-md text-[10px] font-extrabold transition border ${
+                        isCreditDisabled
+                          ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed opacity-60'
+                          : active
+                            ? activeClasses[m.color]
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                      }`}>
+                      <span className="text-sm mr-1">{m.icon}</span>{m.label}
+                      {isCreditDisabled && <span className="ml-1 text-[9px]">🔒</span>}
+                    </button>
                   )
                 })}
               </div>
-            </div>}
 
-            {/* Payment method */}
-            <div>
-              <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-2">ວິທີຊຳລະ</label>
-              <div className="grid grid-cols-4 gap-2">
-                {[
-                  { key: 'cash', icon: '💵', label: 'ເງິນສົດ' },
-                  { key: 'transfer', icon: '🏦', label: 'ໂອນ' },
-                  { key: 'qr', icon: '📱', label: 'QR Code' },
-                  { key: 'credit', icon: '🧾', label: 'ຂາຍເຊື່ອ' }
-                ].map(m => (
-                  <button key={m.key} onClick={() => {
-                    setPaymentMethod(m.key)
-                    if (m.key === 'credit') { setPayments([]); setAmountPaid('') }
-                  }}
-                    className={`py-2.5 rounded-xl text-xs font-bold transition border-2 ${
-                      paymentMethod === m.key ? 'bg-slate-900 text-white border-slate-900 shadow' : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400'
-                    }`}>
-                    <span className="text-base mr-1">{m.icon}</span>
-                    {m.label}
-                  </button>
-                ))}
-              </div>
+              {/* Currency tabs + active display */}
+              {!isCredit && (
+                <div className="rounded-lg border border-slate-200 bg-white p-2">
+                  <div className="flex items-center gap-1 mb-1.5 overflow-x-auto">
+                    {currencies.map(c => {
+                      const v = Number(amountByCode[c.code]) || 0
+                      const isActive = c.code === activeCur.code
+                      const hasVal = v > 0
+                      return (
+                        <button key={c.code} type="button"
+                          onClick={() => setActiveCurrencyCode(c.code)}
+                          className={`shrink-0 px-2 py-1 rounded text-[11px] font-extrabold transition border flex items-center gap-1 ${
+                            isActive
+                              ? 'border-slate-900 bg-slate-900 text-white'
+                              : hasVal
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                          }`}>
+                          <span className="text-sm">{c.symbol}</span>
+                          <span>{c.code}</span>
+                          {hasVal && <span className={`text-[8px] font-mono px-1 rounded ${isActive ? 'bg-white/20' : 'bg-emerald-200 text-emerald-800'}`}>{formatNumber(v)}</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-lg font-black text-slate-700 leading-none">{activeCur.symbol}</span>
+                      <div className="leading-tight">
+                        <div className="text-[8px] font-extrabold text-slate-400 uppercase">ປ້ອນ ({activeCur.code})</div>
+                        {activeCur.code !== 'LAK' && Number(activeVal) > 0 && (
+                          <div className="text-[9px] font-bold text-emerald-700 font-mono-t">≈ {formatPrice(Math.round(activeLak))}</div>
+                        )}
+                        {activeCur.code !== 'LAK' && !Number(activeVal) && (
+                          <div className="text-[9px] font-bold text-slate-400">@ {formatNumber(activeCur.rate)}</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-lg font-extrabold font-mono-t text-slate-900 tracking-tight">
+                      {activeVal ? formatNumber(activeVal) : <span className="text-slate-300">0</span>}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1 mt-1.5">
+                    <button onClick={() => fillExact(activeCur.code)}
+                      className="h-7 rounded bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold">
+                      ⚡ ພໍດີ
+                    </button>
+                    <button onClick={() => setAmountFor(activeCur.code, '')}
+                      disabled={!activeVal}
+                      className="h-7 rounded bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 text-[10px] font-extrabold disabled:opacity-40">
+                      ✕ ລ້າງ
+                    </button>
+                  </div>
+                  {denoms.length > 0 && (
+                    <div className="grid grid-cols-4 gap-1 mt-1">
+                      {denoms.slice(0, 8).map(d => (
+                        <button key={d} onClick={() => addDenomination(activeCur.code, d)}
+                          className="h-6 rounded text-[9px] font-extrabold font-mono-t bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 hover:border-slate-300 transition">
+                          +{d >= 1000 ? (d / 1000) + 'K' : d}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
+            {/* RIGHT: numpad */}
+            {!isCredit && (
+              <div className="rounded-lg border border-slate-200 bg-white p-2 flex flex-col">
+                <div className="grid grid-cols-3 gap-1.5 flex-1">
+                  {['7','8','9','4','5','6','1','2','3','00','0','⌫'].map(k => (
+                    <button key={k} type="button" onClick={() => numpadPress(k)}
+                      className={`h-14 rounded-xl font-extrabold transition active:scale-95 shadow-sm ${
+                        k === '⌫'
+                          ? 'bg-amber-100 hover:bg-amber-200 text-amber-700 text-xl'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-900 text-2xl'
+                      }`}>
+                      {k}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => numpadPress('C')}
+                    className="col-span-3 h-9 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-700 text-xs font-extrabold transition">
+                    C  ລ້າງທັງໝົດ
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
             {isCredit && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                <label className="block text-[10px] font-extrabold text-amber-700 uppercase tracking-widest mb-2">ຂໍ້ມູນລູກຄ້າເຊື່ອ</label>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5">
+                <label className="block text-[10px] font-extrabold text-amber-700 uppercase tracking-widest mb-2">ຂໍ້ມູນລູກຄ້າຕິດໜີ້</label>
                 {selectedMember && (
                   <div className="mb-2 rounded-lg border border-amber-200 bg-white/70 px-2 py-1.5 text-xs font-bold text-amber-800">
                     ໃຊ້ຂໍ້ມູນສະມາຊິກ: {selectedMember.name}{selectedMember.phone ? ` · ${selectedMember.phone}` : ''}
                   </div>
                 )}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                   <input type="text" value={creditCustomer.name}
                     onChange={e => setCreditCustomer({ ...creditCustomer, name: e.target.value })}
                     placeholder={selectedMember ? 'ຊື່ລູກຄ້າ (ຖ້າຕ້ອງການປ່ຽນ)' : 'ຊື່ລູກຄ້າ *'}
-                    className="p-2.5 bg-white border border-amber-200 rounded-lg text-sm text-slate-900 outline-none focus:border-amber-500" />
+                    className="p-2 bg-white border border-amber-200 rounded-lg text-sm text-slate-900 outline-none focus:border-amber-500" />
                   <input type="text" value={creditCustomer.phone}
                     onChange={e => setCreditCustomer({ ...creditCustomer, phone: e.target.value })}
                     placeholder="ເບີໂທ"
-                    className="p-2.5 bg-white border border-amber-200 rounded-lg text-sm text-slate-900 outline-none focus:border-amber-500" />
-                  <input type="date" value={creditCustomer.dueDate}
-                    onChange={e => setCreditCustomer({ ...creditCustomer, dueDate: e.target.value })}
-                    className="p-2.5 bg-white border border-amber-200 rounded-lg text-sm text-slate-900 outline-none focus:border-amber-500" />
+                    className="p-2 bg-white border border-amber-200 rounded-lg text-sm text-slate-900 outline-none focus:border-amber-500" />
+                  <div>
+                    <label className="mb-1 block text-[9px] font-extrabold uppercase tracking-widest text-amber-700">ຈຳນວນວັນ *</label>
+                    <input type="number" min="0" step="1" value={creditDueDays}
+                      onChange={e => {
+                        const days = Math.max(0, Number(e.target.value) || 0)
+                        setCreditCustomer({ ...creditCustomer, dueDate: dateAfterDays(days) })
+                      }}
+                      className="w-full p-2 bg-white border border-amber-300 rounded-lg text-sm font-extrabold text-slate-900 outline-none focus:border-amber-500" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[9px] font-extrabold uppercase tracking-widest text-amber-700">ວັນຄົບກຳນົດ *</label>
+                    <input type="date" value={creditCustomer.dueDate}
+                      onChange={e => setCreditCustomer({ ...creditCustomer, dueDate: e.target.value })}
+                      className="w-full p-2 bg-white border border-amber-300 rounded-lg text-sm font-extrabold text-slate-900 outline-none focus:border-amber-500" />
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {[7, 15, 30].map(days => (
+                    <button key={days} type="button"
+                      onClick={() => setCreditCustomer({ ...creditCustomer, dueDate: dateAfterDays(days) })}
+                      className="rounded-md border border-amber-200 bg-white px-2.5 py-1 text-[10px] font-extrabold text-amber-800 hover:bg-amber-100">
+                      +{days} ມື້
+                    </button>
+                  ))}
+                  <button type="button"
+                    onClick={() => setCreditCustomer({ ...creditCustomer, dueDate: dateAfterDays(0) })}
+                    className="rounded-md border border-amber-200 bg-white px-2.5 py-1 text-[10px] font-extrabold text-amber-800 hover:bg-amber-100">
+                    ມື້ນີ້
+                  </button>
                 </div>
               </div>
             )}
 
             {paymentMethod === 'cash' && (
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                <div className="min-w-0">
-                  <div className="text-xs font-extrabold text-slate-800">Cash drawer</div>
-                  <div className={`text-[10px] font-bold ${drawerReady ? 'text-emerald-600' : 'text-slate-400'}`}>
-                    {drawerReady ? 'ພ້ອມເປີດອັດຕະໂນມັດ' : 'ເຊື່ອມຕໍ່ກ່ອນໃຊ້ຄັ້ງທຳອິດ'}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-3 py-2.5">
+                <div className="min-w-0 flex items-center gap-2.5">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${drawerReady ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>💴</div>
+                  <div>
+                    <div className="text-xs font-extrabold text-slate-800">Cash drawer</div>
+                    <div className={`text-[10px] font-bold ${drawerReady ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      {drawerReady ? 'ພ້ອມເປີດອັດຕະໂນມັດ' : 'ເຊື່ອມຕໍ່ກ່ອນໃຊ້ຄັ້ງທຳອິດ'}
+                    </div>
                   </div>
                 </div>
                 <button type="button" onClick={setupCashDrawer} disabled={drawerBusy || !isCashDrawerSupported()}
                   title={cashDrawerSupported ? 'ເຊື່ອມຕໍ່ ແລະ ທົດສອບເປີດ cash drawer' : 'Browser ບໍ່ຮອງຮັບ Web Serial'}
-                  className="shrink-0 px-3 py-2 rounded-lg bg-white border border-slate-200 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-extrabold text-slate-700">
+                  className="shrink-0 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-slate-400 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-extrabold text-slate-700">
                   {drawerBusy ? 'ກຳລັງເຊື່ອມ...' : drawerReady ? 'ທົດສອບເປີດ' : 'ເຊື່ອມຕໍ່'}
                 </button>
               </div>
@@ -1789,27 +2443,37 @@ export default function POS({ user, onLogout }) {
 
             {/* Note */}
             <div>
-              <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1.5">ໝາຍເຫດ</label>
+              <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1">ໝາຍເຫດ</label>
               <input type="text" value={customerNote} onChange={e => setCustomerNote(e.target.value)}
                 placeholder="ຂໍ້ຄວາມເພີ່ມເຕີມ..."
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 outline-none focus:border-red-500 focus:bg-white" />
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 outline-none focus:border-red-500 focus:bg-white" />
             </div>
           </div>
 
           {/* Footer actions */}
-          <div className="flex gap-2 mt-5 pt-4 border-t border-slate-200">
+          <div className="flex gap-2 mt-4 pt-3 border-t border-slate-200 sticky bottom-0 bg-white">
             <button onClick={() => setShowCheckout(false)}
-              className="flex-1 py-3 bg-slate-100 border border-slate-200 rounded-xl font-bold text-slate-700 hover:bg-slate-200 text-sm">
-              ຍົກເລີກ
+              className="flex-1 py-3 bg-slate-100 border border-slate-200 rounded-xl font-extrabold text-slate-700 hover:bg-slate-200 text-sm">
+              ✕ ຍົກເລີກ
             </button>
             <button onClick={handleCheckout} disabled={!fullyPaid}
-              className="flex-[2] py-3 bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-xl font-extrabold shadow-lg text-sm flex items-center justify-center gap-2">
+              className={`flex-[2] py-3 rounded-xl font-extrabold shadow-lg text-sm flex items-center justify-center gap-2 transition ${
+                !fullyPaid ? 'bg-slate-200 text-slate-400 cursor-not-allowed' :
+                isCredit ? 'bg-gradient-to-br from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-amber-500/30' :
+                'bg-gradient-to-br from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-emerald-500/30'
+              }`}>
               {isCredit ? (
-                <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg> ຢືນຢັນອອກບິນເຊື່ອ</>
+                <>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  ຢືນຢັນອອກບິນຕິດໜີ້ · {formatPrice(finalTotal)}
+                </>
               ) : fullyPaid ? (
-                <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg> ຢືນຢັນການຊຳລະ</>
+                <>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  ຊຳລະ {formatPrice(finalTotal)}{change > 0 ? ` · ທອນ ${formatPrice(change)}` : ''}
+                </>
               ) : (
-                <>ຮັບເງິນເພີ່ມ {formatPrice(remaining)}</>
+                <>ຍັງຂາດ {formatPrice(remaining)}</>
               )}
             </button>
           </div>
@@ -2021,7 +2685,7 @@ export default function POS({ user, onLogout }) {
             <div className={`w-14 h-14 rounded-full ${showReceipt.payment_method === 'credit' ? 'bg-amber-100 border-amber-300' : 'bg-emerald-100 border-emerald-300'} border-2 flex items-center justify-center mx-auto mb-3`}>
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={showReceipt.payment_method === 'credit' ? '#b45309' : '#065f46'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
-            <h3 className="text-lg font-extrabold text-slate-900">{showReceipt.payment_method === 'credit' ? 'ອອກບິນເຊື່ອສຳເລັດ' : 'ການຊຳລະສຳເລັດ'}</h3>
+            <h3 className="text-lg font-extrabold text-slate-900">{showReceipt.payment_method === 'credit' ? 'ອອກບິນຕິດໜີ້ສຳເລັດ' : 'ການຊຳລະສຳເລັດ'}</h3>
             <div className="text-[11px] text-slate-500 mt-0.5">
               ໃບບິນ {showReceipt.bill_number || `#${showReceipt.id}`} · {new Date(showReceipt.created_at).toLocaleString('lo-LA')}
             </div>
@@ -2047,7 +2711,7 @@ export default function POS({ user, onLogout }) {
           </div>
           {showReceipt.payment_method === 'credit' && (
             <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-2 text-xs text-amber-900">
-              <div className="font-bold text-amber-700 mb-0.5 text-[10px] uppercase tracking-wider">ລູກຄ້າເຊື່ອ</div>
+              <div className="font-bold text-amber-700 mb-0.5 text-[10px] uppercase tracking-wider">ລູກຄ້າຕິດໜີ້</div>
               <div>{showReceipt.customer_name || '—'}{showReceipt.customer_phone ? ` · ${showReceipt.customer_phone}` : ''}</div>
               {showReceipt.credit_due_date && <div className="mt-0.5">ກຳນົດຊຳລະ: {new Date(showReceipt.credit_due_date).toLocaleDateString('lo-LA')}</div>}
             </div>
@@ -2120,18 +2784,20 @@ export default function POS({ user, onLogout }) {
               return `ເຫຼືອ ${fmtN(d)} ວັນ`
             }
             const sections = [
-              { key: 'overdue', title: '🔴 ເກີນກຳນົດ', items: a.overdue, total: a.totals?.overdue || 0, tone: 'rose' },
-              { key: 'today', title: '🟠 ກຳນົດມື້ນີ້', items: a.today, total: a.totals?.today || 0, tone: 'amber' },
-              { key: 'upcoming', title: `🟡 ໃກ້ຄົບກຳນົດ (≤${a.upcoming_days || 7} ວັນ)`, items: a.upcoming, total: a.totals?.upcoming || 0, tone: 'yellow' },
-              { key: 'undated', title: '⚪ ບໍ່ມີວັນຄົບກຳນົດ', items: a.undated, total: a.totals?.undated || 0, tone: 'slate' },
+              { key: 'overdue', title: '🔴 ເກີນກຳນົດ', items: a.overdue || [], total: a.totals?.overdue || 0, tone: 'rose' },
+              { key: 'today', title: '🟠 ກຳນົດມື້ນີ້', items: a.today || [], total: a.totals?.today || 0, tone: 'amber' },
+              { key: 'upcoming', title: `🟡 ໃກ້ຄົບກຳນົດ (≤${a.upcoming_days || 7} ວັນ)`, items: a.upcoming || [], total: a.totals?.upcoming || 0, tone: 'yellow' },
+              { key: 'later', title: `🔵 ກຳນົດໃນອະນາຄົດ (>${a.upcoming_days || 7} ວັນ)`, items: a.later || [], total: a.totals?.later || 0, tone: 'blue' },
+              { key: 'undated', title: '⚪ ບໍ່ມີວັນຄົບກຳນົດ', items: a.undated || [], total: a.totals?.undated || 0, tone: 'slate' },
             ]
             const tones = {
               rose: { bg: 'bg-rose-50 border-rose-200', text: 'text-rose-700', amount: 'text-rose-700', badge: 'bg-rose-600 text-white' },
               amber: { bg: 'bg-amber-50 border-amber-200', text: 'text-amber-800', amount: 'text-amber-700', badge: 'bg-amber-500 text-white' },
               yellow: { bg: 'bg-yellow-50 border-yellow-200', text: 'text-yellow-800', amount: 'text-yellow-700', badge: 'bg-yellow-500 text-white' },
+              blue: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700', amount: 'text-blue-700', badge: 'bg-blue-500 text-white' },
               slate: { bg: 'bg-slate-50 border-slate-200', text: 'text-slate-700', amount: 'text-slate-700', badge: 'bg-slate-500 text-white' },
             }
-            const grandTotal = (a.totals?.overdue || 0) + (a.totals?.today || 0) + (a.totals?.upcoming || 0) + (a.totals?.undated || 0)
+            const grandTotal = sections.reduce((s, sec) => s + sec.total, 0)
             const grandCount = a.counts?.total || 0
             if (grandCount === 0) {
               return (
@@ -2144,7 +2810,7 @@ export default function POS({ user, onLogout }) {
             }
             return (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                   {sections.map(s => {
                     const t = tones[s.tone]
                     return (
@@ -2247,7 +2913,7 @@ export default function POS({ user, onLogout }) {
                   <span className="font-mono-t"><span className="font-extrabold">{dailySummary.today.qr_count}</span> · <span className="text-emerald-700">{formatPrice(dailySummary.today.qr_revenue)}</span></span>
                 </div>
                 <div className="bg-white border border-amber-200 rounded-lg p-2 flex items-center justify-between">
-                  <span className="font-bold text-amber-700">🧾 ເຊື່ອ</span>
+                  <span className="font-bold text-amber-700">🧾 ຕິດໜີ້</span>
                   <span className="font-mono-t"><span className="font-extrabold">{dailySummary.today.credit_count || 0}</span> · <span className="text-amber-700">{formatPrice(dailySummary.today.credit_revenue || 0)}</span></span>
                 </div>
               </div>
@@ -2291,7 +2957,7 @@ export default function POS({ user, onLogout }) {
                       <span className="text-[10px] font-mono-t bg-red-100 text-red-900 font-extrabold px-2 py-0.5 rounded shrink-0">{order.bill_number || `#${order.id}`}</span>
                       <div className="min-w-0">
                         <div className="text-sm font-bold text-slate-900">
-                          {order.payment_method === 'cash' ? '💵 ເງິນສົດ' : order.payment_method === 'transfer' ? '🏦 ໂອນ' : order.payment_method === 'credit' ? '🧾 ຂາຍເຊື່ອ' : '📱 QR'}
+                          {order.payment_method === 'cash' ? '💵 ເງິນສົດ' : order.payment_method === 'transfer' ? '🏦 ໂອນ' : order.payment_method === 'credit' ? '🧾 ຂາຍຕິດໜີ້' : '📱 QR'}
                           {order.member_id && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">ສະມາຊິກ</span>}
                           {isToday && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">ມື້ນີ້</span>}
                         </div>
@@ -2305,9 +2971,21 @@ export default function POS({ user, onLogout }) {
                       <div className="text-right">
                         <div className="text-lg font-extrabold text-red-700 font-mono-t">{formatPrice(order.total)}</div>
                       </div>
-                      <button onClick={() => printReceipt(order)}
-                        className="w-7 h-7 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded flex items-center justify-center" title="ພິມໃບບິນ">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                      <div className="flex items-center overflow-hidden rounded border border-slate-200 bg-slate-50" title="Reprint">
+                        {[
+                          { key: '80mm', label: '80' },
+                          { key: 'a5', label: 'A5' },
+                          { key: 'a4', label: 'A4' },
+                        ].map(size => (
+                          <button key={size.key} onClick={() => printReceipt(order, size.key)}
+                            className="h-7 px-2 border-r last:border-r-0 border-slate-200 hover:bg-slate-200 text-[10px] font-extrabold text-slate-700">
+                            {size.label}
+                          </button>
+                        ))}
+                      </div>
+                      <button onClick={() => openReturnModal(order)}
+                        className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded flex items-center justify-center" title="ຮັບຄືນ / ຄືນເງິນ">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
                       </button>
                       <button onClick={() => cancelOrder(order.id)}
                         className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded flex items-center justify-center" title="ຍົກເລີກບິນ">
@@ -2339,6 +3017,219 @@ export default function POS({ user, onLogout }) {
             })}
             {orders.length === 0 && (
               <div className="text-center py-12 text-slate-400 text-sm">ຍັງບໍ່ມີການຂາຍ</div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {showReturn && (
+        <Modal onClose={() => !returnBusy && setShowReturn(false)} title="ຮັບຄືນສິນຄ້າ / ຄືນເງິນ" size="xl">
+          <div className="space-y-3">
+            {/* Search bar */}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input
+                  value={returnSearch}
+                  onChange={e => setReturnSearch(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') lookupReturnOrder() }}
+                  className="w-full h-11 pl-9 pr-3 border-2 border-slate-200 rounded-lg text-sm font-semibold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+                  placeholder="ປ້ອນເລກບິນ ຫຼື Order ID..."
+                  disabled={returnBusy}
+                  autoFocus
+                />
+              </div>
+              <button
+                onClick={() => lookupReturnOrder()}
+                disabled={returnBusy || !returnSearch.trim()}
+                className="px-5 h-11 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg text-sm font-extrabold flex items-center gap-1.5"
+              >
+                {returnBusy ? (
+                  <><div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin"></div> ກຳລັງຄົ້ນ...</>
+                ) : 'ຄົ້ນຫາ'}
+              </button>
+            </div>
+
+            {!returnLookup?.order && !returnBusy && (
+              <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center">
+                <div className="text-3xl mb-1">🧾</div>
+                <div className="text-sm font-bold text-slate-500">ປ້ອນເລກບິນເພື່ອເລີ່ມຮັບຄືນ</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">ເຊັ່ນ: INV-202605-00006</div>
+              </div>
+            )}
+
+            {returnLookup?.order && (
+              <>
+                {/* Order info card */}
+                <div className="rounded-xl border-2 border-slate-200 bg-gradient-to-br from-slate-50 to-white p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">ບິນອ້າງອີງ</div>
+                      <div className="font-mono text-xl font-extrabold text-slate-900 mt-0.5">{returnLookup.order.bill_number || `#${returnLookup.order.id}`}</div>
+                      <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
+                        <span>{new Date(returnLookup.order.created_at).toLocaleString('lo-LA')}</span>
+                        <span className="text-slate-300">·</span>
+                        <span className="font-bold">👤 {returnLookup.order.customer_name || 'ລູກຄ້າທົ່ວໄປ'}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">ຍອດບິນ</div>
+                      <div className="font-mono-t text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">{formatPrice(returnLookup.order.total || 0)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Items as cards */}
+                <div className="rounded-xl border border-slate-200 bg-white">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
+                    <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500">ສິນຄ້າທີ່ສາມາດຮັບຄືນ</div>
+                    <span className="text-[10px] font-bold text-slate-400">{(returnLookup.items || []).length} ລາຍການ</span>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {(returnLookup.items || []).map((item, idx) => {
+                      const maxQty = Number(item.returnable_qty) || 0
+                      const selectedQty = Math.max(0, Math.min(Number(returnQty[item.order_item_id]) || 0, maxQty))
+                      const setQ = (n) => setReturnQty(prev => ({
+                        ...prev,
+                        [item.order_item_id]: Math.max(0, Math.min(Number(n) || 0, maxQty))
+                      }))
+                      const isSelected = selectedQty > 0
+                      const disabled = returnBusy || maxQty <= 0
+                      return (
+                        <div key={item.order_item_id} className={`p-3 ${maxQty <= 0 ? 'bg-slate-50/60 opacity-60' : isSelected ? 'bg-blue-50/40' : ''}`}>
+                          <div className="flex items-start gap-3">
+                            <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[11px] font-extrabold ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                              {idx + 1}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold text-slate-900 text-sm truncate">{item.product_name || '—'}</div>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                                <span>ຂາຍ <b className="text-slate-700">{formatNumber(item.sold_qty || 0)}</b></span>
+                                <span>ຄືນໄດ້ <b className={maxQty > 0 ? 'text-emerald-600' : 'text-slate-400'}>{formatNumber(maxQty)}</b></span>
+                                <span className="text-slate-300">·</span>
+                                <span>ລາຄາ <b className="text-slate-700 font-mono">{formatNumber(item.price || 0)}</b> ₭</span>
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <div className={`font-mono text-base font-extrabold ${isSelected ? 'text-blue-700' : 'text-slate-300'}`}>
+                                {formatPrice(selectedQty * (Number(item.price) || 0))}
+                              </div>
+                            </div>
+                          </div>
+                          {maxQty > 0 && (
+                            <div className="mt-2 flex items-center gap-2 pl-10">
+                              <div className="flex items-stretch rounded-md border border-slate-200 overflow-hidden">
+                                <button type="button" onClick={() => setQ(selectedQty - 1)} disabled={disabled || selectedQty <= 0}
+                                  className="w-8 h-8 bg-slate-50 hover:bg-slate-100 text-slate-600 disabled:opacity-30 text-sm font-extrabold">−</button>
+                                <input type="number" min="0" max={maxQty} step="1"
+                                  value={returnQty[item.order_item_id] ?? ''}
+                                  onChange={e => setQ(e.target.value)}
+                                  disabled={disabled}
+                                  placeholder="0"
+                                  className="w-14 h-8 text-center font-mono font-bold text-slate-800 outline-none border-x border-slate-200" />
+                                <button type="button" onClick={() => setQ(selectedQty + 1)} disabled={disabled || selectedQty >= maxQty}
+                                  className="w-8 h-8 bg-slate-50 hover:bg-slate-100 text-slate-600 disabled:opacity-30 text-sm font-extrabold">+</button>
+                              </div>
+                              <button type="button" onClick={() => setQ(maxQty)} disabled={disabled}
+                                className="h-8 px-2.5 rounded-md bg-slate-100 hover:bg-blue-100 hover:text-blue-700 text-[10px] font-extrabold text-slate-600 disabled:opacity-30">
+                                MAX
+                              </button>
+                              {selectedQty > 0 && (
+                                <button type="button" onClick={() => setQ(0)} disabled={returnBusy}
+                                  className="h-8 px-2 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 text-xs">✕</button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {returnLookup.returns?.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                    <div className="text-[10px] font-extrabold text-amber-700 uppercase tracking-widest mb-1">ເຄີຍຮັບຄືນແລ້ວ · {returnLookup.returns.length}</div>
+                    <div className="space-y-0.5">
+                      {returnLookup.returns.map(ret => (
+                        <div key={ret.id} className="flex justify-between gap-3 text-[11px] text-amber-900">
+                          <span className="font-mono">{ret.return_number} · {new Date(ret.created_at).toLocaleString('lo-LA')}</span>
+                          <span className="font-mono-t font-extrabold">{formatPrice(ret.refund_amount || 0)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Refund method + note */}
+                <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-3">
+                  <div>
+                    <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">ວິທີຄືນເງິນ</div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[
+                        { key: 'cash', icon: '💵', label: 'ເງິນສົດ' },
+                        { key: 'transfer', icon: '🏦', label: 'ໂອນ' },
+                        { key: 'qr', icon: '📱', label: 'QR' },
+                        { key: 'store_credit', icon: '🎟️', label: 'ເຄຣດິດ' },
+                      ].map(m => {
+                        const active = returnMethod === m.key
+                        return (
+                          <button key={m.key} type="button" onClick={() => setReturnMethod(m.key)}
+                            disabled={returnBusy}
+                            className={`py-2 rounded-lg text-[11px] font-extrabold transition border-2 ${
+                              active ? 'border-blue-500 bg-blue-50 text-blue-700' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                            }`}>
+                            <div className="text-lg leading-none mb-0.5">{m.icon}</div>
+                            <div>{m.label}</div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 mb-1">ໝາຍເຫດ / ເຫດຜົນ</div>
+                    <textarea
+                      value={returnNote}
+                      onChange={e => setReturnNote(e.target.value)}
+                      disabled={returnBusy}
+                      rows={2}
+                      placeholder="ສິນຄ້າຊຳລຸດ, ບໍ່ຖືກໃຈ, ສິນຄ້າຜິດ..."
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 resize-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Sticky summary bar */}
+                <div className="sticky bottom-0 z-10 rounded-xl border-2 border-blue-500 bg-gradient-to-r from-blue-600 to-blue-700 p-3 shadow-xl shadow-blue-500/20">
+                  <div className="flex items-center justify-between gap-3 text-white">
+                    <div>
+                      <div className="text-[10px] font-extrabold uppercase tracking-widest text-blue-100">ຍອດຕ້ອງຄືນເງິນ</div>
+                      <div className="mt-0.5 text-2xl font-extrabold font-mono tracking-tight">{formatPrice(returnRefundTotal)}</div>
+                      <div className="text-[10px] font-bold text-blue-200 mt-0.5">
+                        {selectedReturnItems.length > 0
+                          ? `${formatNumber(selectedReturnItems.reduce((s, x) => s + Number(x.quantity || 0), 0))} ຊິ້ນ · ${selectedReturnItems.length} ລາຍການ`
+                          : 'ຍັງບໍ່ໄດ້ເລືອກສິນຄ້າ'}
+                      </div>
+                    </div>
+                    <button
+                      onClick={submitReturn}
+                      disabled={returnBusy || selectedReturnItems.length === 0}
+                      className="rounded-xl bg-white px-5 py-2.5 text-sm font-extrabold text-blue-700 shadow-lg hover:bg-blue-50 disabled:bg-blue-500 disabled:text-blue-200 disabled:cursor-not-allowed transition flex items-center gap-2"
+                    >
+                      {returnBusy ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-blue-300 border-t-blue-700 rounded-full animate-spin"></div>
+                          ກຳລັງບັນທຶກ...
+                        </>
+                      ) : (
+                        <>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 13l4 4L19 7"/></svg>
+                          ບັນທຶກຮັບຄືນ
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </Modal>

@@ -2,6 +2,7 @@
 
 
 import { useState, useEffect, useMemo } from 'react'
+import { AdminHero } from '@/components/admin/ui/AdminHero'
 
 const API = '/api'
 const fmtPrice = n => new Intl.NumberFormat('lo-LA').format(Math.round(n || 0)) + ' ກີບ'
@@ -23,11 +24,13 @@ const methodMeta = {
   transfer: { icon: '🏦', label: 'ໂອນ', color: 'blue' },
   qr: { icon: '📱', label: 'QR', color: 'violet' },
   mixed: { icon: '🎯', label: 'ປະສົມ', color: 'amber' },
-  credit: { icon: '🧾', label: 'ເຊື່ອ', color: 'rose' },
+  credit: { icon: '🧾', label: 'ຕິດໜີ້', color: 'rose' },
 }
 
 export default function Sales() {
   const [orders, setOrders] = useState([])
+  const [branches, setBranches] = useState([])
+  const [branchFilter, setBranchFilter] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [loading, setLoading] = useState(false)
@@ -44,13 +47,17 @@ export default function Sales() {
       const params = new URLSearchParams()
       if (from) params.set('start', from)
       if (to) params.set('end', to)
+      if (branchFilter) params.set('branch_id', branchFilter)
       const res = await fetch(`${API}/admin/sales?${params}`)
       setOrders(await res.json())
       setPage(1)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    fetch(`${API}/admin/branches`).then(r => r.json()).then(d => setBranches(Array.isArray(d) ? d : [])).catch(() => {})
+  }, [])
+  useEffect(() => { load() }, [branchFilter])
 
   const quickRange = (days) => {
     const d = new Date()
@@ -138,7 +145,7 @@ export default function Sales() {
     { l: '💵 ສົດ', v: fmtNum(stats.methods.cash.count), sub: fmtCompact(stats.methods.cash.total), color: 'emerald' },
     { l: '🏦 ໂອນ', v: fmtNum(stats.methods.transfer.count), sub: fmtCompact(stats.methods.transfer.total), color: 'blue' },
     { l: '📱 QR', v: fmtNum(stats.methods.qr.count), sub: fmtCompact(stats.methods.qr.total), color: 'violet' },
-    { l: '🧾 ເຊື່ອ', v: fmtNum(stats.methods.credit.count), sub: `ຄ້າງ ${fmtCompact(stats.creditRemaining)}`, color: 'rose' },
+    { l: '🧾 ຕິດໜີ້', v: fmtNum(stats.methods.credit.count), sub: `ຄ້າງ ${fmtCompact(stats.creditRemaining)}`, color: 'rose' },
     { l: 'ສ່ວນຫຼຸດ', v: fmtCompact(stats.discount), sub: stats.total > 0 ? `${(stats.discount / stats.total * 100).toFixed(1)}% ຂອງລວມ` : '—', color: 'amber' },
   ]
   const kpiColor = {
@@ -195,30 +202,24 @@ export default function Sales() {
   }
 
   return (
-    <div className="text-[13px]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ປະຫວັດການຂາຍສິນຄ້າ</h2>
-          <span className="text-[11px] text-slate-400">·</span>
-          <span className="text-xs text-slate-500">
-            {from || to ? `${from || '...'} → ${to || '...'}` : 'ທຸກຊ່ວງເວລາ'}
-          </span>
-          <span className="text-[11px] font-bold px-2 py-0.5 bg-red-50 text-red-600 rounded">{fmtNum(filtered.length)} ບິນ</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={exportCSV} disabled={filtered.length === 0}
-            className="px-3 py-1.5 bg-white hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold flex items-center gap-1.5">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-            Export CSV
-          </button>
-          <button onClick={load}
-            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-            ໂຫຼດໃໝ່
-          </button>
-        </div>
-      </div>
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Sales history"
+        title="📋 ປະຫວັດການຂາຍ"
+        subtitle={from || to ? `${from || '...'} → ${to || '...'} · ${fmtNum(filtered.length)} ບິນ` : `ທຸກຊ່ວງເວລາ · ${fmtNum(filtered.length)} ບິນ`}
+        action={
+          <div className="flex gap-2">
+            <button onClick={exportCSV} disabled={filtered.length === 0}
+              className="rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 disabled:opacity-50 px-4 py-3 text-sm font-extrabold text-white">
+              📥 Export CSV
+            </button>
+            <button onClick={load}
+              className="rounded-xl bg-red-600 hover:bg-red-700 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-red-950/20">
+              ↻ ໂຫຼດໃໝ່
+            </button>
+          </div>
+        }
+      />
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
@@ -332,7 +333,7 @@ export default function Sales() {
             { key: 'cash', label: `💵 ສົດ · ${stats.methods.cash.count}`, cls: 'bg-emerald-500 text-white' },
             { key: 'transfer', label: `🏦 ໂອນ · ${stats.methods.transfer.count}`, cls: 'bg-red-500 text-white' },
             { key: 'qr', label: `📱 QR · ${stats.methods.qr.count}`, cls: 'bg-violet-500 text-white' },
-            { key: 'credit', label: `🧾 ເຊື່ອ · ${stats.methods.credit.count}`, cls: 'bg-rose-500 text-white' },
+            { key: 'credit', label: `🧾 ຕິດໜີ້ · ${stats.methods.credit.count}`, cls: 'bg-rose-500 text-white' },
             ...(stats.methods.mixed.count > 0 ? [{ key: 'mixed', label: `🎯 ປະສົມ · ${stats.methods.mixed.count}`, cls: 'bg-amber-500 text-white' }] : []),
           ].map(s => (
             <button key={s.key} onClick={() => setMethodFilter(s.key)}
@@ -341,6 +342,17 @@ export default function Sales() {
             </button>
           ))}
         </div>
+        {branches.length > 1 && (
+          <select
+            value={branchFilter}
+            onChange={e => setBranchFilter(e.target.value)}
+            className="px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-md text-xs font-bold outline-none cursor-pointer"
+            title="ສາຂາ"
+          >
+            <option value="">🏬 ທຸກສາຂາ</option>
+            {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        )}
         <select value={perPage} onChange={e => setPerPage(Number(e.target.value))}
           className="px-2 py-1.5 bg-white border border-slate-200 rounded-md text-xs outline-none cursor-pointer">
           <option value={25}>25</option>
@@ -364,9 +376,9 @@ export default function Sales() {
               <thead className="sticky top-0 bg-slate-50 z-10">
                 <tr className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-200">
                   <th className="w-8"></th>
-                  <th className="text-left py-2 px-3 w-16">ID</th>
+                  <th className="text-left py-2 px-3 whitespace-nowrap">ID</th>
                   <th className="text-left py-2 px-3 whitespace-nowrap">ວັນທີ/ເວລາ</th>
-                  <th className="text-center py-2 px-3 w-20">ວິທີ</th>
+                  <th className="text-center py-2 px-3 whitespace-nowrap">ວິທີ</th>
                   <th className="text-left py-2 px-3 whitespace-nowrap">ລູກຄ້າ</th>
                   <th className="text-right py-2 px-3 w-16">ຊິ້ນ</th>
                   <th className="text-right py-2 px-3 whitespace-nowrap">ຫຼຸດ</th>
@@ -444,12 +456,12 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
         <td className="py-1.5 px-2 text-center">
           <span className={`inline-block transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
         </td>
-        <td className="py-1.5 px-3">
-          <span className="font-mono text-[11px] font-extrabold bg-red-50 text-red-700 px-1.5 py-0.5 rounded">{o.bill_number || `#${o.id}`}</span>
+        <td className="py-1.5 px-3 whitespace-nowrap">
+          <span className="inline-block font-mono text-[11px] font-extrabold bg-red-50 text-red-700 px-1.5 py-0.5 rounded whitespace-nowrap">{o.bill_number || `#${o.id}`}</span>
         </td>
         <td className="py-1.5 px-3 text-[11px] font-mono text-slate-500 whitespace-nowrap">{fmtDT(o.created_at)}</td>
-        <td className="py-1.5 px-3 text-center">
-          <span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded bg-${m.color}-50 text-${m.color}-700 border border-${m.color}-100`}>
+        <td className="py-1.5 px-3 text-center whitespace-nowrap">
+          <span className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded whitespace-nowrap bg-${m.color}-50 text-${m.color}-700 border border-${m.color}-100`}>
             {m.icon} {m.label}
           </span>
         </td>
@@ -518,7 +530,7 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
             )}
             {o.payment_method === 'credit' && (
               <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
-                🧾 ບິນເຊື່ອ · {o.customer_name || '—'}{o.customer_phone ? ` · ${o.customer_phone}` : ''} · ຍອດຄ້າງ {fmtPrice(Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0)))}
+                🧾 ບິນຕິດໜີ້ · {o.customer_name || '—'}{o.customer_phone ? ` · ${o.customer_phone}` : ''} · ຍອດຄ້າງ {fmtPrice(Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0)))}
               </div>
             )}
           </td>

@@ -31,7 +31,7 @@ export const GET = handle(async (request) => {
     FROM orders o
     LEFT JOIN members m ON m.id = o.member_id
     WHERE o.payment_method = 'credit'
-      AND o.credit_status IN ('outstanding', 'partial')
+      AND COALESCE(o.credit_status, 'outstanding') <> 'paid'
       AND GREATEST(0, o.total - COALESCE(o.credit_paid, o.amount_paid, 0)) > 0
     ORDER BY o.credit_due_date ASC NULLS LAST, o.created_at ASC
     `
@@ -39,7 +39,8 @@ export const GET = handle(async (request) => {
 
   const today = [];
   const overdue = [];
-  const upcoming = [];
+  const upcoming = [];   // 1..upcomingDays days
+  const later = [];      // > upcomingDays days
   const undated = [];
 
   for (const row of result.rows) {
@@ -67,11 +68,13 @@ export const GET = handle(async (request) => {
     if (item.status === 'overdue') overdue.push(item);
     else if (item.status === 'today') today.push(item);
     else if (item.status === 'upcoming') upcoming.push(item);
+    else if (item.status === 'later') later.push(item);
     else if (item.status === 'undated') undated.push(item);
   }
 
   overdue.sort((a, b) => (a.days_until_due ?? 0) - (b.days_until_due ?? 0));
   upcoming.sort((a, b) => (a.days_until_due ?? 0) - (b.days_until_due ?? 0));
+  later.sort((a, b) => (a.days_until_due ?? 0) - (b.days_until_due ?? 0));
 
   const sumRemaining = (arr) => arr.reduce((s, x) => s + (Number(x.remaining) || 0), 0);
 
@@ -81,18 +84,21 @@ export const GET = handle(async (request) => {
       overdue: overdue.length,
       today: today.length,
       upcoming: upcoming.length,
+      later: later.length,
       undated: undated.length,
-      total: overdue.length + today.length + upcoming.length + undated.length,
+      total: overdue.length + today.length + upcoming.length + later.length + undated.length,
     },
     totals: {
       overdue: sumRemaining(overdue),
       today: sumRemaining(today),
       upcoming: sumRemaining(upcoming),
+      later: sumRemaining(later),
       undated: sumRemaining(undated),
     },
     overdue,
     today,
     upcoming,
+    later,
     undated,
   });
 });

@@ -39,6 +39,12 @@ export default function PurchaseCreate() {
     if (!raw) return null
     try { return JSON.parse(raw)?.pendingInvoice || null } catch { return null }
   })
+  const [pendingRequest] = useState(() => {
+    if (typeof window === 'undefined') return null
+    const raw = sessionStorage.getItem('navState')
+    if (!raw) return null
+    try { return JSON.parse(raw)?.pendingRequest || null } catch { return null }
+  })
   useEffect(() => { sessionStorage.removeItem('navState') }, [])
   const fileRef = useRef(null)
 
@@ -128,6 +134,29 @@ export default function PurchaseCreate() {
           note: `ນຳເຂົ້າຈາກບິນ SML: ${pendingInvoice.doc_no}`
         }))
       }
+
+      if (pendingRequest) {
+        const prItems = (Array.isArray(pendingRequest.items) ? pendingRequest.items : [])
+          .map(it => {
+            const productById = productsData.find(p => Number(p.id) === Number(it.product_id))
+            if (!productById) return null
+            return {
+              product_id: productById.id,
+              quantity: Number(it.quantity) || 1,
+              cost_price: Number(it.cost_price) || Number(productById.cost_price) || '',
+              unit: productById.unit || '',
+              disc_type: 'none',
+              disc_value: '',
+            }
+          })
+          .filter(Boolean)
+        if (prItems.length > 0) setItems(prItems)
+        setForm(f => ({
+          ...f,
+          supplier_id: pendingRequest.supplier_id ? String(pendingRequest.supplier_id) : '',
+          note: pendingRequest.note || `ດຶງຈາກໃບສະເໜີຊື້: ${pendingRequest.request_number || ''}`,
+        }))
+      }
     })
     fetch(`${API}/admin/purchases/next-number`).then(r => r.json()).then(data => {
       setForm(f => ({ ...f, ref_number: data.number }))
@@ -138,7 +167,7 @@ export default function PurchaseCreate() {
       data.forEach(d => { map[d.product_id] = d })
       setLastPrices(map)
     })
-  }, [pendingInvoice])
+  }, [pendingInvoice, pendingRequest])
 
   const addItem = () => setItems([...items, { product_id: '', quantity: 1, cost_price: '', unit: '', disc_type: 'none', disc_value: '' }])
   const removeItem = (i) => items.length > 1 && setItems(items.filter((_, idx) => idx !== i))
@@ -249,6 +278,15 @@ export default function PurchaseCreate() {
       const data = await res.json()
       setPurchaseData(data)
       setShowSuccess(true)
+      // If created from an approved Purchase Request, mark it converted + link
+      if (pendingRequest?.id && data?.id) {
+        try {
+          await fetch(`${API}/admin/purchase-requests/${pendingRequest.id}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'mark_converted', purchase_id: data.id }),
+          })
+        } catch (e) { console.error('PR link failed:', e) }
+      }
       setTimeout(async () => {
         try {
           await generateAndPrintPurchaseA4(data, form, items,
@@ -269,8 +307,8 @@ export default function PurchaseCreate() {
     navigate('/admin/purchases', { replace: true })
   }
 
-  const inp = "w-full px-2 py-0 h-7 bg-white border border-slate-200 rounded text-[12px] leading-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none transition"
-  const numInp = "w-full px-1.5 py-0 h-6 bg-white border border-slate-200 rounded text-[12px] leading-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+  const inp = "w-full px-2 py-0 h-7 bg-white border border-slate-200 rounded text-[12px] leading-none focus:border-red-400 focus:ring-1 focus:ring-red-200 outline-none transition"
+  const numInp = "w-full px-1.5 py-0 h-6 bg-white border border-slate-200 rounded text-[12px] leading-none focus:border-red-400 focus:ring-1 focus:ring-red-200 outline-none transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
   const lbl = "block text-[11px] font-medium text-slate-500 mb-1"
   const card = "bg-white rounded-lg border border-slate-200"
 
@@ -288,7 +326,7 @@ export default function PurchaseCreate() {
           </button>
           <div className="h-4 w-px bg-slate-200"></div>
           <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>
+            <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
             <h1 className="font-semibold text-slate-800">ໃບສັ່ງຊື້ໃໝ່</h1>
             {form.ref_number && (
               <span className="text-[11px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{form.ref_number}</span>
@@ -307,7 +345,7 @@ export default function PurchaseCreate() {
             <button
               onClick={handleConfirm}
               disabled={loading || validItems.length === 0 || !form.supplier_id}
-              className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-[12px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1.5"
+              className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-[12px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1.5"
             >
               {loading ? (
                 <div className="w-3 h-3 border border-white/50 border-t-white rounded-full animate-spin"></div>
@@ -352,7 +390,7 @@ export default function PurchaseCreate() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[11px] font-medium text-slate-500">ເລກທີໃບສັ່ງຊື້</label>
-                  <button type="button" onClick={() => { setEditFormat(poFormat); setShowFormatSettings(true) }} className="text-[10px] text-indigo-600 hover:underline">⚙ ຮູບແບບ</button>
+                  <button type="button" onClick={() => { setEditFormat(poFormat); setShowFormatSettings(true) }} className="text-[10px] text-red-600 hover:underline">⚙ ຮູບແບບ</button>
                 </div>
                 <input type="text" value={form.ref_number} onChange={e => setForm({ ...form, ref_number: e.target.value })} className={`${inp} font-mono`}/>
               </div>
@@ -368,16 +406,16 @@ export default function PurchaseCreate() {
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1.5">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 <span className="text-[12px] text-slate-700 flex-1 truncate">{invoiceName}</span>
-                <a href={`/uploads/${invoiceFile}`} target="_blank" rel="noreferrer" className="text-[11px] text-indigo-600 hover:underline">ເປີດ</a>
+                <a href={`/uploads/${invoiceFile}`} target="_blank" rel="noreferrer" className="text-[11px] text-red-600 hover:underline">ເປີດ</a>
                 <button onClick={() => { setInvoiceFile(null); setInvoiceName('') }} className="text-slate-400 hover:text-red-500">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
               </div>
             ) : (
               <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                className="w-full py-2 border border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/30 rounded-md text-[11px] text-slate-500 hover:text-indigo-600 transition flex items-center justify-center gap-1.5">
+                className="w-full py-2 border border-dashed border-slate-300 hover:border-red-400 hover:bg-red-50/30 rounded-md text-[11px] text-slate-500 hover:text-red-600 transition flex items-center justify-center gap-1.5">
                 {uploading ? (
-                  <><div className="w-3 h-3 border border-slate-300 border-t-indigo-500 rounded-full animate-spin"></div> ກຳລັງອັບໂຫຼດ...</>
+                  <><div className="w-3 h-3 border border-slate-300 border-t-red-500 rounded-full animate-spin"></div> ກຳລັງອັບໂຫຼດ...</>
                 ) : (
                   <>📎 ແນບ PDF ຫຼື ຮູບພາບ</>
                 )}
@@ -414,7 +452,7 @@ export default function PurchaseCreate() {
                   }}
                   className={`px-2 py-0 h-6 rounded text-[11px] font-medium leading-none transition ${
                     form.currency === c.value
-                      ? 'bg-indigo-600 text-white'
+                      ? 'bg-red-600 text-white'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
@@ -427,7 +465,7 @@ export default function PurchaseCreate() {
                   <input
                     type="number" min="0" step="0.01" value={exchangeRate}
                     onChange={e => setExchangeRate(Number(e.target.value) || 0)}
-                    className="w-20 px-1 py-0 h-5 bg-white border border-slate-200 rounded text-[11px] leading-none text-right font-mono focus:border-indigo-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="w-20 px-1 py-0 h-5 bg-white border border-slate-200 rounded text-[11px] leading-none text-right font-mono focus:border-red-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <span className="text-[11px] text-slate-500">₭</span>
                 </div>
@@ -442,7 +480,7 @@ export default function PurchaseCreate() {
                 <span className="font-semibold text-slate-700 text-[13px]">ລາຍການສິນຄ້າ</span>
                 <span className="text-[11px] text-slate-500 font-mono">{validItems.length}/{items.length}</span>
               </div>
-              <button onClick={addItem} className="text-[12px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1">
+              <button onClick={addItem} className="text-[12px] text-red-600 hover:text-red-800 font-semibold flex items-center gap-1">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
                 ເພີ່ມ
               </button>
@@ -477,7 +515,7 @@ export default function PurchaseCreate() {
                           <button
                             type="button"
                             onClick={() => { setProductPicker({ rowIdx: idx }); setPickerSearch('') }}
-                            className={`h-6 px-2 rounded border text-[11px] font-mono leading-none transition ${prod?.product_code ? 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100' : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-500'}`}
+                            className={`h-6 px-2 rounded border text-[11px] font-mono leading-none transition ${prod?.product_code ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100' : 'bg-white border-dashed border-slate-300 text-slate-400 hover:border-red-400 hover:text-red-500'}`}
                           >
                             {prod?.product_code || '+ ເລືອກ'}
                           </button>
@@ -486,7 +524,7 @@ export default function PurchaseCreate() {
                           <div className="flex items-center gap-2">
                             <span className="flex-1 min-w-0 truncate text-slate-700">{prod?.product_name || <span className="text-slate-300 italic">ຍັງບໍ່ເລືອກ</span>}</span>
                             {prod && lastPrices[Number(item.product_id)] && (
-                              <span className="shrink-0 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100 text-[10px]">ລ່າ.{formatAmount(lastPrices[Number(item.product_id)].last_cost_original, lastPrices[Number(item.product_id)].currency)}</span>
+                              <span className="shrink-0 px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 text-[10px]">ລ່າ.{formatAmount(lastPrices[Number(item.product_id)].last_cost_original, lastPrices[Number(item.product_id)].currency)}</span>
                             )}
                           </div>
                         </td>
@@ -504,14 +542,14 @@ export default function PurchaseCreate() {
                             <div className="flex border border-slate-200 rounded overflow-hidden text-[12px]">
                               {[{ k: 'none', l: '—' }, { k: 'percent', l: '%' }, { k: 'fixed', l: cur?.symbol || '₭' }].map(t => (
                                 <button key={t.k} type="button" onClick={() => updateItem(idx, 'disc_type', t.k)}
-                                  className={`px-2 py-0.5 font-semibold transition ${item.disc_type === t.k ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-100'}`}>
+                                  className={`px-2 py-0.5 font-semibold transition ${item.disc_type === t.k ? 'bg-red-600 text-white' : 'text-slate-400 hover:bg-slate-100'}`}>
                                   {t.l}
                                 </button>
                               ))}
                             </div>
                             {item.disc_type !== 'none' && (
                               <input type="number" min="0" value={item.disc_value} onChange={e => updateItem(idx, 'disc_value', e.target.value)}
-                                className="w-14 px-1.5 py-0 h-6 bg-white border border-slate-200 rounded text-[12px] leading-none text-right font-mono focus:border-indigo-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
+                                className="w-14 px-1.5 py-0 h-6 bg-white border border-slate-200 rounded text-[12px] leading-none text-right font-mono focus:border-red-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"/>
                             )}
                           </div>
                         </td>
@@ -563,7 +601,7 @@ export default function PurchaseCreate() {
                 <div className="flex gap-1">
                   {paymentMethods.map(m => (
                     <button key={m.value} type="button" onClick={() => setForm({ ...form, payment_method: m.value })}
-                      className={`flex-1 py-0.5 h-6 rounded text-[11px] font-medium border leading-none transition ${form.payment_method === m.value ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'bg-white border-slate-200 text-slate-500'}`}>
+                      className={`flex-1 py-0.5 h-6 rounded text-[11px] font-medium border leading-none transition ${form.payment_method === m.value ? 'bg-red-50 border-red-500 text-red-700' : 'bg-white border-slate-200 text-slate-500'}`}>
                       {m.icon} {m.label}
                     </button>
                   ))}
@@ -637,7 +675,7 @@ export default function PurchaseCreate() {
                 <div className="flex justify-between items-baseline">
                   <span className="text-[10px] uppercase tracking-wider text-slate-500">ລວມສຸດທ້າຍ</span>
                 </div>
-                <div className="font-bold text-xl text-indigo-600 font-mono mt-0.5">
+                <div className="font-bold text-xl text-red-600 font-mono mt-0.5">
                   {formatAmount(itemsTotal, form.currency)}
                 </div>
                 {form.currency !== 'LAK' && (
@@ -679,7 +717,7 @@ export default function PurchaseCreate() {
               <button
                 onClick={handleConfirm}
                 disabled={loading || validItems.length === 0 || !form.supplier_id}
-                className="w-full mt-2 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-[12px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
+                className="w-full mt-2 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-[12px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
               >
                 {loading ? (
                   <div className="w-3 h-3 border border-white/50 border-t-white rounded-full animate-spin"></div>
@@ -703,7 +741,7 @@ export default function PurchaseCreate() {
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 animate-fade-in" onClick={close}>
             <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-md"></div>
             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-pop-in" onClick={e => e.stopPropagation()}>
-              <div className="px-4 py-3 border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-red-50 flex items-center justify-between">
+              <div className="px-4 py-3 border-b border-slate-200 bg-gradient-to-r from-red-50 to-red-50 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">📦</span>
                   <div>
@@ -724,7 +762,7 @@ export default function PurchaseCreate() {
                     value={pickerSearch}
                     onChange={e => setPickerSearch(e.target.value)}
                     placeholder="ຄົ້ນຫາລະຫັດ ຫຼື ຊື່ສິນຄ້າ..."
-                    className="w-full pl-8 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[13px] focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none"
+                    className="w-full pl-8 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[13px] focus:border-red-400 focus:ring-1 focus:ring-red-200 outline-none"
                   />
                 </div>
                 <div className="text-[10px] text-slate-400 mt-1">{list.length} / {products.length} ລາຍການ</div>
@@ -745,9 +783,9 @@ export default function PurchaseCreate() {
                     <tbody className="divide-y divide-slate-100">
                       {list.map(p => (
                         <tr key={p.id} onClick={() => { selectProduct(productPicker.rowIdx, p.id); close() }}
-                          className="cursor-pointer hover:bg-indigo-50/50 transition">
-                          <td className="py-1.5 px-3 font-mono text-indigo-600">
-                            <span className="bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">{p.product_code || '—'}</span>
+                          className="cursor-pointer hover:bg-red-50/50 transition">
+                          <td className="py-1.5 px-3 font-mono text-red-600">
+                            <span className="bg-red-50 border border-red-100 px-1.5 py-0.5 rounded">{p.product_code || '—'}</span>
                           </td>
                           <td className="py-1.5 px-3 text-slate-700">{p.product_name}</td>
                           <td className="py-1.5 px-3 text-slate-500">{p.unit || '—'}</td>
@@ -814,8 +852,8 @@ export default function PurchaseCreate() {
                     { tag: '{NN}', desc: 'ລຳ 2' },
                   ].map(v => (
                     <button key={v.tag} type="button" onClick={() => setEditFormat(f => f + v.tag)}
-                      className="flex items-center justify-between px-2 py-1 bg-slate-50 border border-slate-200 rounded hover:border-indigo-400 transition text-[11px]">
-                      <code className="text-indigo-600 font-mono font-bold">{v.tag}</code>
+                      className="flex items-center justify-between px-2 py-1 bg-slate-50 border border-slate-200 rounded hover:border-red-400 transition text-[11px]">
+                      <code className="text-red-600 font-mono font-bold">{v.tag}</code>
                       <span className="text-slate-400">{v.desc}</span>
                     </button>
                   ))}
@@ -839,7 +877,7 @@ export default function PurchaseCreate() {
                   const res = await fetch(`${API}/admin/purchases/next-number`)
                   const data = await res.json()
                   setForm(f => ({ ...f, ref_number: data.number }))
-                }} className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-[12px] font-semibold transition">
+                }} className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-[12px] font-semibold transition">
                   ບັນທຶກ
                 </button>
               </div>

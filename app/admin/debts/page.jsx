@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react'
+import { AdminHero } from '@/components/admin/ui/AdminHero'
 
 const API = '/api'
 const curSymbol = { LAK: '₭', THB: '฿', USD: '$', CNY: '¥', VND: '₫' }
@@ -184,7 +185,7 @@ export default function Debts() {
 
   const methodBadge = (method) => {
     const map = {
-      transfer: { label: 'ໂອນ', icon: '🏦', cls: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
+      transfer: { label: 'ໂອນ', icon: '🏦', cls: 'bg-red-50 text-red-600 border-red-200' },
       cash: { label: 'ສົດ', icon: '💵', cls: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
       cheque: { label: 'ເຊັກ', icon: '📝', cls: 'bg-amber-50 text-amber-600 border-amber-200' },
     }
@@ -199,18 +200,12 @@ export default function Debts() {
   }
 
   return (
-    <div className="text-[13px]">
-
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ຊຳລະໜີ້</h2>
-          <span className="text-[11px] text-slate-400">·</span>
-          <span className="text-xs text-slate-500">{fmtNum(debts.length)} ຄ້າງ / {fmtNum(allPayments.length)} ໃບຊຳລະ</span>
-          {overdueCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-red-50 text-red-600 rounded">⚠ {overdueCount} ເກີນ</span>}
-          {dueSoonCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-amber-50 text-amber-600 rounded">{dueSoonCount} ໃກ້ຄົບ</span>}
-        </div>
-      </div>
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Supplier debts"
+        title="💳 ໜີ້ເຈົ້າໜີ້ (ຜູ້ສະໜອງ)"
+        subtitle={`${fmtNum(debts.length)} ຄ້າງ / ${fmtNum(allPayments.length)} ໃບຊຳລະ${overdueCount > 0 ? ` · ⚠ ${overdueCount} ເກີນ` : ''}${dueSoonCount > 0 ? ` · ${dueSoonCount} ໃກ້ຄົບ` : ''}`}
+      />
 
       <div className="space-y-3">
         {/* KPI strip */}
@@ -247,7 +242,7 @@ export default function Debts() {
               placeholder={tab === 'outstanding' ? 'ຄົ້ນຫາ ID, ເລກອ້າງອີງ, ຜູ້ສະໜອງ...' : 'ຄົ້ນຫາເລກໃບຊຳລະ, ຜູ້ສະໜອງ...'}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none"
+              className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-red-400 focus:ring-1 focus:ring-red-200 outline-none"
             />
           </div>
           {search && (
@@ -264,8 +259,8 @@ export default function Debts() {
                 const sym = curSymbol[cur] || cur
                 const isForeign = cur !== 'LAK'
                 return (
-                  <div key={cur} className={`flex items-center gap-2 px-2.5 py-1 rounded border ${isForeign ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-200'}`}>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isForeign ? 'bg-indigo-600 text-white' : 'bg-slate-600 text-white'}`}>{cur}</span>
+                  <div key={cur} className={`flex items-center gap-2 px-2.5 py-1 rounded border ${isForeign ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isForeign ? 'bg-red-600 text-white' : 'bg-slate-600 text-white'}`}>{cur}</span>
                     <span className="text-[11px] text-slate-500">{g.count} ໃບ</span>
                     <span className="text-[11px] text-slate-300">•</span>
                     <span className="text-[12px] font-bold font-mono text-red-600 whitespace-nowrap">
@@ -307,14 +302,14 @@ export default function Debts() {
                       <tr key={d.id} className="border-b border-slate-100 hover:bg-slate-50/50">
                         <td className="py-2 px-3 whitespace-nowrap">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[11px] font-mono font-bold text-indigo-600">#{d.id}</span>
+                            <span className="text-[11px] font-mono font-bold text-red-600">#{d.id}</span>
                             {d.ref_number && <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1 rounded">{d.ref_number}</span>}
                           </div>
                         </td>
                         <td className="py-2 px-3 text-[11px] text-slate-500 font-mono whitespace-nowrap">{formatDate(d.created_at)}</td>
                         <td className="py-2 px-3 font-medium text-slate-700 whitespace-nowrap">{d.supplier_name || '—'}</td>
                         <td className="py-2 px-2 text-center">
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${(d.currency && d.currency !== 'LAK') ? 'bg-indigo-50 text-indigo-600 border border-indigo-200' : 'bg-slate-100 text-slate-500'}`}>{d.currency || 'LAK'}</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${(d.currency && d.currency !== 'LAK') ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-slate-100 text-slate-500'}`}>{d.currency || 'LAK'}</span>
                         </td>
                         <td className="py-2 px-3 whitespace-nowrap">
                           {d.due_date ? (
@@ -410,7 +405,7 @@ export default function Debts() {
                       <td className="py-2 px-2 text-center">
                         {p.attachment ? (
                           <a href={p.attachment} target="_blank" rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-indigo-600 hover:underline text-[11px] font-semibold">
+                            className="inline-flex items-center gap-1 text-red-600 hover:underline text-[11px] font-semibold">
                             📎 ເປີດ
                           </a>
                         ) : <span className="text-slate-300 text-[11px]">—</span>}
@@ -485,7 +480,7 @@ export default function Debts() {
                     {payments.map(pay => (
                       <div key={pay.id} className="flex justify-between items-center bg-slate-50 border border-slate-200 rounded px-2 py-1 text-[11px]">
                         <div className="flex items-center gap-1.5">
-                          {pay.payment_number && <span className="font-semibold text-indigo-600 font-mono text-[10px]">{pay.payment_number}</span>}
+                          {pay.payment_number && <span className="font-semibold text-red-600 font-mono text-[10px]">{pay.payment_number}</span>}
                           <span className="font-medium text-slate-700">{formatPrice(pay.amount)}</span>
                           {methodBadge(pay.payment_method)}
                           {pay.note && <span className="text-slate-400 text-[10px]">{pay.note}</span>}
@@ -610,8 +605,8 @@ export default function Debts() {
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
           <div className="relative bg-white rounded-2xl shadow-2xl px-8 py-6 flex flex-col items-center gap-3">
             <div className="relative w-12 h-12">
-              <div className="absolute inset-0 rounded-full border-4 border-indigo-100"></div>
-              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-indigo-600 animate-spin"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-red-100"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-red-600 animate-spin"></div>
             </div>
             <div className="text-[13px] font-semibold text-slate-700">{busyMessage}</div>
           </div>
@@ -623,7 +618,7 @@ export default function Debts() {
         const v = confirmState.variant
         const theme = v === 'danger'
           ? { accent: 'from-red-500 to-rose-600', btn: 'bg-red-600 hover:bg-red-700', iconBg: 'bg-red-100', iconColor: 'text-red-600' }
-          : { accent: 'from-indigo-500 to-red-600', btn: 'bg-indigo-600 hover:bg-indigo-700', iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600' }
+          : { accent: 'from-red-500 to-red-600', btn: 'bg-red-600 hover:bg-red-700', iconBg: 'bg-red-100', iconColor: 'text-red-600' }
         return (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={() => confirmState.onDone(false)}>
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>

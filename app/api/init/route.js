@@ -26,6 +26,7 @@ export const GET = handle(async () => {
       created_at TIMESTAMP DEFAULT NOW()
     );
     ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS costing_method TEXT;
 
     CREATE TABLE IF NOT EXISTS categories (
       id SERIAL PRIMARY KEY,
@@ -114,8 +115,10 @@ export const GET = handle(async () => {
       password TEXT NOT NULL,
       display_name TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'cashier',
+      permissions JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
 
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
@@ -239,6 +242,29 @@ export const GET = handle(async () => {
     );
     CREATE INDEX IF NOT EXISTS idx_customer_debt_payments_order ON customer_debt_payments(order_id);
     CREATE INDEX IF NOT EXISTS idx_customer_debt_payments_date ON customer_debt_payments(payment_date DESC);
+
+    CREATE TABLE IF NOT EXISTS returns (
+      id SERIAL PRIMARY KEY,
+      return_number TEXT UNIQUE,
+      order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+      refund_amount NUMERIC NOT NULL DEFAULT 0,
+      refund_method TEXT DEFAULT 'cash',
+      note TEXT,
+      created_by TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS return_items (
+      id SERIAL PRIMARY KEY,
+      return_id INTEGER REFERENCES returns(id) ON DELETE CASCADE,
+      order_item_id INTEGER REFERENCES order_items(id),
+      product_id INTEGER REFERENCES products(id),
+      quantity NUMERIC NOT NULL DEFAULT 0,
+      price NUMERIC NOT NULL DEFAULT 0,
+      amount NUMERIC NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_returns_order ON returns(order_id);
+    CREATE INDEX IF NOT EXISTS idx_returns_created ON returns(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_return_items_order_item ON return_items(order_item_id);
 
     CREATE TABLE IF NOT EXISTS promotions (
       id SERIAL PRIMARY KEY,

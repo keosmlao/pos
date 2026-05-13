@@ -2,8 +2,11 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
-import { ensureMembersSchema, ensureOrdersSchema, ensureCompanyProfileSchema } from '@/lib/migrations';
+import { ensureMembersSchema, ensureOrdersSchema, ensureCompanyProfileSchema, ensureProductVariantsSchema, ensureBranchesSchema } from '@/lib/migrations';
 import { allocateBillNumber } from '@/lib/billNumber';
+import { normalizeVatSettings, applyVat } from '@/lib/vat';
+import { applyRounding } from '@/lib/rounding';
+import { extractActor, logAudit } from '@/lib/audit';
 
 export const GET = handle(async () => {
   await ensureOrdersSchema();
@@ -31,6 +34,8 @@ export const POST = handle(async (request) => {
   await ensureOrdersSchema();
   await ensureMembersSchema();
   await ensureCompanyProfileSchema();
+  await ensureProductVariantsSchema();
+  await ensureBranchesSchema();
   const client = await pool.connect();
   try {
     let {
@@ -47,13 +52,40 @@ export const POST = handle(async (request) => {
       credit_due_date,
       member_id,
       points_used,
+      applied_promo_ids,
+      branch_id,
     } = await readJson(request);
     if (!Array.isArray(items) || items.length === 0) {
       return fail(400, 'items is required');
     }
     const subtotal = items.reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0);
     const disc = Math.max(0, Number(discount) || 0);
-    if (total == null || !isFinite(Number(total))) total = subtotal - disc;
+    const netAfterDiscount = Math.max(0, subtotal - disc);
+
+    await client.query('BEGIN');
+
+    const settingsRes = await client.query(
+      `SELECT loyalty_enabled, points_per_amount, points_redeem_value, min_points_to_redeem,
+              tier_silver_threshold, tier_gold_threshold, tier_platinum_threshold,
+              bill_number_template, bill_number_prefix, bill_number_seq_digits,
+              bill_number_seq_reset, bill_number_start,
+              vat_enabled, vat_rate, vat_mode, vat_label,
+              rounding_mode, rounding_step,
+              points_lifetime_months
+       FROM company_profile WHERE id = 1`
+    );
+    const settings = settingsRes.rows[0] || {};
+    const vat = normalizeVatSettings(settings);
+    const { subtotalExVat, vatAmount, total: vatTotal } = applyVat(netAfterDiscount, vat);
+    // Apply bill rounding on the VAT-inclusive total.
+    const { rounded: roundedTotal } = applyRounding(vatTotal, settings);
+    // When VAT/rounding is enabled, server is authoritative.
+    const settingsActive = vat.enabled || (settings.rounding_mode && settings.rounding_mode !== 'none' && Number(settings.rounding_step) > 0);
+    if (settingsActive) {
+      total = roundedTotal;
+    } else if (total == null || !isFinite(Number(total))) {
+      total = roundedTotal;
+    }
     const totalNum = Math.max(0, Number(total) || 0);
 
     let paymentsNorm = null;
@@ -85,8 +117,6 @@ export const POST = handle(async (request) => {
     const dueDate = credit_due_date ? String(credit_due_date).slice(0, 10) : null;
     const memberId = Number(member_id) || null;
 
-    await client.query('BEGIN');
-
     let member = null;
     if (memberId) {
       const memberRes = await client.query(`SELECT * FROM members WHERE id = $1 AND active IS NOT FALSE`, [memberId]);
@@ -106,14 +136,27 @@ export const POST = handle(async (request) => {
       return fail(400, 'credit_due_date is required for credit order');
     }
 
-    const settingsRes = await client.query(
-      `SELECT loyalty_enabled, points_per_amount, points_redeem_value, min_points_to_redeem,
-              tier_silver_threshold, tier_gold_threshold, tier_platinum_threshold,
-              bill_number_template, bill_number_prefix, bill_number_seq_digits,
-              bill_number_seq_reset, bill_number_start
-       FROM company_profile WHERE id = 1`
-    );
-    const settings = settingsRes.rows[0] || {};
+    // Enforce member credit limit when this is a credit order
+    if (isCredit && member && Number(member.credit_limit) > 0) {
+      const outstandingRes = await client.query(
+        `SELECT COALESCE(SUM(GREATEST(total - COALESCE(credit_paid, 0), 0)), 0) AS outstanding
+         FROM orders WHERE member_id = $1 AND credit_status IN ('outstanding', 'partial')`,
+        [member.id]
+      );
+      const outstanding = Number(outstandingRes.rows[0].outstanding) || 0;
+      const limit = Number(member.credit_limit) || 0;
+      if (outstanding + totalNum > limit) {
+        await client.query('ROLLBACK');
+        return fail(400, `ເກີນວົງເງິນຕິດໜີ້ — ຍອດເຫຼືອ ${(limit - outstanding).toLocaleString()} ₭ (ວົງເງິນ ${limit.toLocaleString()} ₭)`);
+      }
+    }
+
+    let resolvedBranchId = Number(branch_id) || null;
+    if (!resolvedBranchId) {
+      const defRes = await client.query(`SELECT id FROM branches WHERE is_default = TRUE LIMIT 1`);
+      resolvedBranchId = defRes.rows[0]?.id || null;
+    }
+
     const billNumber = await allocateBillNumber(client, settings);
     const loyaltyEnabled = settings.loyalty_enabled !== false;
     const perAmount = Math.max(1, Number(settings.points_per_amount) || 10000);
@@ -149,8 +192,11 @@ export const POST = handle(async (request) => {
       `INSERT INTO orders (
         total, payment_method, amount_paid, change_amount, discount, note, payments,
         customer_name, customer_phone, credit_due_date, credit_status, credit_paid,
-        member_id, member_points_earned, member_points_used, member_points_discount, bill_number
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *`,
+        member_id, member_points_earned, member_points_used, member_points_discount, bill_number,
+        subtotal, vat_rate, vat_mode, vat_amount, branch_id,
+        created_by_user_id, created_by_username
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                $18, $19, $20, $21, $22, $23, $24) RETURNING *`,
       [
         totalNum,
         methodFinal,
@@ -169,23 +215,62 @@ export const POST = handle(async (request) => {
         pointsUsedNum,
         pointsDiscount,
         billNumber,
+        subtotalExVat,
+        vat.enabled ? vat.rate : 0,
+        vat.enabled ? vat.mode : null,
+        vatAmount,
+        resolvedBranchId,
+        extractActor(request).user_id || null,
+        extractActor(request).username || null,
       ]
     );
     const order = orderResult.rows[0];
 
     for (const item of items) {
+      const variantId = item.variant_id ? Number(item.variant_id) : null;
       await client.query(
-        'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)',
-        [order.id, item.product_id, item.quantity, item.price]
+        'INSERT INTO order_items (order_id, product_id, variant_id, quantity, price) VALUES ($1, $2, $3, $4, $5)',
+        [order.id, item.product_id, variantId, item.quantity, item.price]
       );
+      if (variantId) {
+        await client.query(
+          'UPDATE product_variants SET qty_on_hand = qty_on_hand - $1 WHERE id = $2',
+          [item.quantity, variantId]
+        );
+      } else {
+        await client.query(
+          'UPDATE products SET qty_on_hand = qty_on_hand - $1 WHERE id = $2',
+          [item.quantity, item.product_id]
+        );
+      }
+    }
+
+    const promoIds = Array.isArray(applied_promo_ids)
+      ? [...new Set(applied_promo_ids.map(Number).filter(Number.isFinite))]
+      : [];
+    if (promoIds.length > 0) {
       await client.query(
-        'UPDATE products SET qty_on_hand = qty_on_hand - $1 WHERE id = $2',
-        [item.quantity, item.product_id]
+        `UPDATE promotions SET used_count = COALESCE(used_count, 0) + 1
+         WHERE id = ANY($1::int[])`,
+        [promoIds]
       );
     }
 
     if (member) {
       const pointsDelta = pointsEarned - pointsUsedNum;
+      const lifetimeMonths = Math.max(0, Number(settings.points_lifetime_months) || 0);
+      // First zero expired points (if any), then apply delta and refresh expiry
+      // when new points are granted.
+      if (lifetimeMonths > 0) {
+        await client.query(
+          `UPDATE members
+           SET points = 0
+           WHERE id = $1
+             AND points_expires_at IS NOT NULL
+             AND points_expires_at < CURRENT_DATE`,
+          [member.id]
+        );
+      }
       await client.query(
         `UPDATE members
          SET points = GREATEST(0, points + $1),
@@ -196,9 +281,13 @@ export const POST = handle(async (request) => {
                WHEN total_spent + $2 >= $6 THEN 'silver'
                ELSE tier
              END,
+             points_expires_at = CASE
+               WHEN $7 > 0 AND $1 > 0 THEN (CURRENT_DATE + ($7 || ' months')::interval)::date
+               ELSE points_expires_at
+             END,
              updated_at = NOW()
          WHERE id = $3`,
-        [pointsDelta, totalNum, member.id, platinumT, goldT, silverT]
+        [pointsDelta, totalNum, member.id, platinumT, goldT, silverT, lifetimeMonths]
       );
     }
 
@@ -210,6 +299,14 @@ export const POST = handle(async (request) => {
     );
 
     await client.query('COMMIT');
+    await logAudit(null, {
+      actor: extractActor(request),
+      action: isCredit ? 'order.create_credit' : 'order.create',
+      entity_type: 'order',
+      entity_id: order.id,
+      summary: `${billNumber} · ${methodFinal} · ${totalNum}`,
+      payload: { bill_number: billNumber, total: totalNum, items: items.length, member_id: member?.id || null },
+    });
     return ok({ ...order, items: itemsRes.rows });
   } catch (error) {
     await client.query('ROLLBACK');

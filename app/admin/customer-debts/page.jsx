@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { AdminHero } from '@/components/admin/ui/AdminHero';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0);
 const fmtPrice = n => new Intl.NumberFormat('lo-LA').format(Math.round(n || 0)) + ' ກີບ';
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+const methodLabel = { cash: 'ເງິນສົດ', transfer: 'ໂອນ', qr: 'QR' };
 
 function fmtDate(value) {
   if (!value) return '—';
@@ -52,6 +55,112 @@ export default function CustomerDebtsPage() {
     setPayments(res.ok ? await res.json() : []);
   };
 
+  const openPrintWindow = (title, bodyHtml) => {
+    const win = window.open('', '_blank', 'width=820,height=1000');
+    if (!win) { alert('ບໍ່ສາມາດເປີດປ່ອງພິມໄດ້'); return; }
+    win.document.open();
+    win.document.write(`<!doctype html>
+      <html><head><meta charset="utf-8"><title>${esc(title)}</title>
+      <style>
+        @page { size: A4 portrait; margin: 12mm }
+        * { box-sizing: border-box; font-family: 'Noto Sans Lao','Phetsarath OT',system-ui,sans-serif; }
+        body { margin: 0; color: #111827; font-size: 12px; line-height: 1.45; }
+        .top { display: flex; justify-content: space-between; gap: 20px; border-bottom: 2px solid #111827; padding-bottom: 12px; margin-bottom: 14px; }
+        h1 { margin: 0; font-size: 22px; font-weight: 900; color: #b91c1c; }
+        .meta { color: #64748b; font-size: 11px; margin-top: 3px; }
+        .box { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; }
+        .row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px dashed #e5e7eb; }
+        .row:last-child { border-bottom: 0; }
+        .label { color: #64748b; font-weight: 700; }
+        .value, .money { font-weight: 800; }
+        .money { text-align: right; font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-variant-numeric: tabular-nums; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th { background: #111827; color: white; padding: 7px 8px; text-align: left; font-size: 11px; }
+        td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+        th.right, td.right { text-align: right; }
+        .totals { margin-left: auto; width: 280px; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; }
+        .totals .row { padding: 8px 10px; border-bottom: 1px dashed #e2e8f0; }
+        .totals .grand { background: #fef2f2; color: #991b1b; font-size: 15px; }
+        .paid { color: #047857; }
+        .due { color: #be123c; }
+        .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 42px; text-align: center; color: #64748b; }
+        .line { height: 32px; border-bottom: 1px solid #94a3b8; margin-bottom: 6px; }
+      </style></head><body>
+        ${bodyHtml}
+        <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 400); }</script>
+      </body></html>`);
+    win.document.close();
+  };
+
+  const printInvoice = (debt) => {
+    const items = Array.isArray(debt.items) ? debt.items : [];
+    const itemRows = items.map((it, i) => {
+      const qty = Number(it.quantity) || 0;
+      const price = Number(it.price) || 0;
+      return `<tr>
+        <td>${i + 1}</td>
+        <td><b>${esc(it.name || it.product_name || '—')}</b></td>
+        <td class="right">${fmtNum(qty)}</td>
+        <td class="right">${fmtPrice(price)}</td>
+        <td class="right money">${fmtPrice(qty * price)}</td>
+      </tr>`;
+    }).join('');
+    openPrintWindow(`ໃບແຈ້ງໜີ້ ${debt.bill_number || debt.id}`, `
+      <div class="top">
+        <div>
+          <h1>ໃບແຈ້ງໜີ້</h1>
+          <div class="meta">ບິນ ${esc(debt.bill_number || `#${debt.id}`)} · ວັນຂາຍ ${fmtDate(debt.created_at)}</div>
+        </div>
+        <div class="meta">ພິມວັນທີ ${new Date().toLocaleString('lo-LA')}</div>
+      </div>
+      <div class="box grid">
+        <div class="row"><span class="label">ລູກຄ້າ</span><span class="value">${esc(debt.customer_name || '—')}</span></div>
+        <div class="row"><span class="label">ເບີໂທ</span><span class="value">${esc(debt.customer_phone || debt.member_code || '—')}</span></div>
+        <div class="row"><span class="label">ວັນຂາຍ</span><span class="value">${fmtDate(debt.created_at)}</span></div>
+        <div class="row"><span class="label">ຄົບກຳນົດ</span><span class="value">${fmtDate(debt.credit_due_date)}</span></div>
+      </div>
+      <table>
+        <thead><tr><th>#</th><th>ສິນຄ້າ</th><th class="right">ຈຳນວນ</th><th class="right">ລາຄາ</th><th class="right">ລວມ</th></tr></thead>
+        <tbody>${itemRows || '<tr><td colspan="5">ບໍ່ມີລາຍການ</td></tr>'}</tbody>
+      </table>
+      <div class="totals" style="margin-top:12px">
+        <div class="row"><span class="label">ຍອດລວມ</span><span class="money">${fmtPrice(debt.total)}</span></div>
+        <div class="row"><span class="label">ຊຳລະແລ້ວ</span><span class="money paid">${fmtPrice(debt.paid)}</span></div>
+        <div class="row grand"><span class="label">ຍອດຄ້າງ</span><span class="money due">${fmtPrice(debt.remaining)}</span></div>
+      </div>
+      <div class="sign"><div><div class="line"></div>ຜູ້ຮັບເອກະສານ</div><div><div class="line"></div>ຜູ້ອອກໃບແຈ້ງໜີ້</div></div>
+    `);
+  };
+
+  const printPaymentReceipt = (payment, debt = showPay) => {
+    if (!payment || !debt) return;
+    const amount = Number(payment.amount) || 0;
+    const remainingAfter = Math.max(0, (Number(debt.remaining) || 0) - amount);
+    openPrintWindow(`ໃບຮັບຊຳລະ ${payment.payment_number || payment.id}`, `
+      <div class="top">
+        <div>
+          <h1>ໃບຮັບຊຳລະໜີ້</h1>
+          <div class="meta">ເລກຊຳລະ ${esc(payment.payment_number || `#${payment.id}`)} · ອ້າງອີງ ${esc(debt.bill_number || `#${debt.id}`)}</div>
+        </div>
+        <div class="meta">ພິມວັນທີ ${new Date().toLocaleString('lo-LA')}</div>
+      </div>
+      <div class="box grid">
+        <div class="row"><span class="label">ລູກຄ້າ</span><span class="value">${esc(debt.customer_name || '—')}</span></div>
+        <div class="row"><span class="label">ເບີໂທ</span><span class="value">${esc(debt.customer_phone || debt.member_code || '—')}</span></div>
+        <div class="row"><span class="label">ວັນຊຳລະ</span><span class="value">${fmtDate(payment.payment_date || payment.created_at)}</span></div>
+        <div class="row"><span class="label">ວິທີຊຳລະ</span><span class="value">${esc(methodLabel[payment.payment_method] || payment.payment_method || '—')}</span></div>
+      </div>
+      <div class="totals">
+        <div class="row"><span class="label">ຍອດບິນ</span><span class="money">${fmtPrice(debt.total)}</span></div>
+        <div class="row grand"><span class="label">ຮັບຊຳລະ</span><span class="money paid">${fmtPrice(amount)}</span></div>
+        <div class="row"><span class="label">ຍອດຄ້າງຫຼັງຊຳລະ</span><span class="money due">${fmtPrice(remainingAfter)}</span></div>
+      </div>
+      ${payment.note ? `<div class="box" style="margin-top:12px"><span class="label">ໝາຍເຫດ:</span> ${esc(payment.note)}</div>` : ''}
+      <div class="sign"><div><div class="line"></div>ຜູ້ຊຳລະ</div><div><div class="line"></div>ຜູ້ຮັບເງິນ</div></div>
+    `);
+  };
+
   const submitPay = async (e) => {
     e.preventDefault();
     if (!showPay) return;
@@ -65,11 +174,12 @@ export default function CustomerDebtsPage() {
         note: payForm.note,
       }),
     });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      alert(err.error || 'ບັນທຶກການຊຳລະບໍ່ສຳເລັດ');
+      alert(data.error || 'ບັນທຶກການຊຳລະບໍ່ສຳເລັດ');
       return;
     }
+    printPaymentReceipt(data, showPay);
     setShowPay(null);
     await load();
   };
@@ -113,24 +223,25 @@ export default function CustomerDebtsPage() {
   }, [debts]);
 
   return (
-    <div className="text-[13px]">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ໜີ້ລູກຄ້າ</h2>
-          <span className="text-xs text-slate-500">ຈາກບິນຂາຍເຊື່ອ</span>
-          {loading && <span className="text-[11px] text-slate-400">ກຳລັງໂຫຼດ...</span>}
-        </div>
-        <button onClick={load} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold">
-          ໂຫຼດໃໝ່
-        </button>
-      </div>
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Customer debts"
+        title="🧾 ໜີ້ລູກຄ້າ"
+        subtitle="ຈາກບິນຂາຍຕິດໜີ້ (Accounts Receivable)"
+        action={
+          <button onClick={load}
+            className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20">
+            ↻ ໂຫຼດໃໝ່
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
         <Kpi label="ຄ້າງຊຳລະ" value={fmtNum(stats.outstandingCount)} sub={fmtPrice(stats.outstandingAmount)} tone="rose" />
         <Kpi label="ເກີນກຳນົດ" value={fmtNum(stats.overdueCount)} sub={fmtPrice(stats.overdueAmount)} tone="amber" />
         <Kpi label="ຊຳລະແລ້ວ" value={fmtNum(stats.paidCount)} sub="ບິນ" tone="emerald" />
-        <Kpi label="ຍອດເຊື່ອລວມ" value={fmtPrice(stats.totalCredit)} sub="ທຸກບິນ" tone="slate" />
-        <Kpi label="ລາຍການ" value={fmtNum(debts.length)} sub="ບິນເຊື່ອ" tone="red" />
+        <Kpi label="ຍອດຕິດໜີ້ລວມ" value={fmtPrice(stats.totalCredit)} sub="ທຸກບິນ" tone="slate" />
+        <Kpi label="ລາຍການ" value={fmtNum(debts.length)} sub="ບິນຕິດໜີ້" tone="red" />
       </div>
 
       <div className="bg-white border border-slate-200 rounded-lg p-2 mb-3 flex flex-wrap items-center gap-2">
@@ -186,9 +297,14 @@ export default function CustomerDebtsPage() {
                       <span className={`inline-block px-2 py-0.5 rounded border text-[10px] font-bold ${st.cls}`}>{st.label}</span>
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button onClick={() => openPay(d)} className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded text-[11px] font-bold">
-                        ຊຳລະ
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => printInvoice(d)} className="px-2 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded text-[11px] font-bold">
+                          ແຈ້ງໜີ້
+                        </button>
+                        <button onClick={() => openPay(d)} className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded text-[11px] font-bold">
+                          ຊຳລະ
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -268,7 +384,10 @@ export default function CustomerDebtsPage() {
                         <div className="text-[10px] text-slate-400">{fmtDate(p.payment_date)} · {p.payment_method}</div>
                         {p.note && <div className="text-[10px] text-slate-500">{p.note}</div>}
                       </div>
-                      <button onClick={() => deletePayment(p.id)} className="px-2 py-1 bg-rose-50 text-rose-700 rounded text-[10px] font-bold">ລຶບ</button>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => printPaymentReceipt(p, showPay)} className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded text-[10px] font-bold">ພິມ</button>
+                        <button onClick={() => deletePayment(p.id)} className="px-2 py-1 bg-rose-50 text-rose-700 rounded text-[10px] font-bold">ລຶບ</button>
+                      </div>
                     </div>
                   ))}
                   {payments.length === 0 && <div className="p-6 text-center text-slate-400">ຍັງບໍ່ມີການຊຳລະ</div>}

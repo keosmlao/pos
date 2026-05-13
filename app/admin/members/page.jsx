@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import SearchSelect from '@/components/SearchSelect';
+import { AdminHero } from '@/components/admin/ui/AdminHero';
 import { useLocations } from '@/utils/useLocations';
 
 const API = '/api';
@@ -36,8 +37,11 @@ export default function MembersPage() {
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
 
   const load = async () => {
     setLoading(true);
@@ -46,6 +50,7 @@ export default function MembersPage() {
       if (search.trim()) params.set('search', search.trim());
       const res = await fetch(`${API}/admin/members?${params}`);
       setMembers(await res.json());
+      setPage(1);
     } finally {
       setLoading(false);
     }
@@ -66,6 +71,7 @@ export default function MembersPage() {
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
+    setShowForm(true);
   };
 
   const openEdit = (m) => {
@@ -85,6 +91,7 @@ export default function MembersPage() {
       active: m.active !== false,
       note: m.note || '',
     });
+    setShowForm(true);
   };
 
   const save = async (e) => {
@@ -107,6 +114,7 @@ export default function MembersPage() {
     }
     setEditing(null);
     setForm(emptyForm);
+    setShowForm(false);
     await load();
   };
 
@@ -115,6 +123,15 @@ export default function MembersPage() {
   const villages = form.province && form.district ? (laoLocations[form.province]?.[form.district] || []) : [];
   const setProvince = (province) => setForm({ ...form, province, district: '', village: '' });
   const setDistrict = (district) => setForm({ ...form, district, village: '' });
+  const totalPages = Math.max(1, Math.ceil(members.length / perPage));
+  const safePage = Math.min(page, totalPages);
+  const pagedMembers = members.slice((safePage - 1) * perPage, safePage * perPage);
+  const startNo = members.length ? (safePage - 1) * perPage + 1 : 0;
+  const endNo = Math.min(safePage * perPage, members.length);
+
+  useEffect(() => {
+    setPage(p => Math.min(p, Math.max(1, Math.ceil(members.length / perPage))));
+  }, [members.length, perPage]);
 
   const remove = async (m) => {
     if (!confirm(`ປິດໃຊ້ງານສະມາຊິກ ${m.name}?`)) return;
@@ -128,17 +145,18 @@ export default function MembersPage() {
   };
 
   return (
-    <div className="text-[13px]">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ສະມາຊິກ</h2>
-          <span className="text-xs text-slate-500">{fmtNum(stats.count)} ຄົນ</span>
-        </div>
-        <button onClick={openCreate}
-          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold">
-          + ເພີ່ມສະມາຊິກ
-        </button>
-      </div>
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Members"
+        title="⭐ ສະມາຊິກ"
+        subtitle={`${fmtNum(stats.count)} ຄົນ`}
+        action={
+          <button onClick={openCreate}
+            className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20">
+            + ເພີ່ມສະມາຊິກ
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
         <div className="rounded-lg border border-red-100 bg-red-50 p-3 text-red-700">
@@ -159,119 +177,23 @@ export default function MembersPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
-        <form onSubmit={save} className="bg-white border border-slate-200 rounded-lg p-4 h-fit space-y-3">
-          <div className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
-            {editing ? 'ແກ້ໄຂສະມາຊິກ' : 'ສ້າງສະມາຊິກ'}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="text-[10px] font-bold text-slate-500">ລະຫັດ</span>
-              <input value={form.member_code} onChange={e => setForm({ ...form, member_code: e.target.value })}
-                placeholder="Auto"
-                className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
-            </label>
-            <label className="block">
-              <span className="text-[10px] font-bold text-slate-500">Tier</span>
-              <select value={form.tier} onChange={e => setForm({ ...form, tier: e.target.value })}
-                className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500">
-                {Object.keys(tierLabel).map(t => <option key={t} value={t}>{tierLabel[t]}</option>)}
-              </select>
-            </label>
-          </div>
-          <label className="block">
-            <span className="text-[10px] font-bold text-slate-500">ຊື່ *</span>
-            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-              className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" required />
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="text-[10px] font-bold text-slate-500">ເບີໂທ</span>
-              <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
-                className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
-            </label>
-            <label className="block">
-              <span className="text-[10px] font-bold text-slate-500">Email</span>
-              <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
-                className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
-            </label>
-          </div>
-          <div className="grid grid-cols-1 gap-2">
-            <div>
-              <span className="text-[10px] font-bold text-slate-500">ແຂວງ *</span>
-              <div className="mt-1">
-                <SearchSelect value={form.province} onChange={setProvince}
-                  options={provinces.map(p => ({ value: p, label: p }))}
-                  placeholder="-- ເລືອກແຂວງ --" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="text-[10px] font-bold text-slate-500">ເມືອງ *</span>
-                <div className="mt-1">
-                  <SearchSelect value={form.district} onChange={setDistrict}
-                    options={districts.map(d => ({ value: d, label: d }))}
-                    placeholder={form.province ? '-- ເລືອກເມືອງ --' : 'ເລືອກແຂວງກ່ອນ'} />
-                </div>
-              </div>
-              <div>
-                <span className="text-[10px] font-bold text-slate-500">ບ້ານ *</span>
-                <div className="mt-1">
-                  <SearchSelect value={form.village} onChange={village => setForm({ ...form, village })}
-                    options={villages.map(v => ({ value: v, label: v }))}
-                    placeholder={form.district ? '-- ເລືອກບ້ານ --' : 'ເລືອກເມືອງກ່ອນ'} />
-                </div>
-              </div>
-            </div>
-            <label className="block">
-              <span className="text-[10px] font-bold text-slate-500">ທີ່ຢູ່ເພີ່ມເຕີມ</span>
-              <input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })}
-                className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
-            </label>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="text-[10px] font-bold text-slate-500">ຄະແນນ</span>
-              <input type="number" value={form.points} onChange={e => setForm({ ...form, points: e.target.value })}
-                className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
-            </label>
-            <label className="block">
-              <span className="text-[10px] font-bold text-slate-500">ຍອດຊື້</span>
-              <input type="number" value={form.total_spent} onChange={e => setForm({ ...form, total_spent: e.target.value })}
-                className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
-            </label>
-          </div>
-          <label className="block">
-            <span className="text-[10px] font-bold text-slate-500">ໝາຍເຫດ</span>
-            <textarea value={form.note} onChange={e => setForm({ ...form, note: e.target.value })}
-              className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" rows={2} />
-          </label>
-          <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
-            <input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} />
-            ເປີດໃຊ້ງານ
-          </label>
-          <div className="flex gap-2">
-            <button className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold">
-              ບັນທຶກ
-            </button>
-            {editing && (
-              <button type="button" onClick={openCreate}
-                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold">
-                ຍົກເລີກ
-              </button>
-            )}
-          </div>
-        </form>
-
+      <div>
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <div className="p-3 border-b border-slate-200 flex gap-2">
+          <div className="p-3 border-b border-slate-200 flex flex-wrap gap-2">
             <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') load(); }}
               placeholder="ຄົ້ນຫາ ລະຫັດ, ຊື່, ເບີໂທ..."
-              className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-red-500" />
+              className="min-w-[220px] flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-red-500" />
             <button onClick={load}
               className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold">
               {loading ? '...' : 'ຄົ້ນຫາ'}
             </button>
+            <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+              className="px-2 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 outline-none">
+              <option value={10}>10 / ໜ້າ</option>
+              <option value={20}>20 / ໜ້າ</option>
+              <option value={50}>50 / ໜ້າ</option>
+              <option value={100}>100 / ໜ້າ</option>
+            </select>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
@@ -286,7 +208,7 @@ export default function MembersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {members.map(m => (
+                {pagedMembers.map(m => (
                   <tr key={m.id} className={`${m.active === false ? 'opacity-50' : ''} hover:bg-red-50/20`}>
                     <td className="px-3 py-2">
                       <div className="font-extrabold text-slate-900">{m.name}</div>
@@ -319,8 +241,148 @@ export default function MembersPage() {
               </tbody>
             </table>
           </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-3 py-2">
+            <div className="text-[11px] font-medium text-slate-500">
+              ສະແດງ {fmtNum(startNo)}-{fmtNum(endNo)} ຈາກ {fmtNum(members.length)} ລາຍການ
+            </div>
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => setPage(1)} disabled={safePage <= 1}
+                className="px-2 py-1 rounded border border-slate-200 text-xs font-bold text-slate-600 disabled:opacity-40 hover:bg-slate-50">
+                ທຳອິດ
+              </button>
+              <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
+                className="px-2 py-1 rounded border border-slate-200 text-xs font-bold text-slate-600 disabled:opacity-40 hover:bg-slate-50">
+                ກ່ອນ
+              </button>
+              <span className="px-2 py-1 text-xs font-extrabold text-slate-700">
+                {fmtNum(safePage)} / {fmtNum(totalPages)}
+              </span>
+              <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
+                className="px-2 py-1 rounded border border-slate-200 text-xs font-bold text-slate-600 disabled:opacity-40 hover:bg-slate-50">
+                ຖັດໄປ
+              </button>
+              <button type="button" onClick={() => setPage(totalPages)} disabled={safePage >= totalPages}
+                className="px-2 py-1 rounded border border-slate-200 text-xs font-bold text-slate-600 disabled:opacity-40 hover:bg-slate-50">
+                ສຸດທ້າຍ
+              </button>
+            </div>
+          </div>
         </div>
       </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowForm(false)}>
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"></div>
+          <div className="relative w-full max-w-2xl max-h-[92vh] overflow-hidden rounded-xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900">{editing ? 'ແກ້ໄຂສະມາຊິກ' : 'ສ້າງສະມາຊິກ'}</h3>
+                <p className="text-[11px] text-slate-400">{editing ? editing.member_code || `#${editing.id}` : 'ປ້ອນຂໍ້ມູນສະມາຊິກໃໝ່'}</p>
+              </div>
+              <button type="button" onClick={() => setShowForm(false)}
+                className="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500">✕</button>
+            </div>
+
+            <form onSubmit={save} className="max-h-[calc(92vh-62px)] overflow-y-auto p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="text-[10px] font-bold text-slate-500">ລະຫັດ</span>
+                  <input value={form.member_code} onChange={e => setForm({ ...form, member_code: e.target.value })}
+                    placeholder="Auto"
+                    className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-bold text-slate-500">Tier</span>
+                  <select value={form.tier} onChange={e => setForm({ ...form, tier: e.target.value })}
+                    className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500">
+                    {Object.keys(tierLabel).map(t => <option key={t} value={t}>{tierLabel[t]}</option>)}
+                  </select>
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-[10px] font-bold text-slate-500">ຊື່ *</span>
+                <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+                  className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" required autoFocus />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="text-[10px] font-bold text-slate-500">ເບີໂທ</span>
+                  <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
+                    className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-bold text-slate-500">Email</span>
+                  <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
+                    className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
+                </label>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500">ແຂວງ *</span>
+                  <div className="mt-1">
+                    <SearchSelect value={form.province} onChange={setProvince}
+                      options={provinces.map(p => ({ value: p, label: p }))}
+                      placeholder="-- ເລືອກແຂວງ --" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-500">ເມືອງ *</span>
+                    <div className="mt-1">
+                      <SearchSelect value={form.district} onChange={setDistrict}
+                        options={districts.map(d => ({ value: d, label: d }))}
+                        placeholder={form.province ? '-- ເລືອກເມືອງ --' : 'ເລືອກແຂວງກ່ອນ'} />
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-500">ບ້ານ *</span>
+                    <div className="mt-1">
+                      <SearchSelect value={form.village} onChange={village => setForm({ ...form, village })}
+                        options={villages.map(v => ({ value: v, label: v }))}
+                        placeholder={form.district ? '-- ເລືອກບ້ານ --' : 'ເລືອກເມືອງກ່ອນ'} />
+                    </div>
+                  </div>
+                </div>
+                <label className="block">
+                  <span className="text-[10px] font-bold text-slate-500">ທີ່ຢູ່ເພີ່ມເຕີມ</span>
+                  <input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })}
+                    className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="text-[10px] font-bold text-slate-500">ຄະແນນ</span>
+                  <input type="number" value={form.points} onChange={e => setForm({ ...form, points: e.target.value })}
+                    className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-bold text-slate-500">ຍອດຊື້</span>
+                  <input type="number" value={form.total_spent} onChange={e => setForm({ ...form, total_spent: e.target.value })}
+                    className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-[10px] font-bold text-slate-500">ໝາຍເຫດ</span>
+                <textarea value={form.note} onChange={e => setForm({ ...form, note: e.target.value })}
+                  className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" rows={2} />
+              </label>
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                <input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} />
+                ເປີດໃຊ້ງານ
+              </label>
+              <div className="sticky bottom-0 -mx-5 -mb-5 flex gap-2 border-t border-slate-200 bg-white px-5 py-3">
+                <button type="button" onClick={() => setShowForm(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold">
+                  ຍົກເລີກ
+                </button>
+                <button className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold">
+                  ບັນທຶກ
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok, readJson } from '@/lib/api';
+import { ensureCompanyProfileSchema } from '@/lib/migrations';
+import { allocateDocumentNumber } from '@/lib/billNumber';
 
 export const GET = handle(async (_request, { params }) => {
   const { purchase_id } = await params;
@@ -13,6 +15,7 @@ export const GET = handle(async (_request, { params }) => {
 });
 
 export const POST = handle(async (request, { params }) => {
+  await ensureCompanyProfileSchema();
   const { purchase_id } = await params;
   const { amount, note, payment_number, payment_date, bill_number, currency, exchange_rate, payment_method, attachment } = await readJson(request);
 
@@ -23,11 +26,16 @@ export const POST = handle(async (request, { params }) => {
     const amountInLAK = currency && currency !== 'LAK' && exchange_rate
       ? amount * exchange_rate
       : amount;
+    let resolvedPaymentNumber = String(payment_number || '').trim() || null;
+    if (!resolvedPaymentNumber) {
+      const settingsRes = await client.query('SELECT * FROM company_profile WHERE id = 1');
+      resolvedPaymentNumber = await allocateDocumentNumber(client, 'supplier_payment', settingsRes.rows[0] || {});
+    }
 
     const paymentResult = await client.query(
       `INSERT INTO debt_payments (purchase_id, amount, note, payment_number, payment_date, bill_number, currency, exchange_rate, payment_method, attachment)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-      [purchase_id, amountInLAK, note, payment_number, payment_date || null, bill_number, currency || 'LAK', exchange_rate || 1, payment_method || 'cash', attachment]
+      [purchase_id, amountInLAK, note, resolvedPaymentNumber, payment_date || null, bill_number, currency || 'LAK', exchange_rate || 1, payment_method || 'cash', attachment]
     );
 
     await client.query(

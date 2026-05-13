@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react'
+import { AdminHero } from '@/components/admin/ui/AdminHero'
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0)
@@ -67,24 +68,18 @@ export default function Currencies() {
   const disabledCount = rows.length - enabledCount
 
   return (
-    <div className="text-[13px]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ສະກຸນເງິນ</h2>
-          <span className="text-[11px] text-slate-400">·</span>
-          <span className="text-xs text-slate-500">{fmtNum(rows.length)} ສະກຸນ</span>
-          <span className="text-[11px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded">{enabledCount} ເປີດ</span>
-          {disabledCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-slate-100 text-slate-500 rounded">{disabledCount} ປິດ</span>}
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Currencies"
+        title="💱 ສະກຸນເງິນ / ອັດຕາແລກປ່ຽນ"
+        subtitle={`${fmtNum(rows.length)} ສະກຸນ · ${enabledCount} ເປີດ${disabledCount > 0 ? ` · ${disabledCount} ປິດ` : ''}`}
+        action={
           <button onClick={() => setShowAdd(v => !v)}
-            className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-            ເພີ່ມສະກຸນ
+            className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20">
+            + ເພີ່ມສະກຸນ
           </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Info note */}
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-800 flex items-start gap-2">

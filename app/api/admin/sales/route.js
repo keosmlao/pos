@@ -7,9 +7,11 @@ export const GET = handle(async (request) => {
   const sp = request.nextUrl.searchParams;
   const start = sp.get('start');
   const end = sp.get('end');
+  const branchId = sp.get('branch_id');
 
   let query = `
     SELECT o.*,
+      b.name AS branch_name,
       json_agg(json_build_object(
         'id', oi.id,
         'product_id', oi.product_id,
@@ -20,6 +22,7 @@ export const GET = handle(async (request) => {
     FROM orders o
     LEFT JOIN order_items oi ON o.id = oi.order_id
     LEFT JOIN products p ON oi.product_id = p.id
+    LEFT JOIN branches b ON b.id = o.branch_id
   `;
   const params = [];
   const conditions = [];
@@ -32,12 +35,16 @@ export const GET = handle(async (request) => {
     params.push(end);
     conditions.push(`o.created_at::date <= $${params.length}`);
   }
+  if (branchId) {
+    params.push(Number(branchId));
+    conditions.push(`o.branch_id = $${params.length}`);
+  }
 
   if (conditions.length > 0) {
     query += ' WHERE ' + conditions.join(' AND ');
   }
 
-  query += ' GROUP BY o.id ORDER BY o.created_at DESC';
+  query += ' GROUP BY o.id, b.name ORDER BY o.created_at DESC';
 
   const result = await pool.query(query, params);
   return ok(result.rows);

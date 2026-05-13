@@ -12,6 +12,10 @@ const DEFAULT = {
   email: '',
   logo_url: '',
   bank_accounts: [],
+  vat_enabled: false,
+  vat_rate: 0,
+  vat_mode: 'exclusive',
+  vat_label: 'VAT',
 };
 
 let cached = null;

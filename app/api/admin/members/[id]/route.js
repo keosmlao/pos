@@ -38,8 +38,9 @@ export const PATCH = handle(async (request, { params }) => {
            total_spent = $11,
            active = $12,
            note = $13,
+           credit_limit = $14,
            updated_at = NOW()
-       WHERE id = $14
+       WHERE id = $15
        RETURNING *`,
       [
         clean(body.member_code),
@@ -55,6 +56,7 @@ export const PATCH = handle(async (request, { params }) => {
         Math.max(0, Number(body.total_spent) || 0),
         body.active !== false,
         clean(body.note) || null,
+        Math.max(0, Number(body.credit_limit) || 0),
         numericId,
       ]
     );

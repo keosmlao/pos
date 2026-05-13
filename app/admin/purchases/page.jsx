@@ -103,7 +103,7 @@ function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, op
     >
         <td className="py-2 px-3 whitespace-nowrap">
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-mono font-bold text-indigo-600">#{p.id}</span>
+            <span className="text-[11px] font-mono font-bold text-red-600">#{p.id}</span>
             {p.ref_number && <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1 rounded">{p.ref_number}</span>}
             {p.sml_doc_no && <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">SML {p.sml_doc_no}</span>}
           </div>
@@ -152,7 +152,7 @@ function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, op
           })() : <span className="text-[11px] text-slate-300">—</span>}
         </td>
         <td className="py-2 px-3 text-center">
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${f.isForeign ? 'bg-indigo-50 text-indigo-600 border border-indigo-200' : 'bg-slate-100 text-slate-500'}`}>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${f.isForeign ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-slate-100 text-slate-500'}`}>
             {p.currency || 'LAK'}
           </span>
         </td>
@@ -171,7 +171,7 @@ function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, op
         </td>
         <td className="py-2 px-2 text-right" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-0.5">
-            <button onClick={() => handlePrint(p)} className="w-7 h-7 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition" title="ພິມ">
+            <button onClick={() => handlePrint(p)} className="w-7 h-7 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition" title="ພິມ">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mx-auto">
                 <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
               </svg>
@@ -513,7 +513,7 @@ export default function Purchases() {
           )}
           <button
             onClick={() => navigate('/admin/purchases/create')}
-            className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+            className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
             ສ້າງໃບສັ່ງຊື້
@@ -542,28 +542,28 @@ export default function Purchases() {
               placeholder="ຄົ້ນຫາ ID, ເລກອ້າງອີງ, ຜູ້ສະໜອງ..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none"
+              className="w-full pl-7 pr-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-red-400 focus:ring-1 focus:ring-red-200 outline-none"
             />
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-indigo-400 outline-none">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-red-400 outline-none">
             <option value="">ທຸກສະຖານະ</option>
             <option value="pending">⏳ ຍັງບໍ່ຊຳລະ</option>
             <option value="partial">🔄 ບາງສ່ວນ</option>
             <option value="paid">✅ ຊຳລະແລ້ວ</option>
           </select>
-          <select value={paymentTypeFilter} onChange={e => setPaymentTypeFilter(e.target.value)} className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-indigo-400 outline-none">
+          <select value={paymentTypeFilter} onChange={e => setPaymentTypeFilter(e.target.value)} className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-red-400 outline-none">
             <option value="">ທຸກປະເພດ</option>
             <option value="cash">💵 ເງິນສົດ</option>
             <option value="debt">📋 ຕິດໜີ້</option>
           </select>
-          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-indigo-400 outline-none">
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-red-400 outline-none">
             <option value="date_desc">📅 ລ້າສຸດ</option>
             <option value="date_asc">📅 ເກົ່າສຸດ</option>
             <option value="total_desc">💰 ຍອດສູງ</option>
             <option value="total_asc">💰 ຍອດຕ່ຳ</option>
           </select>
-          <input type="date" value={dateRange.from} onChange={e => setDateRange({ ...dateRange, from: e.target.value })} className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-indigo-400 outline-none"/>
-          <input type="date" value={dateRange.to} onChange={e => setDateRange({ ...dateRange, to: e.target.value })} className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-indigo-400 outline-none"/>
+          <input type="date" value={dateRange.from} onChange={e => setDateRange({ ...dateRange, from: e.target.value })} className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-red-400 outline-none"/>
+          <input type="date" value={dateRange.to} onChange={e => setDateRange({ ...dateRange, to: e.target.value })} className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-[12px] focus:border-red-400 outline-none"/>
           {filtersActive && (
             <button
               onClick={() => { setSearchTerm(''); setStatusFilter(''); setPaymentTypeFilter(''); setDateRange({ from: '', to: '' }); setSortBy('date_desc') }}
@@ -611,7 +611,7 @@ export default function Purchases() {
                         <span className="text-3xl">📦</span>
                         <p className="text-[12px]">{filtersActive ? 'ບໍ່ພົບຂໍ້ມູນ' : 'ຍັງບໍ່ມີໃບສັ່ງຊື້'}</p>
                         {!filtersActive && (
-                          <button onClick={() => navigate('/admin/purchases/create')} className="mt-1 px-3 py-1.5 bg-indigo-600 text-white rounded-md text-[12px] font-semibold">+ ສ້າງໃບສັ່ງຊື້ທຳອິດ</button>
+                          <button onClick={() => navigate('/admin/purchases/create')} className="mt-1 px-3 py-1.5 bg-red-600 text-white rounded-md text-[12px] font-semibold">+ ສ້າງໃບສັ່ງຊື້ທຳອິດ</button>
                         )}
                       </div>
                     </td>
@@ -691,7 +691,7 @@ export default function Purchases() {
                       <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => { setShowPendingModal(false); navigate('/admin/purchases/create', { state: { pendingInvoice: inv } }) }}
-                          className="px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-lg text-[11px] font-semibold shadow-sm shadow-indigo-600/30 transition active:scale-95 flex items-center gap-1"
+                          className="px-3 py-1.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white rounded-lg text-[11px] font-semibold shadow-sm shadow-red-600/30 transition active:scale-95 flex items-center gap-1"
                         >
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
                           ສ້າງ
@@ -735,8 +735,8 @@ export default function Purchases() {
                                 return (
                                   <tr key={i} className="hover:bg-amber-50/30 transition">
                                     <td className="py-1.5 px-2 text-slate-400 font-mono">{i + 1}</td>
-                                    <td className="py-1.5 px-2 font-mono text-indigo-600 whitespace-nowrap">
-                                      <span className="bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">{code || '—'}</span>
+                                    <td className="py-1.5 px-2 font-mono text-red-600 whitespace-nowrap">
+                                      <span className="bg-red-50 border border-red-100 px-1.5 py-0.5 rounded">{code || '—'}</span>
                                     </td>
                                     <td className="py-1.5 px-2 text-slate-700 truncate max-w-[240px]">{name || '—'}</td>
                                     <td className="py-1.5 px-2 text-center font-mono text-slate-700 font-semibold">{qty}</td>
@@ -879,7 +879,7 @@ export default function Purchases() {
                 {viewDetail.currency && viewDetail.currency !== 'LAK' && (
                   <div className="flex justify-between">
                     <span className="text-slate-500">ອັດຕາ</span>
-                    <span className="font-mono text-indigo-600">1 {curSymbol[viewDetail.currency]} = {new Intl.NumberFormat('lo-LA').format(parseFloat(viewDetail.exchange_rate))} ₭</span>
+                    <span className="font-mono text-red-600">1 {curSymbol[viewDetail.currency]} = {new Intl.NumberFormat('lo-LA').format(parseFloat(viewDetail.exchange_rate))} ₭</span>
                   </div>
                 )}
                 {viewDetail.note && (
@@ -912,7 +912,7 @@ export default function Purchases() {
                               <div className="flex items-center gap-1.5 min-w-0">
                                 {pay.payment_number && <span className="font-mono font-bold text-emerald-600 text-[10px] bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0">{pay.payment_number}</span>}
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">{method}</span>
-                                <span className={`text-[9px] font-bold px-1 py-0.5 rounded shrink-0 ${isForeign ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>{payCur}</span>
+                                <span className={`text-[9px] font-bold px-1 py-0.5 rounded shrink-0 ${isForeign ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-500'}`}>{payCur}</span>
                               </div>
                               <div className="text-right shrink-0">
                                 <div className="font-mono font-bold text-emerald-600">{paySym} {new Intl.NumberFormat('lo-LA').format(amountOrig)}</div>
@@ -923,8 +923,8 @@ export default function Purchases() {
                               <span>{new Date(pay.payment_date || pay.created_at).toLocaleDateString('lo-LA')}{isForeign && ` • 1 ${paySym} = ${new Intl.NumberFormat('lo-LA').format(payRate)} ₭`}</span>
                               <div className="flex items-center gap-1">
                                 {pay.note && <span className="truncate max-w-[120px]">📝 {pay.note}</span>}
-                                {pay.attachment && <a href={pay.attachment} target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline">📎</a>}
-                                <button onClick={() => generateAndPrintPaymentReceipt(pay, viewDetail)} className="w-5 h-5 text-indigo-500 hover:bg-indigo-50 rounded flex items-center justify-center" title="ພິມ">
+                                {pay.attachment && <a href={pay.attachment} target="_blank" rel="noreferrer" className="text-red-500 hover:underline">📎</a>}
+                                <button onClick={() => generateAndPrintPaymentReceipt(pay, viewDetail)} className="w-5 h-5 text-red-500 hover:bg-red-50 rounded flex items-center justify-center" title="ພິມ">
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                                 </button>
                               </div>
@@ -1027,8 +1027,8 @@ export default function Purchases() {
                       return (
                       <div key={pay.id} className="flex justify-between items-center bg-slate-50 border border-slate-200 rounded px-2 py-1 text-[11px]">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          {pay.payment_number && <span className="font-semibold text-indigo-600 font-mono text-[10px] shrink-0">{pay.payment_number}</span>}
-                          <span className={`text-[9px] font-bold px-1 py-0.5 rounded shrink-0 ${isForeign ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>{payCur}</span>
+                          {pay.payment_number && <span className="font-semibold text-red-600 font-mono text-[10px] shrink-0">{pay.payment_number}</span>}
+                          <span className={`text-[9px] font-bold px-1 py-0.5 rounded shrink-0 ${isForeign ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-500'}`}>{payCur}</span>
                           <span className="font-bold font-mono text-slate-700 whitespace-nowrap">{paySym} {new Intl.NumberFormat('lo-LA').format(amountOrig)}</span>
                           {isForeign && <span className="text-[9px] text-slate-400 font-mono whitespace-nowrap">≈ {formatPrice(pay.amount)}</span>}
                           {pay.payment_method && <span className="text-[9px] bg-slate-200 text-slate-500 px-1 py-0.5 rounded shrink-0">{pay.payment_method === 'transfer' ? 'ໂອນ' : pay.payment_method === 'cash' ? 'ສົດ' : pay.payment_method}</span>}
@@ -1036,7 +1036,7 @@ export default function Purchases() {
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <span className="text-slate-400 text-[10px]">{new Date(pay.created_at).toLocaleDateString('lo-LA')}</span>
-                          <button onClick={() => generateAndPrintPaymentReceipt(pay, showPay)} className="w-4 h-4 bg-indigo-100 hover:bg-indigo-200 text-indigo-600 rounded flex items-center justify-center" title="ພິມໃບຊຳລະ">
+                          <button onClick={() => generateAndPrintPaymentReceipt(pay, showPay)} className="w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded flex items-center justify-center" title="ພິມໃບຊຳລະ">
                             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                           </button>
                           <button onClick={() => handleDeletePayment(pay.id)} className="w-4 h-4 bg-red-100 hover:bg-red-200 text-red-500 rounded flex items-center justify-center" title="ລຶບ">
@@ -1158,8 +1158,8 @@ export default function Purchases() {
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
           <div className="relative bg-white rounded-2xl shadow-2xl px-8 py-6 flex flex-col items-center gap-3 animate-pop-in">
             <div className="relative w-12 h-12">
-              <div className="absolute inset-0 rounded-full border-4 border-indigo-100"></div>
-              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-indigo-600 animate-spin"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-red-100"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-red-600 animate-spin"></div>
             </div>
             <div className="text-[13px] font-semibold text-slate-700">{busyMessage}</div>
           </div>
@@ -1173,7 +1173,7 @@ export default function Purchases() {
           ? { accent: 'from-red-500 to-rose-600', glow: 'shadow-red-500/40', iconBg: 'bg-red-100', iconColor: 'text-red-600', btn: 'bg-red-600 hover:bg-red-700', ring: 'ring-red-500/30' }
           : v === 'warning'
           ? { accent: 'from-amber-500 to-orange-600', glow: 'shadow-amber-500/40', iconBg: 'bg-amber-100', iconColor: 'text-amber-600', btn: 'bg-amber-600 hover:bg-amber-700', ring: 'ring-amber-500/30' }
-          : { accent: 'from-indigo-500 to-red-600', glow: 'shadow-indigo-500/40', iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', btn: 'bg-indigo-600 hover:bg-indigo-700', ring: 'ring-indigo-500/30' }
+          : { accent: 'from-red-500 to-red-600', glow: 'shadow-red-500/40', iconBg: 'bg-red-100', iconColor: 'text-red-600', btn: 'bg-red-600 hover:bg-red-700', ring: 'ring-red-500/30' }
         return (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 animate-fade-in" onClick={() => confirmState.onDone(false)}>
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>

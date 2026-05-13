@@ -2,7 +2,10 @@
 
 
 import { useState, useEffect } from 'react'
+import * as XLSX from 'xlsx'
 import SearchSelect from '@/components/SearchSelect'
+import { AdminHero } from '@/components/admin/ui/AdminHero'
+import { COSTING_METHODS, COSTING_METHOD_LABELS } from '@/lib/costingMethods'
 
 const API = '/api'
 const fmtPrice = p => new Intl.NumberFormat('lo-LA').format(p) + ' ກີບ'
@@ -18,7 +21,8 @@ const fmtCompact = n => {
 const emptyForm = {
   product_code: '', product_name: '', barcode: '', category: '', brand: '',
   cost_price: '', selling_price: '', qty_on_hand: '', min_stock: '5',
-  unit: 'ອັນ', expiry_date: '', supplier_name: '', status: true, image_url: ''
+  unit: 'ອັນ', expiry_date: '', supplier_name: '', status: true, image_url: '',
+  costing_method: '',
 }
 
 export default function Products() {
@@ -41,6 +45,7 @@ export default function Products() {
   const [movements, setMovements] = useState([])
   const [isSyncingSuppliers, setIsSyncingSuppliers] = useState(false)
   const [showSyncMenu, setShowSyncMenu] = useState(false)
+  const [defaultCostingMethod, setDefaultCostingMethod] = useState('AVG')
 
   const openDetail = async (p) => {
     setViewDetail(p)
@@ -54,6 +59,9 @@ export default function Products() {
     fetch(`${API}/admin/brands`).then(r => r.json()).then(setBrands)
     fetch(`${API}/admin/suppliers`).then(r => r.json()).then(setSuppliers)
     fetch(`${API}/admin/units`).then(r => r.json()).then(setUnits)
+    fetch(`${API}/admin/company`).then(r => r.json()).then(c => {
+      if (c?.default_costing_method) setDefaultCostingMethod(c.default_costing_method)
+    }).catch(() => {})
   }
   useEffect(() => { load() }, [])
 
@@ -65,7 +73,8 @@ export default function Products() {
       category: p.category || '', brand: p.brand || '', cost_price: p.cost_price || '',
       selling_price: p.selling_price || '', qty_on_hand: p.qty_on_hand, min_stock: p.min_stock,
       unit: p.unit, expiry_date: p.expiry_date ? p.expiry_date.split('T')[0] : '',
-      supplier_name: p.supplier_name || '', status: p.status, image_url: p.image_url || ''
+      supplier_name: p.supplier_name || '', status: p.status, image_url: p.image_url || '',
+      costing_method: p.costing_method || '',
     })
     setEditing(p.id); setShowForm(true)
   }
@@ -171,6 +180,47 @@ export default function Products() {
   const totalStockValue = products.reduce((s, p) => s + (parseFloat(p.cost_price) || 0) * (parseFloat(p.qty_on_hand) || 0), 0)
   const totalRetailValue = products.reduce((s, p) => s + (parseFloat(p.selling_price) || 0) * (parseFloat(p.qty_on_hand) || 0), 0)
 
+  const handleExportExcel = () => {
+    if (filtered.length === 0) { alert('ບໍ່ມີຂໍ້ມູນສຳລັບ export'); return }
+    const rows = filtered.map((p, idx) => {
+      const qty = Number(p.qty_on_hand) || 0
+      const minStock = Number(p.min_stock) || 0
+      const cost = Number(p.cost_price) || 0
+      const selling = Number(p.selling_price) || 0
+      const stockStatus = qty <= 0 ? 'ໝົດສະຕ໊ອກ' : qty <= minStock ? 'ຕ່ຳກວ່າ min' : 'ປົກກະຕິ'
+      const method = p.costing_method || defaultCostingMethod
+      return {
+        '#': idx + 1,
+        'ລະຫັດສິນຄ້າ': p.product_code || '',
+        'ຊື່ສິນຄ້າ': p.product_name || '',
+        'Barcode': p.barcode || '',
+        'ໝວດໝູ່': p.category || '',
+        'ຍີ່ຫໍ້': p.brand || '',
+        'ຜູ້ສະໜອງ': p.supplier_name || '',
+        'ຫົວໜ່ວຍ': p.unit || '',
+        'ຈຳນວນຄົງເຫຼືອ': qty,
+        'ສະຕ໊ອກຕ່ຳສຸດ': minStock,
+        'ສະຖານະສະຕ໊ອກ': stockStatus,
+        'ລາຄາຊື້': cost,
+        'ລາຄາຂາຍ': selling,
+        'ມູນຄ່າຕົ້ນທຶນ': cost * qty,
+        'ມູນຄ່າຂາຍ': selling * qty,
+        'ວິທີຄຳນວນຕົ້ນທຶນ': COSTING_METHOD_LABELS[method] || method || '',
+        'ວັນໝົດອາຍຸ': p.expiry_date ? new Date(p.expiry_date).toLocaleDateString('lo-LA') : '',
+        'ສະຖານະ': p.status ? 'ເປີດ' : 'ປິດ',
+      }
+    })
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [
+      { wch: 6 }, { wch: 18 }, { wch: 34 }, { wch: 18 }, { wch: 18 }, { wch: 18 },
+      { wch: 22 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 14 },
+      { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 24 }, { wch: 16 }, { wch: 10 },
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Products')
+    XLSX.writeFile(wb, `products_${new Date().toISOString().split('T')[0]}.xlsx`)
+  }
+
   const kpis = [
     { l: 'ທັງໝົດ', v: fmtNum(products.length), sub: `ເປີດ ${activeCount} · ປິດ ${inactiveCount}`, color: 'blue' },
     { l: 'ໝົດສະຕ໊ອກ', v: fmtNum(outCount), sub: 'ຕ້ອງສັ່ງຊື້ເພີ່ມ', color: 'red' },
@@ -193,16 +243,13 @@ export default function Products() {
   const labelCls = "block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wider"
 
   return (
-    <div className="text-[13px]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ຈັດການສິນຄ້າ</h2>
-          <span className="text-[11px] text-slate-400">·</span>
-          <span className="text-xs text-slate-500">{fmtNum(products.length)} ລາຍການ</span>
-          {outCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-red-50 text-red-600 rounded">{outCount} ໝົດ</span>}
-          {lowCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-amber-50 text-amber-600 rounded">{lowCount} ຕ່ຳ</span>}
-        </div>
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        allowOverflow
+        tag="Products"
+        title="📦 ຈັດການສິນຄ້າ"
+        subtitle={`${fmtNum(products.length)} ລາຍການ${outCount > 0 ? ` · ${outCount} ໝົດ` : ''}${lowCount > 0 ? ` · ${lowCount} ຕ່ຳ` : ''}`}
+        action={
         <div className="flex items-center gap-2">
           <div className="relative">
             <button
@@ -255,6 +302,11 @@ export default function Products() {
               </>
             )}
           </div>
+          <button onClick={handleExportExcel} disabled={filtered.length === 0}
+            className="px-3 py-1.5 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg>
+            Excel
+          </button>
           <button onClick={handleClearAll} disabled={products.length === 0}
             className="px-3 py-1.5 bg-white hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
@@ -266,7 +318,8 @@ export default function Products() {
             ເພີ່ມສິນຄ້າ
           </button>
         </div>
-      </div>
+        }
+      />
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
@@ -316,6 +369,11 @@ export default function Products() {
             ລ້າງ
           </button>
         )}
+        <button onClick={handleExportExcel} disabled={filtered.length === 0}
+          className="px-2.5 py-1.5 bg-white hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 disabled:opacity-50 text-slate-600 border border-slate-200 rounded-md text-xs font-bold transition-all flex items-center gap-1.5">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg>
+          Export Excel
+        </button>
         <div className="flex bg-slate-50 border border-slate-200 rounded-md overflow-hidden ml-auto">
           <button onClick={() => setViewMode('table')} className={`px-2.5 py-1.5 text-xs transition-colors ${viewMode === 'table' ? 'bg-red-600 text-white' : 'text-slate-500 hover:bg-white'}`}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>
@@ -392,6 +450,8 @@ export default function Products() {
                       </td>
                       <td className="py-1.5 px-3 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <a href={`/admin/products/${p.id}/variants`} title="Variants"
+                             className="w-6 h-6 bg-violet-50 hover:bg-violet-100 text-violet-600 rounded flex items-center justify-center text-[11px]">🎨</a>
                           <button onClick={() => openEdit(p)} className="w-6 h-6 bg-red-50 hover:bg-red-100 text-red-600 rounded flex items-center justify-center">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                           </button>
@@ -550,6 +610,15 @@ export default function Products() {
                     {viewDetail.supplier_name && (
                       <tr><td className="py-1.5 text-slate-500">ຜູ້ສະໜອງ</td><td className="py-1.5 text-right text-slate-700">{viewDetail.supplier_name}</td></tr>
                     )}
+                    <tr>
+                      <td className="py-1.5 text-slate-500">ວິທີຄຳນວນຕົ້ນທຶນ</td>
+                      <td className="py-1.5 text-right">
+                        <span className="inline-flex items-center gap-1.5 rounded bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700 border border-red-200">
+                          {COSTING_METHOD_LABELS[viewDetail.costing_method || defaultCostingMethod] || (viewDetail.costing_method || defaultCostingMethod)}
+                          {!viewDetail.costing_method && <span className="text-[9px] font-bold text-slate-400">(ຮ້ານ)</span>}
+                        </span>
+                      </td>
+                    </tr>
                     {viewDetail.expiry_date && (
                       <tr><td className="py-1.5 text-slate-500">ວັນໝົດອາຍຸ</td><td className="py-1.5 text-right text-slate-700">{new Date(viewDetail.expiry_date).toLocaleDateString('lo-LA')}</td></tr>
                     )}
@@ -736,6 +805,38 @@ export default function Products() {
                 <SearchSelect value={form.supplier_name} onChange={val => setForm({ ...form, supplier_name: val })}
                   options={suppliers.map(s => ({ value: s.name, label: s.name }))} placeholder="-- ເລືອກ --"
                   onAdd={name => addNew('suppliers', name)} />
+              </div>
+
+              {/* Section 4b: ວິທີຄຳນວນຕົ້ນທຶນ */}
+              <div className="bg-white border border-slate-200 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                  <span className="w-5 h-5 bg-red-500 text-white rounded text-[10px] font-bold flex items-center justify-center">5</span>
+                  <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">ວິທີຄຳນວນຕົ້ນທຶນ</h3>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button type="button"
+                    onClick={() => setForm({ ...form, costing_method: '' })}
+                    className={`rounded-lg border p-2 text-center transition ${
+                      !form.costing_method ? 'border-red-500 bg-red-50' : 'border-slate-200 hover:border-slate-300'
+                    }`}>
+                    <div className={`text-[11px] font-extrabold ${!form.costing_method ? 'text-red-700' : 'text-slate-600'}`}>ຄ່າເລີ່ມ</div>
+                    <div className="text-[9px] text-slate-400">ໃຊ້ຄ່າຮ້ານ</div>
+                  </button>
+                  {COSTING_METHODS.map(m => {
+                    const active = form.costing_method === m.value
+                    return (
+                      <button key={m.value} type="button"
+                        onClick={() => setForm({ ...form, costing_method: m.value })}
+                        className={`rounded-lg border p-2 text-center transition ${
+                          active ? 'border-red-500 bg-red-50' : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                        title={m.desc}>
+                        <div className={`text-[11px] font-extrabold ${active ? 'text-red-700' : 'text-slate-600'}`}>{m.label}</div>
+                        <div className="text-[9px] text-slate-400">{m.sub}</div>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
 
               {/* Section 5: Status */}

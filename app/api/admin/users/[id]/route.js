@@ -7,6 +7,27 @@ import { ensureUsersSchema } from '@/lib/migrations';
 
 const hashPassword = (password) => crypto.createHash('sha256').update(String(password || '')).digest('hex');
 const validRoles = new Set(['admin', 'cashier']);
+const menuPaths = [
+  '/admin', '/admin/products', '/admin/categories-brands', '/admin/suppliers',
+  '/admin/purchases', '/admin/debts', '/admin/debt-payments/supplier',
+  '/admin/quotations', '/admin/sales', '/admin/returns', '/admin/cash-handovers',
+  '/admin/cash-transactions/income', '/admin/cash-transactions/expense', '/admin/cash-flow',
+  '/admin/members', '/admin/customer-debts', '/admin/debt-payments/customer',
+  '/admin/users', '/admin/pricing', '/admin/promotions', '/admin/loyalty',
+  '/admin/currencies', '/admin/locations', '/admin/company', '/admin/bill-format',
+];
+
+function normalizePermissions(input, role) {
+  if (role === 'admin') {
+    return Object.fromEntries(menuPaths.map(path => [path, { access: true, edit: true, delete: true }]));
+  }
+  const src = input && typeof input === 'object' ? input : {};
+  return Object.fromEntries(menuPaths.map(path => {
+    const p = src[path] || {};
+    const access = !!p.access;
+    return [path, { access, edit: access && !!p.edit, delete: access && !!p.delete }];
+  }));
+}
 
 async function adminCount(client = pool) {
   const result = await client.query(`SELECT COUNT(*)::int AS count FROM users WHERE role = 'admin'`);
@@ -19,10 +40,14 @@ export const PUT = handle(async (request, { params }) => {
   const numericId = Number(id);
   if (!Number.isInteger(numericId) || numericId <= 0) return fail(400, 'invalid id');
 
-  const { username, password, display_name, role } = await readJson(request);
+  const { username, password, display_name, role, permissions, commission_rate, sales_target, branch_id } = await readJson(request);
   const cleanUsername = String(username || '').trim();
   const cleanDisplayName = String(display_name || '').trim();
   const cleanRole = validRoles.has(role) ? role : 'cashier';
+  const cleanPermissions = normalizePermissions(permissions, cleanRole);
+  const commission = Math.max(0, Math.min(100, Number(commission_rate) || 0));
+  const target = Math.max(0, Number(sales_target) || 0);
+  const branch = Number(branch_id) || null;
   if (!cleanUsername) return fail(400, 'ກະລຸນາປ້ອນ username');
   if (!cleanDisplayName) return fail(400, 'ກະລຸນາປ້ອນຊື່ສະແດງ');
   if (password && String(password).length < 4) return fail(400, 'ລະຫັດຜ່ານຕ້ອງມີຢ່າງໜ້ອຍ 4 ຕົວ');
@@ -40,20 +65,22 @@ export const PUT = handle(async (request, { params }) => {
       return fail(400, 'ບໍ່ສາມາດປ່ຽນ admin ຄົນສຸດທ້າຍໄດ້');
     }
 
-    const values = [cleanUsername, cleanDisplayName, cleanRole, numericId];
+    const values = [cleanUsername, cleanDisplayName, cleanRole, JSON.stringify(cleanPermissions), commission, target, branch, numericId];
     let query = `
       UPDATE users
-      SET username = $1, display_name = $2, role = $3
-      WHERE id = $4
-      RETURNING id, username, display_name, role, created_at
+      SET username = $1, display_name = $2, role = $3, permissions = $4::jsonb,
+          commission_rate = $5, sales_target = $6, branch_id = $7
+      WHERE id = $8
+      RETURNING id, username, display_name, role, permissions, commission_rate, sales_target, branch_id, created_at
     `;
     if (password) {
-      values.splice(3, 0, hashPassword(password));
+      values.splice(7, 0, hashPassword(password));
       query = `
         UPDATE users
-        SET username = $1, display_name = $2, role = $3, password = $4
-        WHERE id = $5
-        RETURNING id, username, display_name, role, created_at
+        SET username = $1, display_name = $2, role = $3, permissions = $4::jsonb,
+            commission_rate = $5, sales_target = $6, branch_id = $7, password = $8
+        WHERE id = $9
+        RETURNING id, username, display_name, role, permissions, commission_rate, sales_target, branch_id, created_at
       `;
     }
     const result = await client.query(query, values);

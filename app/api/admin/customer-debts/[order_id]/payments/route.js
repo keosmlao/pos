@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
-import { ensureCustomerDebtPaymentsSchema } from '@/lib/migrations';
+import { ensureCompanyProfileSchema, ensureCustomerDebtPaymentsSchema } from '@/lib/migrations';
+import { allocateDocumentNumber } from '@/lib/billNumber';
 
 export const GET = handle(async (request, { params }) => {
   await ensureCustomerDebtPaymentsSchema();
@@ -19,6 +20,7 @@ export const GET = handle(async (request, { params }) => {
 
 export const POST = handle(async (request, { params }) => {
   await ensureCustomerDebtPaymentsSchema();
+  await ensureCompanyProfileSchema();
   const { order_id } = await params;
   const orderId = Number(order_id);
   if (!Number.isInteger(orderId) || orderId <= 0) return fail(400, 'Invalid order id');
@@ -49,7 +51,11 @@ export const POST = handle(async (request, { params }) => {
       return fail(400, 'Order is already paid');
     }
     const payAmount = Math.min(amount, remaining);
-    const paymentNumber = String(body.payment_number || '').trim() || `CRP-${String(orderId).padStart(5, '0')}-${Date.now().toString().slice(-5)}`;
+    let paymentNumber = String(body.payment_number || '').trim();
+    if (!paymentNumber) {
+      const settingsRes = await client.query('SELECT * FROM company_profile WHERE id = 1');
+      paymentNumber = await allocateDocumentNumber(client, 'customer_payment', settingsRes.rows[0] || {});
+    }
     const paymentDate = body.payment_date ? String(body.payment_date).slice(0, 10) : new Date().toISOString().slice(0, 10);
     const paymentMethod = String(body.payment_method || 'cash');
     const note = String(body.note || '').trim() || null;

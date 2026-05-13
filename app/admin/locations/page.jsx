@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { AdminHero } from '@/components/admin/ui/AdminHero';
 
 const API = '/api';
 
@@ -172,17 +173,18 @@ export default function LocationsPage() {
   if (loading) return <div className="text-sm text-slate-500">ກຳລັງໂຫຼດ...</div>;
 
   return (
-    <div className="space-y-4 text-[13px]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-900">ກຳນົດ ແຂວງ / ເມືອງ / ບ້ານ</h1>
-          <p className="mt-0.5 text-xs text-slate-500">ໃຊ້ກັບຟອມສະມາຊິກ, POS ແລະ ຜູ້ສະໜອງ</p>
-        </div>
-        <button onClick={save} disabled={saving}
-          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50">
-          {saving ? 'ກຳລັງບັນທຶກ...' : 'ບັນທຶກ'}
-        </button>
-      </div>
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Lao addresses"
+        title="📍 ກຳນົດ ແຂວງ / ເມືອງ / ບ້ານ"
+        subtitle="ໃຊ້ກັບຟອມສະມາຊິກ, POS ແລະ ຜູ້ສະໜອງ"
+        action={
+          <button onClick={save} disabled={saving}
+            className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20 disabled:opacity-50">
+            {saving ? 'ກຳລັງບັນທຶກ...' : '💾 ບັນທຶກ'}
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <section className="rounded-xl border border-slate-200 bg-white p-4">

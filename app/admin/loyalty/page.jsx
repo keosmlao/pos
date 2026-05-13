@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { AdminHero } from '@/components/admin/ui/AdminHero';
 
 const API = '/api';
 
@@ -12,6 +13,7 @@ const blank = {
   tier_silver_threshold: 5000000,
   tier_gold_threshold: 20000000,
   tier_platinum_threshold: 50000000,
+  points_lifetime_months: 0,
 };
 
 const fmtNum = (n) => new Intl.NumberFormat('lo-LA').format(Number(n) || 0);
@@ -82,20 +84,18 @@ export default function LoyaltySettingsPage() {
   const sampleRedeemValue = samplePoints * redeemValue;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-900">ຕັ້ງຄ່າແຕ້ມສະສົມ</h1>
-          <p className="text-xs text-slate-500 mt-0.5">ກຳນົດອັດຕາສະສົມ, ການແລກຄືນ, ແລະ ລະດັບສະມາຊິກ</p>
-        </div>
-        <button
-          onClick={save}
-          disabled={saving}
-          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-lg disabled:opacity-50"
-        >
-          {saving ? 'ກຳລັງບັນທຶກ...' : 'ບັນທຶກ'}
-        </button>
-      </div>
+    <div className="max-w-3xl mx-auto space-y-4 pb-6">
+      <AdminHero
+        tag="Loyalty"
+        title="⭐ ຕັ້ງຄ່າແຕ້ມສະສົມ"
+        subtitle="ກຳນົດອັດຕາສະສົມ, ການແລກຄືນ, ແລະ ລະດັບສະມາຊິກ"
+        action={
+          <button onClick={save} disabled={saving}
+            className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20 disabled:opacity-50">
+            {saving ? 'ກຳລັງບັນທຶກ...' : '💾 ບັນທຶກ'}
+          </button>
+        }
+      />
 
       <section className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
@@ -204,6 +204,26 @@ export default function LoyaltySettingsPage() {
           </div>
         </div>
         <p className="text-[11px] text-slate-500">ຕ້ອງເປັນ silver ≤ gold ≤ platinum</p>
+      </section>
+
+      <section className="bg-white rounded-xl border border-slate-200 p-5 mb-4">
+        <h2 className="font-bold text-slate-900 mb-3">⏰ ອາຍຸແຕ້ມສະສົມ</h2>
+        <div className="flex items-end gap-3">
+          <div className="flex-1 max-w-xs">
+            <label className="block text-xs font-bold text-slate-600 mb-1">ອາຍຸ (ເດືອນ) — 0 = ບໍ່ໝົດອາຍຸ</label>
+            <input
+              type="number"
+              min="0"
+              max="120"
+              value={form.points_lifetime_months}
+              onChange={(e) => upd('points_lifetime_months', e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
+            />
+          </div>
+          <div className="text-[11px] text-slate-500 pb-2.5">
+            ທຸກຄັ້ງທີ່ໄດ້ແຕ້ມໃໝ່ ໝົດອາຍຸຈະຖືກອັບເດດເປັນ {form.points_lifetime_months || 0} ເດືອນຈາກປະຈຸບັນ
+          </div>
+        </div>
       </section>
 
       {toast && (

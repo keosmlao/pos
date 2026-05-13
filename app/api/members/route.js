@@ -49,8 +49,8 @@ export const POST = handle(async (request) => {
     await client.query('BEGIN');
     const code = normalizeText(body.member_code) || await nextMemberCode(client);
     const result = await client.query(
-      `INSERT INTO members (member_code, name, phone, email, province, district, village, address, tier, points, total_spent, active, note)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      `INSERT INTO members (member_code, name, phone, email, province, district, village, address, tier, points, total_spent, active, note, credit_limit)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
       [
         code,
@@ -66,6 +66,7 @@ export const POST = handle(async (request) => {
         Math.max(0, Number(body.total_spent) || 0),
         body.active !== false,
         note,
+        Math.max(0, Number(body.credit_limit) || 0),
       ]
     );
     await client.query('COMMIT');

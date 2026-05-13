@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import Login from '../components/Login';
 import POS from '../components/POS';
+import { installAuditFetch } from '../utils/auditFetch';
 
 export default function Home() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    installAuditFetch();
     const saved = localStorage.getItem('pos_user');
     if (saved) setUser(JSON.parse(saved));
     setLoading(false);

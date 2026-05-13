@@ -2,6 +2,7 @@
 
 
 import { useState, useEffect, useMemo } from 'react'
+import { AdminHero } from '@/components/admin/ui/AdminHero'
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0)
@@ -52,6 +53,7 @@ const emptyForm = {
   priority: 0, max_uses: '',
   stackable: true, active: true,
   gift_product_id: '',
+  code: '', requires_code: false,
 }
 
 function describeRule(p) {
@@ -83,7 +85,7 @@ function scopeChips(p, products, categories, brands) {
       .concat(names.length > 3 ? [{ label: `+${names.length - 3}`, tint: 'bg-slate-100 text-slate-500' }] : [])
   }
   if (p.scope === 'category') return ids.slice(0, 4).map(c => ({ label: c, tint: 'bg-violet-50 text-violet-700 border-violet-100' }))
-  if (p.scope === 'brand') return ids.slice(0, 4).map(b => ({ label: b, tint: 'bg-blue-50 text-blue-700 border-blue-100' }))
+  if (p.scope === 'brand') return ids.slice(0, 4).map(b => ({ label: b, tint: 'bg-blue-50 text-red-700 border-blue-100' }))
   return []
 }
 
@@ -148,6 +150,8 @@ export default function Promotions() {
       stackable: p.stackable !== false,
       active: p.active !== false,
       gift_product_id: p.gift_product_id || '',
+      code: p.code || '',
+      requires_code: !!p.requires_code,
     })
     setEditing(p.id)
     setShowForm(true)
@@ -245,22 +249,18 @@ export default function Promotions() {
   const t = PROMO_TYPES[form.type] || PROMO_TYPES.cart_percent
 
   return (
-    <div className="text-[13px]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ໂປຣໂມຊັ່ນ</h2>
-          <span className="text-[11px] text-slate-400">·</span>
-          <span className="text-xs text-slate-500">{fmtNum(promotions.length)} ລາຍການ</span>
-          {stats.activeCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded">{stats.activeCount} ເປີດ</span>}
-          {stats.expiredCount > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-slate-100 text-slate-500 rounded">{stats.expiredCount} ໝົດ</span>}
-        </div>
-        <button onClick={() => { resetForm(); setShowForm(true) }}
-          className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          ເພີ່ມໂປຣໂມຊັ່ນ
-        </button>
-      </div>
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Promotions"
+        title="🎁 ໂປຣໂມຊັ່ນ"
+        subtitle={`${fmtNum(promotions.length)} ລາຍການ${stats.activeCount > 0 ? ` · ${stats.activeCount} ເປີດ` : ''}${stats.expiredCount > 0 ? ` · ${stats.expiredCount} ໝົດ` : ''}`}
+        action={
+          <button onClick={() => { resetForm(); setShowForm(true) }}
+            className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20">
+            + ເພີ່ມໂປຣໂມຊັ່ນ
+          </button>
+        }
+      />
 
       {/* KPI */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
@@ -766,6 +766,41 @@ export default function Promotions() {
                       className="accent-emerald-500" />
                     <span className="text-xs font-bold text-slate-700">ເປີດໃຊ້ງານ</span>
                   </label>
+                </div>
+              </div>
+
+              {/* Coupon code */}
+              <div className="bg-white border border-slate-200 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                  <span className="w-5 h-5 bg-amber-500 text-white rounded text-[10px] font-bold flex items-center justify-center">🎟</span>
+                  <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Coupon Code (ທາງເລືອກ)</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
+                  <div>
+                    <label className={labelCls}>Code</label>
+                    <input
+                      type="text"
+                      value={form.code}
+                      onChange={e => setForm({ ...form, code: e.target.value.toUpperCase().replace(/\s+/g, '') })}
+                      placeholder="WELCOME10"
+                      className={`${inputCls} font-mono uppercase`}
+                      maxLength={32}
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer h-9 px-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={form.requires_code}
+                      onChange={e => setForm({ ...form, requires_code: e.target.checked })}
+                      disabled={!form.code}
+                      className="accent-amber-500"
+                    />
+                    <span className="text-xs font-bold text-slate-700">ຕ້ອງປ້ອນ code</span>
+                  </label>
+                </div>
+                <div className="mt-2 text-[10px] text-slate-500 leading-relaxed">
+                  ຖ້າຕັ້ງ <b>"ຕ້ອງປ້ອນ code"</b> ໂປຣໂມຊັນຈະນຳໃຊ້ສະເພາະເມື່ອລູກຄ້າປ້ອນ code ໃນ POS.
+                  ຖ້າບໍ່ຕັ້ງ — ໂປຣໂມຊັນຈະນຳໃຊ້ອັດຕະໂນມັດ ແລະ code ເປັນທາງເລືອກສຳລັບການອ້າງອີງ.
                 </div>
               </div>
             </form>

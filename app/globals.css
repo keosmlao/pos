@@ -7,6 +7,44 @@ body {
   font-size: 14px;
 }
 
+/* === Unified admin design tokens ===
+ * All admin pages share the same font scale, colors, density, and spacing.
+ * Tweaking here updates everything that lives under .admin-content.
+ */
+.admin-content {
+  --admin-text:      #0f172a;   /* slate-900 */
+  --admin-muted:     #64748b;   /* slate-500 */
+  --admin-bg:        #f8fafc;   /* slate-50 */
+  --admin-surface:   #ffffff;
+  --admin-border:    #e2e8f0;   /* slate-200 */
+  --admin-primary:   #dc2626;   /* red-600 */
+  --admin-primary-hover: #b91c1c; /* red-700 */
+  --admin-accent:    #fca5a5;   /* red-300 */
+
+  font-size: 13px;
+  color: var(--admin-text);
+  line-height: 1.5;
+}
+.admin-content h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01em; }
+.admin-content h2 { font-size: 1.05rem; font-weight: 700; }
+.admin-content h3 { font-size: 0.95rem; font-weight: 700; }
+.admin-content p  { font-size: 0.85rem; }
+.admin-content table { font-size: 0.8125rem; }
+.admin-content table thead th {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--admin-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.admin-content input,
+.admin-content select,
+.admin-content textarea {
+  font-family: inherit;
+  font-size: 0.8125rem;
+}
+.admin-content button { font-family: inherit; }
+
 @keyframes slide-up {
   from { transform: translateY(100%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }

@@ -2,13 +2,21 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok } from '@/lib/api';
+import { ensureProductVariantsSchema } from '@/lib/migrations';
 
 export const GET = handle(async (request) => {
+  await ensureProductVariantsSchema();
   const sp = request.nextUrl.searchParams;
   const category = sp.get('category');
   const search = sp.get('search');
   let query = `
-    SELECT p.*
+    SELECT p.*,
+      COALESCE(
+        (SELECT json_agg(v.* ORDER BY v.sort_order, v.id)
+         FROM product_variants v
+         WHERE v.product_id = p.id AND v.active = true),
+        '[]'::json
+      ) AS variants
     FROM products p
     LEFT JOIN categories c ON c.name = p.category
     WHERE p.status = true

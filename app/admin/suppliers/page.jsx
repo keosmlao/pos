@@ -3,10 +3,12 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useLocations } from '@/utils/useLocations'
+import { AdminHero } from '@/components/admin/ui/AdminHero'
 import SearchSelect from '@/components/SearchSelect'
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n)
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
 
 const emptyForm = {
   name: '', phone: '', province: '', district: '', village: '', address: '',
@@ -153,24 +155,125 @@ export default function Suppliers() {
   const inputCls = "w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13px] outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/10 transition-all placeholder:text-slate-300"
   const labelCls = "block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wider"
 
-  return (
-    <div className="text-[13px]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ຜູ້ສະໜອງ</h2>
-          <span className="text-[11px] text-slate-400">·</span>
-          <span className="text-xs text-slate-500">{fmtNum(suppliers.length)} ຜູ້ສະໜອງ</span>
-          {stats.withApi > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-cyan-50 text-cyan-700 rounded">{stats.withApi} API</span>}
+  const openPrintWindow = (title, bodyHtml) => {
+    const win = window.open('', '_blank', 'width=900,height=1000')
+    if (!win) { alert('ບໍ່ສາມາດເປີດປ່ອງພິມໄດ້'); return }
+    win.document.open()
+    win.document.write(`<!doctype html>
+      <html><head><meta charset="utf-8"><title>${esc(title)}</title>
+      <style>
+        @page { size: A4 portrait; margin: 12mm }
+        * { box-sizing: border-box; font-family: 'Noto Sans Lao','Phetsarath OT',system-ui,sans-serif; }
+        body { margin: 0; color: #111827; font-size: 11px; line-height: 1.45; }
+        .top { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #111827; padding-bottom: 10px; margin-bottom: 12px; }
+        h1 { margin: 0; font-size: 20px; font-weight: 900; }
+        .meta { color: #64748b; font-size: 10px; margin-top: 3px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #111827; color: white; text-align: left; padding: 6px 7px; font-size: 10px; }
+        td { padding: 5px 7px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+        .num, .right { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace,SFMono-Regular,Menlo,monospace; }
+        .muted { color: #64748b; }
+        .badge { display: inline-block; padding: 1px 6px; border-radius: 999px; background: #fef3c7; color: #92400e; font-weight: 800; }
+        .grid { display: grid; grid-template-columns: 130px 1fr; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+        .grid div { padding: 7px 9px; border-bottom: 1px solid #e5e7eb; }
+        .grid div:nth-child(odd) { background: #f8fafc; color: #64748b; font-weight: 800; }
+        .grid div:nth-last-child(-n+2) { border-bottom: 0; }
+        .section { margin-top: 14px; }
+        .section h2 { margin: 0 0 6px; font-size: 12px; color: #334155; text-transform: uppercase; letter-spacing: .5px; }
+      </style></head><body>
+        ${bodyHtml}
+        <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 400); }</script>
+      </body></html>`)
+    win.document.close()
+  }
+
+  const printSuppliers = () => {
+    const rows = filtered.map((s, i) => `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td><b>${esc(s.name)}</b><div class="muted">#${esc(s.id)}</div></td>
+        <td>${esc(s.phone || '-')}</td>
+        <td>${esc(s.contact_person || '-')}${s.contact_phone ? `<div class="muted">${esc(s.contact_phone)}</div>` : ''}</td>
+        <td>${s.credit_days ? `<span class="badge">${esc(s.credit_days)} ວັນ</span>` : '<span class="muted">-</span>'}</td>
+        <td>${esc(fmtLoc(s) || s.address || '-')}</td>
+        <td>${s.api_enabled && s.api_url ? 'ON' : '-'}</td>
+      </tr>
+    `).join('')
+    openPrintWindow('ລາຍຊື່ຜູ້ສະໜອງ', `
+      <div class="top">
+        <div>
+          <h1>ລາຍຊື່ຜູ້ສະໜອງ</h1>
+          <div class="meta">ຈຳນວນ ${fmtNum(filtered.length)} / ${fmtNum(suppliers.length)} ລາຍການ</div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => { resetForm(); setShowForm(true) }}
-            className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-            ເພີ່ມຜູ້ສະໜອງ
-          </button>
-        </div>
+        <div class="meta">ພິມວັນທີ ${new Date().toLocaleString('lo-LA')}</div>
       </div>
+      <table>
+        <thead><tr><th>#</th><th>ຜູ້ສະໜອງ</th><th>ເບີໂທ</th><th>ຜູ້ປະສານ</th><th>ສິນເຊື່ອ</th><th>ທີ່ຢູ່</th><th>API</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" class="muted">ບໍ່ມີຂໍ້ມູນ</td></tr>'}</tbody>
+      </table>
+    `)
+  }
+
+  const printSupplierDetail = (s) => {
+    if (!s) return
+    const codes = Array.isArray(s.api_cust_codes) && s.api_cust_codes.length > 0
+      ? s.api_cust_codes
+      : (s.api_cust_code ? [s.api_cust_code] : [])
+    const historyRows = contactHistory.map(h => `
+      <tr>
+        <td>${esc(h.contact_person || '-')}</td>
+        <td>${esc(h.contact_phone || '-')}</td>
+        <td>${esc(h.note || '')}</td>
+        <td>${new Date(h.created_at).toLocaleDateString('lo-LA')}</td>
+      </tr>
+    `).join('')
+    openPrintWindow(`ຜູ້ສະໜອງ ${s.name}`, `
+      <div class="top">
+        <div>
+          <h1>ຂໍ້ມູນຜູ້ສະໜອງ</h1>
+          <div class="meta">#${esc(s.id)} · ${esc(s.name)}</div>
+        </div>
+        <div class="meta">ພິມວັນທີ ${new Date().toLocaleString('lo-LA')}</div>
+      </div>
+      <div class="grid">
+        <div>ຊື່</div><div><b>${esc(s.name)}</b></div>
+        <div>ເບີໂທ</div><div>${esc(s.phone || '-')}</div>
+        <div>ຜູ້ປະສານ</div><div>${esc(s.contact_person || '-')}${s.contact_phone ? ` · ${esc(s.contact_phone)}` : ''}</div>
+        <div>ເງື່ອນໄຂຊຳລະ</div><div>${s.credit_days ? `${esc(s.credit_days)} ວັນ` : '-'}</div>
+        <div>ທີ່ຢູ່</div><div>${esc(fmtLoc(s) || '-')}</div>
+        <div>ເພີ່ມເຕີມ</div><div>${esc(s.address || '-')}</div>
+        <div>API</div><div>${s.api_enabled && s.api_url ? `ON · ${esc(s.api_url)}` : '-'}</div>
+        <div>Cust Codes</div><div>${codes.length ? codes.map(esc).join(', ') : '-'}</div>
+      </div>
+      <div class="section">
+        <h2>ປະຫວັດຜູ້ປະສານງານ</h2>
+        <table>
+          <thead><tr><th>ຊື່</th><th>ເບີ</th><th>ໝາຍເຫດ</th><th>ວັນທີ</th></tr></thead>
+          <tbody>${historyRows || '<tr><td colspan="4" class="muted">ບໍ່ມີປະຫວັດ</td></tr>'}</tbody>
+        </table>
+      </div>
+    `)
+  }
+
+  return (
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Suppliers"
+        title="🚚 ຜູ້ສະໜອງ"
+        subtitle={`${fmtNum(suppliers.length)} ຜູ້ສະໜອງ${stats.withApi > 0 ? ` · ${stats.withApi} ມີ API` : ''}`}
+        action={
+          <div className="flex gap-2">
+            <button onClick={printSuppliers}
+              className="rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 px-4 py-3 text-sm font-extrabold text-white">
+              🖨 ພິມ
+            </button>
+            <button onClick={() => { resetForm(); setShowForm(true) }}
+              className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20">
+              + ເພີ່ມຜູ້ສະໜອງ
+            </button>
+          </div>
+        }
+      />
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
@@ -305,6 +408,10 @@ export default function Suppliers() {
               </div>
               <button onClick={() => { setViewDetail(null); openEdit(viewDetail) }}
                 className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded text-xs font-bold">ແກ້ໄຂ</button>
+              <button onClick={() => printSupplierDetail(viewDetail)}
+                className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded flex items-center justify-center text-slate-600" title="ພິມ">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              </button>
               <button onClick={() => setViewDetail(null)}
                 className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded flex items-center justify-center text-slate-500">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>

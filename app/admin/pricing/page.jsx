@@ -3,6 +3,8 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx'
+import { AdminHero } from '@/components/admin/ui/AdminHero'
+import { COSTING_METHOD_LABELS } from '@/lib/costingMethods'
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0)
@@ -12,6 +14,11 @@ const fmtCompact = n => {
   if (num >= 1_000_000) return (num / 1_000_000).toFixed(2) + 'M'
   if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K'
   return String(num)
+}
+const productCostValue = (p) => {
+  const effective = p?.effective_cost != null ? Number(p.effective_cost) : null
+  if (effective != null && Number.isFinite(effective)) return effective
+  return Number(p?.cost_price) || 0
 }
 
 export default function Pricing() {
@@ -30,6 +37,8 @@ export default function Pricing() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [showRecent, setShowRecent] = useState(false)
   const [recentRows, setRecentRows] = useState([])
+  const [purchaseRows, setPurchaseRows] = useState([])
+  const [purchasesLoading, setPurchasesLoading] = useState(false)
 
   const load = () => { fetch(`${API}/admin/pricing`).then(r => r.json()).then(setProducts) }
   useEffect(() => { load() }, [])
@@ -37,12 +46,21 @@ export default function Pricing() {
   const openHistory = async (p) => {
     setHistoryFor(p)
     setHistoryLoading(true)
+    setPurchasesLoading(true)
     setHistoryRows([])
+    setPurchaseRows([])
     try {
-      const res = await fetch(`${API}/admin/pricing/${p.id}/history`)
-      setHistoryRows(await res.json())
+      const [hRes, pRes] = await Promise.all([
+        fetch(`${API}/admin/pricing/${p.id}/history`),
+        fetch(`${API}/admin/products/${p.id}/purchases`),
+      ])
+      setHistoryRows(await hRes.json())
+      setPurchaseRows(await pRes.json())
     } catch (e) { console.error(e) }
-    finally { setHistoryLoading(false) }
+    finally {
+      setHistoryLoading(false)
+      setPurchasesLoading(false)
+    }
   }
 
   const openRecent = async () => {
@@ -64,7 +82,7 @@ export default function Pricing() {
       product_name: p.product_name,
       category: p.category || '',
       unit: p.unit || '',
-      cost_price: Number(p.cost_price) || 0,
+      cost_price: productCostValue(p),
       selling_price: Number(p.selling_price) || 0,
     }))
     const ws = XLSX.utils.json_to_sheet(rows, {
@@ -122,7 +140,14 @@ export default function Pricing() {
     } finally { setUploading(false) }
   }
 
-  const openEdit = (p) => { setEditing(p.id); setForm({ cost_price: p.cost_price || '', selling_price: p.selling_price || '' }) }
+  const openEdit = (p) => {
+    const displayCost = productCostValue(p)
+    setEditing(p.id)
+    setForm({
+      cost_price: displayCost > 0 ? String(displayCost) : '',
+      selling_price: p.selling_price ? String(p.selling_price) : '',
+    })
+  }
   const handleSave = async () => {
     const res = await fetch(`${API}/admin/pricing/${editing}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -153,10 +178,10 @@ export default function Pricing() {
         (p.barcode || '').toLowerCase().includes(q) ||
         (p.barcode || '').toLowerCase().replace(/\s+/g, '').includes(normalizedQ)
       const matchCat = !filterCat || p.category === filterCat
-      const m = calcMarginPct(p.cost_price, p.selling_price)
+      const m = calcMarginPct(productCostValue(p), p.selling_price)
       const matchMargin =
         !filterMargin ||
-        (filterMargin === 'missing' && (!p.cost_price || !p.selling_price)) ||
+        (filterMargin === 'missing' && (!productCostValue(p) || !p.selling_price)) ||
         (filterMargin === 'loss' && m !== null && m < 0) ||
         (filterMargin === 'low' && m !== null && m >= 0 && m < 10) ||
         (filterMargin === 'good' && m !== null && m >= 10 && m < 30) ||
@@ -167,13 +192,13 @@ export default function Pricing() {
       switch (sortBy) {
         case 'name': return (a.product_name || '').localeCompare(b.product_name || '')
         case 'margin_desc': {
-          const ma = calcMarginPct(a.cost_price, a.selling_price) ?? -Infinity
-          const mb = calcMarginPct(b.cost_price, b.selling_price) ?? -Infinity
+          const ma = calcMarginPct(productCostValue(a), a.selling_price) ?? -Infinity
+          const mb = calcMarginPct(productCostValue(b), b.selling_price) ?? -Infinity
           return mb - ma
         }
         case 'margin_asc': {
-          const ma = calcMarginPct(a.cost_price, a.selling_price) ?? Infinity
-          const mb = calcMarginPct(b.cost_price, b.selling_price) ?? Infinity
+          const ma = calcMarginPct(productCostValue(a), a.selling_price) ?? Infinity
+          const mb = calcMarginPct(productCostValue(b), b.selling_price) ?? Infinity
           return ma - mb
         }
         case 'sell_desc': return (Number(b.selling_price) || 0) - (Number(a.selling_price) || 0)
@@ -192,8 +217,9 @@ export default function Pricing() {
     let missing = 0, loss = 0, low = 0, good = 0, high = 0
     let sumMargin = 0, cntMargin = 0
     for (const p of products) {
-      if (!p.cost_price || !p.selling_price) { missing++; continue }
-      const m = calcMarginPct(p.cost_price, p.selling_price)
+      const displayCost = productCostValue(p)
+      if (!displayCost || !p.selling_price) { missing++; continue }
+      const m = calcMarginPct(displayCost, p.selling_price)
       if (m === null) { missing++; continue }
       sumMargin += m; cntMargin++
       if (m < 0) loss++
@@ -226,16 +252,12 @@ export default function Pricing() {
   }
 
   return (
-    <div className="text-[13px]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ກຳນົດລາຄາຂາຍ</h2>
-          <span className="text-[11px] text-slate-400">·</span>
-          <span className="text-xs text-slate-500">{fmtNum(products.length)} ລາຍການ</span>
-          {stats.missing > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-amber-50 text-amber-600 rounded">{stats.missing} ບໍ່ຄົບ</span>}
-          {stats.loss > 0 && <span className="text-[11px] font-bold px-2 py-0.5 bg-rose-50 text-rose-600 rounded">{stats.loss} ຂາດທຶນ</span>}
-        </div>
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Pricing"
+        title="💲 ກຳນົດລາຄາຂາຍ"
+        subtitle={`${fmtNum(products.length)} ລາຍການ${stats.missing > 0 ? ` · ${stats.missing} ບໍ່ຄົບ` : ''}${stats.loss > 0 ? ` · ${stats.loss} ຂາດທຶນ` : ''}`}
+        action={
         <div className="flex items-center gap-2">
           <button onClick={openRecent}
             className="px-3 py-1.5 bg-white hover:bg-violet-50 hover:text-violet-600 hover:border-violet-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5">
@@ -264,7 +286,8 @@ export default function Pricing() {
               className="hidden" disabled={uploading} />
           </label>
         </div>
-      </div>
+        }
+      />
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
@@ -334,7 +357,8 @@ export default function Pricing() {
                 <th className="text-left py-2 px-3 whitespace-nowrap">Barcode</th>
                 <th className="text-left py-2 px-3">ສິນຄ້າ</th>
                 <th className="text-left py-2 px-3 w-28">ໝວດ</th>
-                <th className="text-right py-2 px-3 whitespace-nowrap">ລາຄາຊື້</th>
+                <th className="text-center py-2 px-3 w-20 whitespace-nowrap">ປະເພດ</th>
+                <th className="text-right py-2 px-3 whitespace-nowrap">ຕົ້ນທຶນ</th>
                 <th className="text-right py-2 px-3 whitespace-nowrap">ລາຄາຂາຍ</th>
                 <th className="text-right py-2 px-3 whitespace-nowrap">ກຳໄລ/ໜ່ວຍ</th>
                 <th className="text-right py-2 px-3 w-24">Margin %</th>
@@ -344,7 +368,8 @@ export default function Pricing() {
             <tbody className="divide-y divide-slate-100">
               {paged.map((p, i) => {
                 const isEditing = editing === p.id
-                const cost = isEditing ? Number(form.cost_price) : Number(p.cost_price)
+                const displayCost = productCostValue(p)
+                const cost = isEditing ? Number(form.cost_price) : displayCost
                 const sell = isEditing ? Number(form.selling_price) : Number(p.selling_price)
                 const margin = calcMarginPct(cost, sell)
                 const profit = calcProfit(cost, sell)
@@ -354,6 +379,8 @@ export default function Pricing() {
                   margin < 10 ? 'bg-amber-100 text-amber-700' :
                   margin < 30 ? 'bg-emerald-100 text-emerald-700' :
                   'bg-violet-100 text-violet-700'
+                const method = p.effective_costing_method || 'AVG'
+                const methodFromProduct = !!p.costing_method
                 return (
                   <tr key={p.id} className="group hover:bg-red-50/30">
                     <td className="py-1.5 px-3 font-mono text-[11px] text-slate-300">{(page - 1) * perPage + i + 1}</td>
@@ -361,6 +388,12 @@ export default function Pricing() {
                     <td className="py-1.5 px-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">{p.barcode || <span className="text-slate-300">-</span>}</td>
                     <td className="py-1.5 px-3 font-semibold text-slate-800 truncate max-w-[280px]">{p.product_name}</td>
                     <td className="py-1.5 px-3 text-slate-500 truncate">{p.category || <span className="text-slate-300">-</span>}</td>
+                    <td className="py-1.5 px-3 text-center">
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded ${methodFromProduct ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500'}`}
+                        title={methodFromProduct ? 'ກຳນົດສະເພາະສິນຄ້ານີ້' : 'ໃຊ້ຄ່າເລີ່ມຂອງຮ້ານ'}>
+                        {COSTING_METHOD_LABELS[method] || method}
+                      </span>
+                    </td>
                     {isEditing ? (
                       <>
                         <td className="py-1 px-3 text-right">
@@ -399,8 +432,12 @@ export default function Pricing() {
                       </>
                     ) : (
                       <>
-                        <td className="py-1.5 px-3 text-right font-mono text-slate-500 whitespace-nowrap">
-                          {p.cost_price > 0 ? fmtNum(p.cost_price) : <span className="text-slate-300">-</span>}
+                        <td className="py-1.5 px-3 text-right font-mono text-slate-700 whitespace-nowrap">
+                          {displayCost > 0 ? (
+                            <span title={`ຄຳນວນດ້ວຍ ${COSTING_METHOD_LABELS[method] || method}${p.cost_price > 0 && Math.abs(displayCost - Number(p.cost_price)) > 0.5 ? ` · stored: ${fmtNum(p.cost_price)}` : ''}`}>
+                              {fmtNum(displayCost)}
+                            </span>
+                          ) : <span className="text-slate-300">-</span>}
                         </td>
                         <td className="py-1.5 px-3 text-right font-mono font-bold text-red-600 whitespace-nowrap">
                           {p.selling_price > 0 ? fmtNum(p.selling_price) : <span className="text-slate-300">-</span>}
@@ -433,7 +470,7 @@ export default function Pricing() {
                 )
               })}
               {paged.length === 0 && (
-                <tr><td colSpan="10" className="text-center text-slate-300 py-12 text-xs">
+                <tr><td colSpan="11" className="text-center text-slate-300 py-12 text-xs">
                   {search || filterCat || filterMargin ? 'ບໍ່ພົບຂໍ້ມູນ' : 'ຍັງບໍ່ມີສິນຄ້າ'}
                 </td></tr>
               )}
@@ -451,7 +488,7 @@ export default function Pricing() {
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8v4l3 3M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/></svg>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ປະຫວັດລາຄາ</div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ປະຫວັດລາຄາ ແລະ ການຊື້</div>
                   <h3 className="text-sm font-extrabold text-slate-900 truncate">{historyFor.product_name}</h3>
                   {historyFor.product_code && <div className="text-[11px] font-mono text-slate-400">{historyFor.product_code}</div>}
                 </div>
@@ -464,14 +501,71 @@ export default function Pricing() {
               <div className="flex-1 overflow-y-auto p-4">
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ລາຄາຊື້ປັດຈຸບັນ</div>
-                    <div className="text-base font-extrabold font-mono text-slate-700 mt-0.5">{historyFor.cost_price > 0 ? fmtNum(historyFor.cost_price) : '-'}</div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ຕົ້ນທຶນປັດຈຸບັນ</div>
+                      <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                        {COSTING_METHOD_LABELS[historyFor.effective_costing_method || 'AVG'] || historyFor.effective_costing_method || 'AVG'}
+                      </span>
+                    </div>
+                    <div className="text-base font-extrabold font-mono text-slate-700 mt-0.5">
+                      {historyFor.effective_cost > 0 ? fmtNum(historyFor.effective_cost)
+                        : historyFor.cost_price > 0 ? fmtNum(historyFor.cost_price)
+                        : '-'}
+                    </div>
                   </div>
                   <div className="bg-red-50 border border-red-100 rounded-lg p-2.5">
                     <div className="text-[10px] font-bold text-red-500 uppercase tracking-wider">ລາຄາຂາຍປັດຈຸບັນ</div>
                     <div className="text-base font-extrabold font-mono text-red-700 mt-0.5">{historyFor.selling_price > 0 ? fmtNum(historyFor.selling_price) : '-'}</div>
                   </div>
                 </div>
+
+                {/* Purchase history */}
+                <div className="flex items-center justify-between mb-2 mt-4">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ປະຫວັດການຊື້</div>
+                  <span className="text-[10px] text-slate-400 font-mono">{purchaseRows.length} ຄັ້ງ</span>
+                </div>
+                {purchasesLoading ? (
+                  <div className="flex items-center justify-center py-6">
+                    <div className="w-7 h-7 border-4 border-slate-200 border-t-red-600 rounded-full animate-spin"></div>
+                  </div>
+                ) : purchaseRows.length === 0 ? (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-center text-xs text-slate-400">
+                    ຍັງບໍ່ມີການຊື້ສິນຄ້ານີ້
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-slate-200 mb-4">
+                    <table className="w-full text-[12px]">
+                      <thead className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        <tr>
+                          <th className="text-left py-1.5 px-2 whitespace-nowrap">ວັນທີ</th>
+                          <th className="text-left py-1.5 px-2 whitespace-nowrap">ອ້າງອີງ</th>
+                          <th className="text-left py-1.5 px-2 whitespace-nowrap">ຜູ້ສະໜອງ</th>
+                          <th className="text-right py-1.5 px-2 whitespace-nowrap">ຈຳນວນ</th>
+                          <th className="text-right py-1.5 px-2 whitespace-nowrap">ຕົ້ນທຶນ/ໜ່ວຍ</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {purchaseRows.map((r, idx) => {
+                          const dt = new Date(r.purchase_date)
+                          return (
+                            <tr key={r.id} className={`hover:bg-slate-50 ${idx === 0 ? 'bg-red-50/30' : ''}`}>
+                              <td className="py-1.5 px-2 font-mono text-[10px] text-slate-500 whitespace-nowrap">
+                                {dt.toLocaleDateString('lo-LA')}
+                                {idx === 0 && <span className="ml-1 text-[8px] font-bold text-red-600">●</span>}
+                              </td>
+                              <td className="py-1.5 px-2 font-mono text-[10px] text-slate-600 whitespace-nowrap">
+                                {r.ref_number || r.sml_doc_no || `#${r.purchase_id}`}
+                              </td>
+                              <td className="py-1.5 px-2 text-slate-700 truncate max-w-[140px]">{r.supplier_name || '—'}</td>
+                              <td className="py-1.5 px-2 text-right font-mono text-slate-700">{fmtNum(r.quantity)}</td>
+                              <td className="py-1.5 px-2 text-right font-mono font-bold text-slate-800">{fmtNum(r.cost_price)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ການປ່ຽນແປງ</div>

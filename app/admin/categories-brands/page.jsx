@@ -2,6 +2,7 @@
 
 
 import { useState, useEffect, useMemo } from 'react'
+import { AdminHero } from '@/components/admin/ui/AdminHero'
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n)
@@ -169,25 +170,24 @@ export default function CategoriesBrands() {
   ]
 
   return (
-    <div className="text-[13px]">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-extrabold text-slate-900">ຂໍ້ມູນພື້ນຖານ</h2>
-          <span className="text-[11px] text-slate-400">·</span>
-          <span className="text-xs text-slate-500">ໝວດ / ຍີ່ຫໍ້ / ຫົວໜ່ວຍ</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            <input type="text" placeholder="ຄົ້ນຫາ..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-8 pr-3 py-1.5 w-52 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/10" />
-          </div>
+    <div className="space-y-4 pb-6">
+      <AdminHero
+        tag="Catalog basics"
+        title="🏷 ໝວດໝູ່ / ຍີ່ຫໍ້ / ຫົວໜ່ວຍ"
+        subtitle="ຂໍ້ມູນພື້ນຖານສຳລັບການຈັດການສິນຄ້າ"
+        action={
           <button onClick={() => { setIsAdding(true); setAddValue(''); setEditingId(null) }}
-            className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-            ເພີ່ມ {activeInfo.label}
+            className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20">
+            + ເພີ່ມ {activeInfo.label}
           </button>
+        }
+      />
+
+      <div className="bg-white border border-slate-200 rounded-lg p-2 flex items-center gap-2 flex-wrap">
+        <div className="relative">
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" placeholder="ຄົ້ນຫາ..." value={search} onChange={e => setSearch(e.target.value)}
+            className="pl-8 pr-3 py-1.5 w-52 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/10" />
         </div>
       </div>
 
