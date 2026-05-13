@@ -417,6 +417,13 @@ export default function POS({ user, onLogout }) {
     return () => { cancelled = true; clearInterval(t) }
   }, [loadDebtAlerts])
 
+  // Layby state (declared here so anyModalOpen can reference showLaybyPicker)
+  const [showLaybyPicker, setShowLaybyPicker] = useState(false)
+  const [openLaybys, setOpenLaybys] = useState([])
+  const [laybySearch, setLaybySearch] = useState('')
+  const [loadedLayby, setLoadedLayby] = useState(null) // { id, layby_number, total, paid, balance, customer_name, customer_phone, member_id, discount, note }
+  const [laybyBusy, setLaybyBusy] = useState(false)
+
   // Refocus scan input ONLY when all modals just closed (no polling to avoid stealing focus from other inputs)
   const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary || showMemberModal || showDebtAlerts || showReturn || showPromoList || showLaybyPicker
   useEffect(() => {
@@ -634,13 +641,7 @@ export default function POS({ user, onLogout }) {
     loadParkedCarts()
   }, [loadParkedCarts])
 
-  // Layby (ມັດຈຳ) -----------------------------------------------------------
-  const [showLaybyPicker, setShowLaybyPicker] = useState(false)
-  const [openLaybys, setOpenLaybys] = useState([])
-  const [laybySearch, setLaybySearch] = useState('')
-  const [loadedLayby, setLoadedLayby] = useState(null) // { id, layby_number, total, paid, balance, customer_name, customer_phone, member_id, discount, note }
-  const [laybyBusy, setLaybyBusy] = useState(false)
-
+  // Layby (ມັດຈຳ) — callbacks; state declared earlier near other modal flags --
   const loadOpenLaybys = useCallback(async () => {
     try {
       const res = await fetch(`${API}/admin/laybys?status=open`)
@@ -1686,11 +1687,13 @@ export default function POS({ user, onLogout }) {
               </button>
             )
           })()}
-          <button onClick={() => openReturnModal()}
-            className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="ຮັບຄືນສິນຄ້າ / ຄືນເງິນ">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
-            <span className="hidden md:inline">ຮັບຄືນ</span>
-          </button>
+          {user.role === 'admin' && (
+            <button onClick={() => openReturnModal()}
+              className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="ຮັບຄືນສິນຄ້າ / ຄືນເງິນ">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
+              <span className="hidden md:inline">ຮັບຄືນ</span>
+            </button>
+          )}
           <button onClick={loadOrders}
             className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="ປະຫວັດ">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -3452,10 +3455,12 @@ export default function POS({ user, onLogout }) {
                           </button>
                         ))}
                       </div>
-                      <button onClick={() => openReturnModal(order)}
-                        className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded flex items-center justify-center" title="ຮັບຄືນ / ຄືນເງິນ">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
-                      </button>
+                      {user.role === 'admin' && (
+                        <button onClick={() => openReturnModal(order)}
+                          className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded flex items-center justify-center" title="ຮັບຄືນ / ຄືນເງິນ">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
+                        </button>
+                      )}
                       {user.role === 'admin' && (
                         <button onClick={() => cancelOrder(order.id)}
                           className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded flex items-center justify-center" title="ຍົກເລີກບິນ">
