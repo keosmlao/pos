@@ -1,5 +1,6 @@
 import './globals.css';
 import AppHeadBrand from '@/components/AppHeadBrand';
+import { ThemeProvider, themeInitScript } from '@/components/ThemeProvider';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,16 +19,19 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="lo">
+    <html lang="lo" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <link
           href="https://fonts.googleapis.com/css2?family=Noto+Sans+Lao:wght@300;400;500;600;700&display=swap"
           rel="stylesheet"
         />
       </head>
       <body>
-        <AppHeadBrand />
-        {children}
+        <ThemeProvider>
+          <AppHeadBrand />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

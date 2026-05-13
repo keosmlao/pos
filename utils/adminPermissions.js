@@ -70,6 +70,8 @@ export const adminMenuSections = [
     items: [
       { path: '/admin/users', icon: '\u{1F464}', label: 'User ແລະ ສິດ' },
       { path: '/admin/audit-log', icon: '\u{1F4CB}', label: 'ປະຫວັດການເຮັດວຽກ' },
+      { path: '/admin/manual', icon: '\u{1F4D8}', label: 'ຄູ່ມືການໃຊ້ງານ' },
+      { path: '/admin/download', icon: '\u{1F4F1}', label: 'ດາວໂຫຼດແອັບ' },
       { path: '/admin/backup', icon: '\u{1F4BE}', label: 'ສຳຮອງ / ສົ່ງອອກຂໍ້ມູນ' },
       { path: '/admin/pricing', icon: '\u{1F4B2}', label: 'ກຳນົດລາຄາຂາຍ' },
       { path: '/admin/promotions', icon: '\u{1F381}', label: 'ໂປຣໂມຊັ່ນ' },
@@ -93,8 +95,12 @@ export function createFullPermissions() {
 
 export function normalizePermissions(permissions) {
   const src = permissions && typeof permissions === 'object' ? permissions : {};
+  const hasAnyAccess = Object.values(src).some(p => p && typeof p === 'object' && p.access);
   return Object.fromEntries(adminMenuItems.map(item => {
     const p = src[item.path] || {};
+    if (item.path === '/admin/manual' && hasAnyAccess && !src[item.path]) {
+      return [item.path, { access: true, edit: false, delete: false }];
+    }
     return [item.path, { access: !!p.access, edit: !!p.edit, delete: !!p.delete }];
   }));
 }

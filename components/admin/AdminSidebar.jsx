@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { adminMenuSections, isMenuItemActive, normalizePermissions } from '@/utils/adminPermissions';
+import ThemeToggle from '@/components/admin/ThemeToggle';
 
 const PINS_KEY = 'admin_sidebar_pins_v1';
 const MAX_PINS = 12;
@@ -205,7 +206,8 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
         )}
       </nav>
 
-      <div className="border-t border-white/[0.06] p-2">
+      <div className="border-t border-white/[0.06] p-2 space-y-2">
+        <ThemeToggle />
         <button
           onClick={onBackToPos}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg text-xs font-extrabold text-red-200 transition-colors"

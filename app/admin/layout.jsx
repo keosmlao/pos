@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import AdminSidebar from '@/components/admin/AdminSidebar';
+import ThemeToggle from '@/components/admin/ThemeToggle';
 import { useCompanyProfile } from '@/utils/useCompanyProfile';
 import { canAccessAdmin, firstAccessibleAdminPath } from '@/utils/adminPermissions';
 import { installAuditFetch } from '@/utils/auditFetch';
@@ -45,7 +46,7 @@ export default function AdminLayout({ children }) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-100">
+    <div className="flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950">
       <aside className="hidden md:flex w-[230px] bg-slate-950 text-white shrink-0">
         <AdminSidebar {...sidebarProps} />
       </aside>
@@ -66,24 +67,25 @@ export default function AdminLayout({ children }) {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="md:hidden flex items-center gap-3 px-4 h-12 bg-white border-b border-slate-200 shrink-0">
+        <header className="md:hidden flex items-center gap-3 px-4 h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shrink-0">
           <button
             onClick={() => setMobileOpen(true)}
             aria-label="ເປີດເມນູ"
-            className="w-9 h-9 -ml-2 rounded-lg flex items-center justify-center text-slate-700 hover:bg-slate-100"
+            className="w-9 h-9 -ml-2 rounded-lg flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <path d="M3 6h18M3 12h18M3 18h18" />
             </svg>
           </button>
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <span className="w-7 h-7 bg-red-600 rounded-md flex items-center justify-center text-white text-xs overflow-hidden shrink-0">
               {company.logo_url
                 ? <img src={company.logo_url} alt="logo" className="w-full h-full object-contain" />
                 : '\u2699\ufe0f'}
             </span>
-            <div className="text-sm font-bold text-slate-900 truncate">{company.name}</div>
+            <div className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{company.name}</div>
           </div>
+          <ThemeToggle compact />
         </header>
 
         <div className="flex-1 overflow-y-auto">

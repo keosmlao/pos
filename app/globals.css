@@ -1,10 +1,17 @@
 @import "tailwindcss";
 
+/* Tailwind v4: enable `dark:` variant when an ancestor has class `dark`. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 body {
   font-family: 'Noto Sans Lao', system-ui, sans-serif;
   background: #f0f2f5;
   color: #333;
   font-size: 14px;
+}
+.dark body {
+  background: #020617;  /* slate-950 */
+  color: #e2e8f0;       /* slate-200 */
 }
 
 /* === Unified admin design tokens ===
@@ -24,6 +31,14 @@ body {
   font-size: 13px;
   color: var(--admin-text);
   line-height: 1.5;
+}
+
+.dark .admin-content {
+  --admin-text:      #f1f5f9;   /* slate-100 */
+  --admin-muted:     #94a3b8;   /* slate-400 */
+  --admin-bg:        #0f172a;   /* slate-900 */
+  --admin-surface:   #1e293b;   /* slate-800 */
+  --admin-border:    #334155;   /* slate-700 */
 }
 .admin-content h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01em; }
 .admin-content h2 { font-size: 1.05rem; font-weight: 700; }
@@ -67,6 +82,226 @@ body {
 ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 3px; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.dark ::-webkit-scrollbar-track { background: #1e293b; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* === Dark mode automatic overrides ===
+ *
+ * Re-maps the most common Tailwind utility classes when an ancestor has
+ * `.dark` — so existing pages (POS + admin) get a dark theme without
+ * editing every `bg-white` / `text-slate-900` instance.
+ *
+ * Specificity is intentional: `:not()` adds the specificity of its strongest
+ * argument, so each rule below is (0,3,0) — beats stock Tailwind (0,1,0)
+ * even when the same class is generated later in the cascade. Add the class
+ * `no-theme-flip` to opt out a subtree.
+ */
+
+@layer utilities {
+
+/* --- Surfaces (white/slate/gray) --- */
+.dark .bg-white:not(.no-theme-flip, .no-theme-flip *) { background-color: #1e293b; }
+.dark .bg-slate-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-gray-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-neutral-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-stone-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-zinc-50:not(.no-theme-flip, .no-theme-flip *) { background-color: #0f172a; }
+.dark .bg-slate-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-gray-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-neutral-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-stone-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-zinc-100:not(.no-theme-flip, .no-theme-flip *) { background-color: #1e293b; }
+.dark .bg-slate-200:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-gray-200:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-neutral-200:not(.no-theme-flip, .no-theme-flip *) { background-color: #334155; }
+.dark .bg-slate-300:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-gray-300:not(.no-theme-flip, .no-theme-flip *) { background-color: #475569; }
+
+/* Common semi-transparent surfaces */
+.dark .bg-white\/50:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(30 41 59 / 0.5); }
+.dark .bg-white\/70:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(30 41 59 / 0.7); }
+.dark .bg-white\/80:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(30 41 59 / 0.8); }
+.dark .bg-white\/90:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(30 41 59 / 0.9); }
+.dark .bg-slate-50\/70:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(15 23 42 / 0.7); }
+
+/* --- Text --- */
+.dark .text-slate-950:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-slate-900:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-gray-900:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-neutral-900:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-black:not(.no-theme-flip, .no-theme-flip *) { color: #f1f5f9; }
+.dark .text-slate-800:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-gray-800:not(.no-theme-flip, .no-theme-flip *) { color: #e2e8f0; }
+.dark .text-slate-700:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-gray-700:not(.no-theme-flip, .no-theme-flip *) { color: #cbd5e1; }
+.dark .text-slate-600:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-gray-600:not(.no-theme-flip, .no-theme-flip *) { color: #94a3b8; }
+.dark .text-slate-500:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-gray-500:not(.no-theme-flip, .no-theme-flip *) { color: #94a3b8; }
+.dark .text-slate-400:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-gray-400:not(.no-theme-flip, .no-theme-flip *) { color: #64748b; }
+
+/* --- Borders --- */
+.dark .border-slate-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .border-gray-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .border-white:not(.no-theme-flip, .no-theme-flip *) { border-color: #1e293b; }
+.dark .border-slate-200:not(.no-theme-flip, .no-theme-flip *),
+.dark .border-gray-200:not(.no-theme-flip, .no-theme-flip *) { border-color: #334155; }
+.dark .border-slate-300:not(.no-theme-flip, .no-theme-flip *),
+.dark .border-gray-300:not(.no-theme-flip, .no-theme-flip *) { border-color: #475569; }
+.dark .border-slate-400:not(.no-theme-flip, .no-theme-flip *),
+.dark .border-gray-400:not(.no-theme-flip, .no-theme-flip *) { border-color: #64748b; }
+
+/* --- Divides --- */
+.dark .divide-slate-100:not(.no-theme-flip, .no-theme-flip *) > * + *,
+.dark .divide-gray-100:not(.no-theme-flip, .no-theme-flip *) > * + * { border-color: #1e293b; }
+.dark .divide-slate-200:not(.no-theme-flip, .no-theme-flip *) > * + *,
+.dark .divide-gray-200:not(.no-theme-flip, .no-theme-flip *) > * + * { border-color: #334155; }
+
+/* --- Hovers --- */
+.dark .hover\:bg-white:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #334155; }
+.dark .hover\:bg-slate-50:hover:not(.no-theme-flip, .no-theme-flip *),
+.dark .hover\:bg-gray-50:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #1e293b; }
+.dark .hover\:bg-slate-100:hover:not(.no-theme-flip, .no-theme-flip *),
+.dark .hover\:bg-gray-100:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #334155; }
+.dark .hover\:bg-slate-200:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #475569; }
+.dark .hover\:border-slate-300:hover:not(.no-theme-flip, .no-theme-flip *) { border-color: #475569; }
+
+/* --- Form controls / native widgets --- */
+.dark input:not(.no-theme-flip),
+.dark select:not(.no-theme-flip),
+.dark textarea:not(.no-theme-flip) { color-scheme: dark; }
+.dark input::placeholder,
+.dark textarea::placeholder { color: #64748b; }
+
+/* --- Pastel surfaces (amber/emerald/rose/sky/violet -50/100) --- */
+.dark .bg-amber-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-yellow-50:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(120 53 15 / 0.25); }
+.dark .bg-amber-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-yellow-100:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(120 53 15 / 0.4); }
+.dark .bg-emerald-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-green-50:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(6 78 59 / 0.25); }
+.dark .bg-emerald-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-green-100:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(6 78 59 / 0.4); }
+.dark .bg-rose-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-red-50:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(127 29 29 / 0.25); }
+.dark .bg-rose-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-red-100:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(127 29 29 / 0.4); }
+.dark .bg-sky-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-blue-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-cyan-50:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(7 89 133 / 0.25); }
+.dark .bg-sky-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-blue-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-cyan-100:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(7 89 133 / 0.4); }
+.dark .bg-violet-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-purple-50:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-indigo-50:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(76 29 149 / 0.25); }
+.dark .bg-violet-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-purple-100:not(.no-theme-flip, .no-theme-flip *),
+.dark .bg-indigo-100:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(76 29 149 / 0.4); }
+
+/* --- Text on pastel backgrounds (keep contrast) --- */
+.dark .text-amber-700:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-amber-800:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-amber-900:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-yellow-700:not(.no-theme-flip, .no-theme-flip *) { color: #fcd34d; }
+.dark .text-emerald-700:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-emerald-800:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-green-700:not(.no-theme-flip, .no-theme-flip *) { color: #6ee7b7; }
+.dark .text-rose-700:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-rose-800:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-red-700:not(.no-theme-flip, .no-theme-flip *) { color: #fda4af; }
+.dark .text-sky-700:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-blue-700:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-cyan-700:not(.no-theme-flip, .no-theme-flip *) { color: #7dd3fc; }
+.dark .text-violet-700:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-purple-700:not(.no-theme-flip, .no-theme-flip *),
+.dark .text-indigo-700:not(.no-theme-flip, .no-theme-flip *) { color: #c4b5fd; }
+
+/* --- Shadows visible on dark bg --- */
+.dark .shadow-sm:not(.no-theme-flip, .no-theme-flip *) { box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.5); }
+.dark .shadow:not(.no-theme-flip, .no-theme-flip *) { box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.6), 0 1px 2px -1px rgb(0 0 0 / 0.6); }
+.dark .shadow-md:not(.no-theme-flip, .no-theme-flip *) { box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.6), 0 2px 4px -2px rgb(0 0 0 / 0.6); }
+.dark .shadow-lg:not(.no-theme-flip, .no-theme-flip *) { box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.7), 0 4px 6px -4px rgb(0 0 0 / 0.7); }
+
+} /* end @layer utilities */
+
+/* === POS shell light-mode overrides ===
+ *
+ * The cashier POS (.pos-root) was designed dark-first with hardcoded
+ * `bg-slate-9xx` / `text-slate-1xx-4xx` / `border-slate-7xx-9xx` utilities.
+ * When the user picks LIGHT mode, we flip those utilities to light
+ * equivalents — scoped to .pos-root so admin/customer/etc. are untouched.
+ *
+ * Selector form: `html:not(.dark) .pos-root .CLASS`
+ *   - higher specificity (0,3,0) than the stock Tailwind utility (0,1,0)
+ *   - only active when no .dark ancestor exists on <html>
+ *   - .no-theme-flip on a subtree opts out
+ */
+@layer utilities {
+
+/* --- Surfaces --- */
+html:not(.dark) .pos-root .bg-slate-950:not(.no-theme-flip, .no-theme-flip *) { background-color: #ffffff; }
+html:not(.dark) .pos-root .bg-slate-900:not(.no-theme-flip, .no-theme-flip *) { background-color: #f8fafc; }
+html:not(.dark) .pos-root .bg-slate-800:not(.no-theme-flip, .no-theme-flip *) { background-color: #f1f5f9; }
+html:not(.dark) .pos-root .bg-slate-700:not(.no-theme-flip, .no-theme-flip *) { background-color: #e2e8f0; }
+
+/* Semi-transparent surfaces */
+html:not(.dark) .pos-root .bg-slate-950\/95:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(255 255 255 / 0.95); }
+html:not(.dark) .pos-root .bg-slate-950\/70:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(255 255 255 / 0.7); }
+html:not(.dark) .pos-root .bg-slate-950\/40:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(255 255 255 / 0.4); }
+html:not(.dark) .pos-root .bg-slate-900\/70:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(248 250 252 / 0.7); }
+html:not(.dark) .pos-root .bg-slate-900\/60:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(248 250 252 / 0.6); }
+html:not(.dark) .pos-root .bg-slate-800\/50:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(241 245 249 / 0.5); }
+
+/* Hover */
+html:not(.dark) .pos-root .hover\:bg-slate-900:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #f1f5f9; }
+html:not(.dark) .pos-root .hover\:bg-slate-800:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #e2e8f0; }
+html:not(.dark) .pos-root .hover\:bg-slate-700:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #cbd5e1; }
+
+/* --- Text --- */
+html:not(.dark) .pos-root .text-slate-100:not(.no-theme-flip, .no-theme-flip *) { color: #0f172a; }
+html:not(.dark) .pos-root .text-slate-200:not(.no-theme-flip, .no-theme-flip *) { color: #1e293b; }
+html:not(.dark) .pos-root .text-slate-300:not(.no-theme-flip, .no-theme-flip *) { color: #334155; }
+html:not(.dark) .pos-root .text-slate-400:not(.no-theme-flip, .no-theme-flip *) { color: #475569; }
+/* slate-500 (muted secondary) is intentionally readable on both light and dark backgrounds — leave it alone. */
+html:not(.dark) .pos-root .hover\:text-slate-200:hover:not(.no-theme-flip, .no-theme-flip *) { color: #1e293b; }
+
+/* --- Borders --- */
+html:not(.dark) .pos-root .border-slate-700:not(.no-theme-flip, .no-theme-flip *) { border-color: #e2e8f0; }
+html:not(.dark) .pos-root .border-slate-800:not(.no-theme-flip, .no-theme-flip *) { border-color: #e2e8f0; }
+html:not(.dark) .pos-root .border-slate-900:not(.no-theme-flip, .no-theme-flip *) { border-color: #cbd5e1; }
+html:not(.dark) .pos-root .hover\:border-slate-900:hover:not(.no-theme-flip, .no-theme-flip *) { border-color: #94a3b8; }
+
+/* --- Ring --- */
+html:not(.dark) .pos-root .ring-slate-700:not(.no-theme-flip, .no-theme-flip *) { --tw-ring-color: #cbd5e1; }
+
+/* --- Header opt-out: .pos-header is a branded dark bar in BOTH themes ---
+ * Restore the original dark values for slate utilities inside .pos-header.
+ * Higher specificity (0,4,0) than the .pos-root rules above so order doesn't matter.
+ */
+html:not(.dark) .pos-root .pos-header.bg-slate-950,
+html:not(.dark) .pos-root .pos-header .bg-slate-950 { background-color: #020617; }
+html:not(.dark) .pos-root .pos-header .bg-slate-900 { background-color: #0f172a; }
+html:not(.dark) .pos-root .pos-header .bg-slate-800 { background-color: #1e293b; }
+html:not(.dark) .pos-root .pos-header .bg-slate-700 { background-color: #334155; }
+html:not(.dark) .pos-root .pos-header .hover\:bg-slate-900:hover { background-color: #0f172a; }
+html:not(.dark) .pos-root .pos-header .hover\:bg-slate-800:hover { background-color: #1e293b; }
+html:not(.dark) .pos-root .pos-header .hover\:bg-slate-700:hover { background-color: #334155; }
+html:not(.dark) .pos-root .pos-header .text-slate-100 { color: #f1f5f9; }
+html:not(.dark) .pos-root .pos-header .text-slate-200 { color: #e2e8f0; }
+html:not(.dark) .pos-root .pos-header .text-slate-300 { color: #cbd5e1; }
+html:not(.dark) .pos-root .pos-header .text-slate-400 { color: #94a3b8; }
+html:not(.dark) .pos-root .pos-header .hover\:text-slate-200:hover { color: #e2e8f0; }
+html:not(.dark) .pos-root .pos-header.border-slate-800,
+html:not(.dark) .pos-root .pos-header .border-slate-800 { border-color: #1e293b; }
+html:not(.dark) .pos-root .pos-header .border-slate-700 { border-color: #334155; }
+html:not(.dark) .pos-root .pos-header .border-slate-900 { border-color: #0f172a; }
+/* Header inherits text from .pos-root (text-slate-100); restore that on the header element itself. */
+html:not(.dark) .pos-root .pos-header { color: #f1f5f9; }
+
+} /* end @layer utilities (POS light overrides) */
 
 /* Mobile/tablet: let wide tables and grids scroll horizontally
    instead of overflowing the viewport. Applied only to admin

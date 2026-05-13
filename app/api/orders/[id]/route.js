@@ -22,6 +22,18 @@ export const DELETE = handle(async (request, { params }) => {
         return fail(404, 'Order not found');
       }
     }
+    const returnsRes = await client.query(
+      `SELECT r.id, r.return_number
+         FROM returns r
+        WHERE r.order_id = $1
+        ORDER BY r.created_at`,
+      [numericId]
+    );
+    if (returnsRes.rowCount > 0) {
+      await client.query('ROLLBACK');
+      const numbers = returnsRes.rows.map(r => r.return_number || `#${r.id}`).join(', ');
+      return fail(409, `ບິນນີ້ມີການຮັບຄືນແລ້ວ (${numbers}). ກະລຸນາລົບການຮັບຄືນກ່ອນ ແລ້ວຄ່ອຍຍົກເລີກບິນ.`);
+    }
     for (const it of items.rows) {
       await client.query(
         'UPDATE products SET qty_on_hand = qty_on_hand + $1 WHERE id = $2',

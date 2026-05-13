@@ -126,19 +126,6 @@ export default function Login({ onLogin }) {
               {loading ? (<span className="w-5 h-5 border-3 border-white/30 border-t-white rounded-full animate-spin" />) : ('ເຂົ້າສູ່ລະບົບ')}
             </button>
           </form>
-          <div className="mt-8 pt-6 border-t border-slate-200">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">ບັນຊີທົດລອງ</div>
-            <div className="flex gap-3">
-              <div className="flex-1 bg-white border border-slate-200 rounded-xl p-3">
-                <div className="text-[11px] font-bold text-red-600 uppercase tracking-wider mb-1">Admin</div>
-                <div className="text-sm text-slate-500 font-mono">admin / admin123</div>
-              </div>
-              <div className="flex-1 bg-white border border-slate-200 rounded-xl p-3">
-                <div className="text-[11px] font-bold text-red-600 uppercase tracking-wider mb-1">ພະນັກງານ</div>
-                <div className="text-sm text-slate-500 font-mono">cashier / 1234</div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

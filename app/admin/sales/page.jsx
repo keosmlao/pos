@@ -91,32 +91,38 @@ export default function Sales() {
     })
   }, [orders, search, methodFilter])
 
+  const netTotalOf = (o) => Math.max(0, (Number(o.total) || 0) - (Number(o.refund_total) || 0))
+  const netQtyOf = (it) => Math.max(0, (Number(it?.quantity) || 0) - (Number(it?.returned_qty) || 0))
+
   const stats = useMemo(() => {
-    const total = filtered.reduce((s, o) => s + (Number(o.total) || 0), 0)
+    const total = filtered.reduce((s, o) => s + netTotalOf(o), 0)
+    const refundTotal = filtered.reduce((s, o) => s + (Number(o.refund_total) || 0), 0)
     const discount = filtered.reduce((s, o) => s + (Number(o.discount) || 0), 0)
     const count = filtered.length
     const avg = count > 0 ? total / count : 0
     const methods = {}
     for (const m of ['cash', 'transfer', 'qr', 'mixed', 'credit']) {
       const items = filtered.filter(o => (o.payment_method || 'cash') === m)
-      methods[m] = { count: items.length, total: items.reduce((s, o) => s + (Number(o.total) || 0), 0) }
+      methods[m] = { count: items.length, total: items.reduce((s, o) => s + netTotalOf(o), 0) }
     }
     const creditRemaining = filtered
       .filter(o => o.payment_method === 'credit')
-      .reduce((s, o) => s + Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0)), 0)
-    const itemsCount = filtered.reduce((s, o) => s + (Array.isArray(o.items) ? o.items.reduce((ss, it) => ss + (Number(it?.quantity) || 0), 0) : 0), 0)
-    return { total, discount, count, avg, methods, itemsCount, creditRemaining }
+      .reduce((s, o) => s + Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0) - (Number(o.refund_total) || 0)), 0)
+    const itemsCount = filtered.reduce((s, o) => s + (Array.isArray(o.items) ? o.items.reduce((ss, it) => ss + netQtyOf(it), 0) : 0), 0)
+    return { total, refundTotal, discount, count, avg, methods, itemsCount, creditRemaining }
   }, [filtered])
 
-  // Top products
+  // Top products (net of returns)
   const topProducts = useMemo(() => {
     const byProd = {}
     for (const o of filtered) {
       for (const it of (o.items || [])) {
         const name = it?.product_name || '—'
+        const qty = netQtyOf(it)
+        if (qty <= 0) continue
         if (!byProd[name]) byProd[name] = { qty: 0, revenue: 0 }
-        byProd[name].qty += Number(it.quantity) || 0
-        byProd[name].revenue += (Number(it.price) || 0) * (Number(it.quantity) || 0)
+        byProd[name].qty += qty
+        byProd[name].revenue += (Number(it.price) || 0) * qty
       }
     }
     return Object.entries(byProd)
@@ -125,14 +131,14 @@ export default function Sales() {
       .slice(0, 10)
   }, [filtered])
 
-  // Daily breakdown
+  // Daily breakdown (net of returns by sale date)
   const dailyBreakdown = useMemo(() => {
     const by = {}
     for (const o of filtered) {
       const d = new Date(o.created_at).toISOString().split('T')[0]
       if (!by[d]) by[d] = { date: d, count: 0, total: 0 }
       by[d].count++
-      by[d].total += Number(o.total) || 0
+      by[d].total += netTotalOf(o)
     }
     return Object.values(by).sort((a, b) => a.date.localeCompare(b.date))
   }, [filtered])
@@ -140,12 +146,13 @@ export default function Sales() {
   const maxDaily = Math.max(...dailyBreakdown.map(d => d.total), 1)
 
   const kpis = [
-    { l: 'ຈຳນວນບິນ', v: fmtNum(stats.count), sub: `${fmtNum(stats.itemsCount)} ຊິ້ນ`, color: 'blue' },
-    { l: 'ລາຍຮັບລວມ', v: fmtCompact(stats.total), sub: `ສະເລ່ຍ ${fmtCompact(stats.avg)}/ບິນ`, color: 'emerald' },
+    { l: 'ຈຳນວນບິນ', v: fmtNum(stats.count), sub: `${fmtNum(stats.itemsCount)} ຊິ້ນ (ສຸດທິ)`, color: 'blue' },
+    { l: 'ລາຍຮັບສຸດທິ', v: fmtCompact(stats.total), sub: `ສະເລ່ຍ ${fmtCompact(stats.avg)}/ບິນ`, color: 'emerald' },
     { l: '💵 ສົດ', v: fmtNum(stats.methods.cash.count), sub: fmtCompact(stats.methods.cash.total), color: 'emerald' },
     { l: '🏦 ໂອນ', v: fmtNum(stats.methods.transfer.count), sub: fmtCompact(stats.methods.transfer.total), color: 'blue' },
     { l: '📱 QR', v: fmtNum(stats.methods.qr.count), sub: fmtCompact(stats.methods.qr.total), color: 'violet' },
     { l: '🧾 ຕິດໜີ້', v: fmtNum(stats.methods.credit.count), sub: `ຄ້າງ ${fmtCompact(stats.creditRemaining)}`, color: 'rose' },
+    { l: '↩ ຮັບຄືນ', v: fmtCompact(stats.refundTotal), sub: stats.total + stats.refundTotal > 0 ? `${(stats.refundTotal / (stats.total + stats.refundTotal) * 100).toFixed(1)}% ຂອງລວມ` : '—', color: 'rose' },
     { l: 'ສ່ວນຫຼຸດ', v: fmtCompact(stats.discount), sub: stats.total > 0 ? `${(stats.discount / stats.total * 100).toFixed(1)}% ຂອງລວມ` : '—', color: 'amber' },
   ]
   const kpiColor = {
@@ -161,17 +168,19 @@ export default function Sales() {
   useEffect(() => { setPage(1) }, [search, methodFilter, perPage])
 
   const exportCSV = () => {
-    const headers = ['id', 'datetime', 'payment_method', 'customer_name', 'customer_phone', 'credit_due_date', 'credit_remaining', 'items_count', 'subtotal', 'discount', 'total', 'amount_paid', 'change']
+    const headers = ['id', 'datetime', 'payment_method', 'customer_name', 'customer_phone', 'credit_due_date', 'credit_remaining', 'items_count', 'subtotal', 'discount', 'total', 'refund_total', 'net_total', 'amount_paid', 'change']
     const lines = [headers.join(',')]
     for (const o of filtered) {
       const items = Array.isArray(o.items) ? o.items : []
-      const itemsCount = items.reduce((s, it) => s + (Number(it.quantity) || 0), 0)
+      const itemsCount = items.reduce((s, it) => s + netQtyOf(it), 0)
       const subtotal = (Number(o.total) || 0) + (Number(o.discount) || 0)
+      const refund = Number(o.refund_total) || 0
+      const net = netTotalOf(o)
       lines.push([
         o.id, `"${new Date(o.created_at).toLocaleString('lo-LA')}"`, o.payment_method || 'cash',
         `"${o.customer_name || ''}"`, `"${o.customer_phone || ''}"`, o.credit_due_date || '',
-        o.payment_method === 'credit' ? Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0)) : 0,
-        itemsCount, subtotal, o.discount || 0, o.total, o.amount_paid || 0, o.change_amount || 0
+        o.payment_method === 'credit' ? Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0) - refund) : 0,
+        itemsCount, subtotal, o.discount || 0, o.total, refund, net, o.amount_paid || 0, o.change_amount || 0
       ].join(','))
     }
     const BOM = '\uFEFF'
@@ -222,7 +231,7 @@ export default function Sales() {
       />
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
         {kpis.map((k, i) => (
           <div key={i} className={`rounded-lg border p-3 ${kpiColor[k.color]}`}>
             <div className="text-[10px] font-bold uppercase tracking-wider opacity-70">{k.l}</div>
@@ -391,7 +400,7 @@ export default function Sales() {
               <tbody className="divide-y divide-slate-100">
                 {paged.map(o => {
                   const m = methodMeta[o.payment_method || 'cash'] || methodMeta.cash
-                  const itemsCount = (o.items || []).reduce((s, it) => s + (Number(it?.quantity) || 0), 0)
+                  const itemsCount = (o.items || []).reduce((s, it) => s + netQtyOf(it), 0)
                   const isExpanded = expandedId === o.id
                   return (
                     <Row key={o.id} o={o} m={m} itemsCount={itemsCount} isExpanded={isExpanded}
@@ -450,6 +459,10 @@ export default function Sales() {
 }
 
 function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
+  const refundTotal = Number(o.refund_total) || 0
+  const grossTotal = Number(o.total) || 0
+  const netTotal = Math.max(0, grossTotal - refundTotal)
+  const hasReturn = refundTotal > 0
   return (
     <>
       <tr className="hover:bg-red-50/20 cursor-pointer" onClick={onToggle}>
@@ -481,10 +494,15 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
         <td className="py-1.5 px-3 text-right font-mono text-amber-700">
           {Number(o.discount) > 0 ? `−${fmtNum(o.discount)}` : <span className="text-slate-300">—</span>}
         </td>
-        <td className="py-1.5 px-3 text-right font-mono font-extrabold text-emerald-700">{fmtNum(o.total)}</td>
+        <td className="py-1.5 px-3 text-right font-mono">
+          <div className="font-extrabold text-emerald-700">{fmtNum(netTotal)}</div>
+          {hasReturn && (
+            <div className="text-[10px] text-rose-600 font-bold leading-tight">↩ {fmtNum(refundTotal)}</div>
+          )}
+        </td>
         <td className="py-1.5 px-3 text-right font-mono text-slate-500">{fmtNum(o.amount_paid)}</td>
         <td className={`py-1.5 px-3 text-right font-mono ${o.payment_method === 'credit' ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
-          {o.payment_method === 'credit' ? fmtNum(Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0))) : fmtNum(o.change_amount)}
+          {o.payment_method === 'credit' ? fmtNum(Math.max(0, grossTotal - (Number(o.amount_paid) || 0) - refundTotal)) : fmtNum(o.change_amount)}
         </td>
         <td className="py-1.5 px-3 text-right">
           <button
@@ -513,14 +531,22 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
                 </tr>
               </thead>
               <tbody>
-                {(o.items || []).map((it, i) => (
-                  <tr key={i} className="border-b border-slate-100">
-                    <td className="py-1 px-2 text-slate-700">{it?.product_name || '—'}</td>
-                    <td className="py-1 px-2 text-right font-mono">{fmtNum(it?.quantity)}</td>
-                    <td className="py-1 px-2 text-right font-mono text-slate-500">{fmtNum(it?.price)}</td>
-                    <td className="py-1 px-2 text-right font-mono font-bold text-emerald-700">{fmtNum((Number(it?.price) || 0) * (Number(it?.quantity) || 0))}</td>
-                  </tr>
-                ))}
+                {(o.items || []).map((it, i) => {
+                  const qty = Number(it?.quantity) || 0
+                  const returned = Number(it?.returned_qty) || 0
+                  const net = Math.max(0, qty - returned)
+                  return (
+                    <tr key={i} className="border-b border-slate-100">
+                      <td className="py-1 px-2 text-slate-700">{it?.product_name || '—'}</td>
+                      <td className="py-1 px-2 text-right font-mono">
+                        {fmtNum(net)}
+                        {returned > 0 && <span className="ml-1 text-[10px] text-rose-600">(↩{fmtNum(returned)}/{fmtNum(qty)})</span>}
+                      </td>
+                      <td className="py-1 px-2 text-right font-mono text-slate-500">{fmtNum(it?.price)}</td>
+                      <td className="py-1 px-2 text-right font-mono font-bold text-emerald-700">{fmtNum((Number(it?.price) || 0) * net)}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
             {o.note && (
@@ -528,9 +554,14 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
                 📝 {o.note}
               </div>
             )}
+            {hasReturn && (
+              <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
+                ↩ ມີການຮັບຄືນ · ກ່ອນ {fmtPrice(grossTotal)} − ຮັບຄືນ {fmtPrice(refundTotal)} = ສຸດທິ {fmtPrice(netTotal)}
+              </div>
+            )}
             {o.payment_method === 'credit' && (
               <div className="mt-2 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
-                🧾 ບິນຕິດໜີ້ · {o.customer_name || '—'}{o.customer_phone ? ` · ${o.customer_phone}` : ''} · ຍອດຄ້າງ {fmtPrice(Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0)))}
+                🧾 ບິນຕິດໜີ້ · {o.customer_name || '—'}{o.customer_phone ? ` · ${o.customer_phone}` : ''} · ຍອດຄ້າງ {fmtPrice(Math.max(0, grossTotal - (Number(o.amount_paid) || 0) - refundTotal))}
               </div>
             )}
           </td>

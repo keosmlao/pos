@@ -11,6 +11,7 @@ import { firstAccessibleAdminPath } from '../utils/adminPermissions'
 import { normalizeVatSettings, applyVat } from '../lib/vat'
 import { applyRounding } from '../lib/rounding'
 import SearchSelect from './SearchSelect'
+import ThemeToggle from './admin/ThemeToggle'
 
 const API = '/api'
 const POS_DRAFT_KEY = 'pos_sale_draft_v1'
@@ -47,6 +48,123 @@ function readPosDraft() {
 function clearPosDraft() {
   if (typeof window === 'undefined') return
   try { localStorage.removeItem(POS_DRAFT_KEY) } catch {}
+}
+
+function PromoCard({ promo, products }) {
+  const TYPE_META = {
+    price_override:   { label: 'ກຳນົດລາຄາໃໝ່',   icon: '💲', tint: 'bg-sky-100 text-sky-700' },
+    item_percent:     { label: 'ຫຼຸດ %',          icon: '%',  tint: 'bg-emerald-100 text-emerald-700' },
+    item_fixed:       { label: 'ຫຼຸດເງິນ',         icon: '₭',  tint: 'bg-emerald-100 text-emerald-700' },
+    fixed:            { label: 'ຫຼຸດເງິນ',         icon: '₭',  tint: 'bg-emerald-100 text-emerald-700' },
+    buy_n_discount:   { label: 'ຊື້ N ຫຼຸດ %',    icon: '🛒', tint: 'bg-amber-100 text-amber-700' },
+    bogo:             { label: 'ຊື້ N ແຖມ M',     icon: '🎁', tint: 'bg-violet-100 text-violet-700' },
+    bogo_cross:       { label: 'ຊື້ A ແຖມ B',     icon: '🎁', tint: 'bg-violet-100 text-violet-700' },
+    bundle_gift:      { label: 'ຊື້ຄົບ ແຖມ',      icon: '🎀', tint: 'bg-rose-100 text-rose-700' },
+    cart_percent:     { label: 'ຫຼຸດ % ທັງບິນ',   icon: '%',  tint: 'bg-blue-100 text-blue-700' },
+    cart_fixed:       { label: 'ຫຼຸດເງິນທັງບິນ',  icon: '₭',  tint: 'bg-blue-100 text-blue-700' },
+  }
+  const meta = TYPE_META[promo.type] || { label: promo.type, icon: '🎁', tint: 'bg-slate-100 text-slate-700' }
+  const fmtN = n => new Intl.NumberFormat('lo-LA').format(Number(n) || 0)
+  const fmtK = n => `${fmtN(Math.round(Number(n) || 0))} ₭`
+  const fmtDate = s => s ? String(s).split('T')[0] : null
+  const today = new Date().toISOString().split('T')[0]
+
+  // Build a human-readable effect line
+  const effect = (() => {
+    switch (promo.type) {
+      case 'price_override': return `ປ່ຽນລາຄາເປັນ ${fmtK(promo.value)}`
+      case 'item_percent': return `ຫຼຸດ ${fmtN(promo.value)}%`
+      case 'item_fixed':
+      case 'fixed': return `ຫຼຸດ ${fmtK(promo.value)}/ຊິ້ນ`
+      case 'buy_n_discount': return `ຊື້ ${fmtN(promo.buy_qty)} → ຫຼຸດ ${fmtN(promo.value)}%`
+      case 'bogo': return `ຊື້ ${fmtN(promo.buy_qty)} → ແຖມ ${fmtN(promo.get_qty)} (ສິນຄ້າດຽວກັນ)`
+      case 'bogo_cross':
+      case 'bundle_gift': {
+        const gift = products?.find?.(p => Number(p.id) === Number(promo.gift_product_id))
+        const giftName = gift?.product_name || `#${promo.gift_product_id || '—'}`
+        return `ຊື້ ${fmtN(promo.buy_qty)} → ແຖມ ${fmtN(promo.get_qty)} × ${giftName}`
+      }
+      case 'cart_percent': return `ຫຼຸດ ${fmtN(promo.value)}% ທັງບິນ`
+      case 'cart_fixed': return `ຫຼຸດ ${fmtK(promo.value)} ທັງບິນ`
+      default: return ''
+    }
+  })()
+
+  // Scope summary
+  const scopeText = (() => {
+    const s = promo.scope || 'all'
+    if (s === 'all') return 'ສິນຄ້າທັງໝົດ'
+    const ids = Array.isArray(promo.scope_ids) ? promo.scope_ids : []
+    if (s === 'product') {
+      const names = ids.map(id => products?.find?.(p => Number(p.id) === Number(id))?.product_name).filter(Boolean)
+      if (names.length === 0) return 'ສິນຄ້າທີ່ກຳນົດ'
+      if (names.length <= 2) return names.join(', ')
+      return `${names.slice(0, 2).join(', ')} +${names.length - 2}`
+    }
+    if (s === 'category') return `ໝວດ: ${ids.join(', ') || '—'}`
+    if (s === 'brand')    return `ຍີ່ຫໍ້: ${ids.join(', ') || '—'}`
+    return s
+  })()
+
+  const expired = promo.end_date && fmtDate(promo.end_date) < today
+  const notStarted = promo.start_date && fmtDate(promo.start_date) > today
+  const couponGated = !!promo.require_coupon_code
+
+  return (
+    <div className="border border-slate-200 rounded-xl p-3 bg-white hover:border-violet-300 transition">
+      <div className="flex items-start gap-2">
+        <div className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-base ${meta.tint}`}>{meta.icon}</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-extrabold text-slate-900 text-sm leading-tight">{promo.name || '—'}</span>
+            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${meta.tint}`}>{meta.label}</span>
+            {promo.stackable === false && (
+              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">ບໍ່ stack</span>
+            )}
+            {couponGated && (
+              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">ໃຊ້ coupon: {promo.require_coupon_code}</span>
+            )}
+            {expired && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">ໝົດອາຍຸ</span>}
+            {notStarted && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">ຍັງບໍ່ເລີ່ມ</span>}
+          </div>
+          <div className="mt-1 text-[12px] text-slate-700 font-semibold">{effect}</div>
+          <div className="mt-1 text-[11px] text-slate-500">ກັບ: {scopeText}</div>
+          {(promo.start_date || promo.end_date) && (
+            <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+              {fmtDate(promo.start_date) || '—'} → {fmtDate(promo.end_date) || '—'}
+              {(promo.start_time || promo.end_time) && ` · ${promo.start_time || '—'}–${promo.end_time || '—'}`}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function QtyInput({ value, max, onCommit }) {
+  const [v, setV] = useState(String(value))
+  useEffect(() => { setV(String(value)) }, [value])
+  const commit = () => {
+    let n = parseInt(v, 10)
+    if (!Number.isFinite(n) || n < 1) n = 1
+    if (max && n > max) n = max
+    setV(String(n))
+    if (n !== value) onCommit(n)
+  }
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min="1"
+      max={max || undefined}
+      value={v}
+      onChange={e => setV(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
+      onFocus={e => e.currentTarget.select()}
+      className="px-1 w-12 h-7 text-center bg-slate-900 text-slate-100 font-extrabold outline-none border-x border-slate-700 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+    />
+  )
 }
 
 function Toast({ message, type, onClose }) {
@@ -119,6 +237,8 @@ export default function POS({ user, onLogout }) {
   const [showReceipt, setShowReceipt] = useState(null)
   const [showOrders, setShowOrders] = useState(false)
   const [orders, setOrders] = useState([])
+  const [returnsHistory, setReturnsHistory] = useState([])
+  const [ordersTab, setOrdersTab] = useState('sales') // 'sales' | 'returns'
   const [showReturn, setShowReturn] = useState(false)
   const [returnSearch, setReturnSearch] = useState('')
   const [returnLookup, setReturnLookup] = useState(null)
@@ -144,6 +264,7 @@ export default function POS({ user, onLogout }) {
   const [creatingMember, setCreatingMember] = useState(false)
   const [showMemberModal, setShowMemberModal] = useState(false)
   const [showCatalog, setShowCatalog] = useState(false)
+  const [showPromoList, setShowPromoList] = useState(false)
   const [lastScan, setLastScan] = useState(null)
   const [flash, setFlash] = useState(0)
   const [currencies, setCurrencies] = useState([])
@@ -297,7 +418,7 @@ export default function POS({ user, onLogout }) {
   }, [loadDebtAlerts])
 
   // Refocus scan input ONLY when all modals just closed (no polling to avoid stealing focus from other inputs)
-  const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary || showMemberModal || showDebtAlerts || showReturn
+  const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary || showMemberModal || showDebtAlerts || showReturn || showPromoList
   useEffect(() => {
     if (anyModalOpen) return
     const tmr = setTimeout(() => {
@@ -390,6 +511,17 @@ export default function POS({ user, onLogout }) {
       if (newQty > item.stock) { showToast('ເກີນຈຳນວນສະຕ໊ອກ', 'error'); return item }
       return { ...item, quantity: newQty }
     }).filter(Boolean))
+  }
+
+  const setQuantity = (productId, qty, variantId = null) => {
+    let n = Math.floor(Number(qty))
+    if (!Number.isFinite(n) || n < 1) n = 1
+    setCart(prev => prev.map(item => {
+      const matches = item.product_id === productId && (item.variant_id || null) === (variantId || null)
+      if (!matches) return item
+      if (n > item.stock) { showToast('ເກີນຈຳນວນສະຕ໊ອກ', 'error'); return { ...item, quantity: item.stock } }
+      return { ...item, quantity: n }
+    }))
   }
 
   const removeFromCart = (productId) => {
@@ -528,6 +660,25 @@ export default function POS({ user, onLogout }) {
   const roundingAdjustment = rounding.adjustment
   const finalTotal = rounding.rounded
   const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart])
+
+  // Global keyboard shortcuts: F2 = Catalog, F12 = Pay
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === 'F2') {
+        e.preventDefault()
+        if (!anyModalOpen) setShowCatalog(true)
+        return
+      }
+      if (e.key === 'F12') {
+        e.preventDefault()
+        if (anyModalOpen || cart.length === 0) return
+        setAmountPaid(String(finalTotal))
+        setShowCheckout(true)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [anyModalOpen, cart.length, finalTotal])
   const selectedReturnItems = useMemo(() => {
     return (returnLookup?.items || []).map(item => {
       const qty = Math.max(0, Math.min(Number(returnQty[item.order_item_id]) || 0, Number(item.returnable_qty) || 0))
@@ -810,13 +961,32 @@ export default function POS({ user, onLogout }) {
   }
 
   const loadOrders = async () => {
-    const [oRes, sRes] = await Promise.all([
+    const [oRes, sRes, rRes] = await Promise.all([
       fetch(`${API}/orders`),
-      fetch(`${API}/orders/summary`)
+      fetch(`${API}/orders/summary`),
+      fetch(`${API}/returns`),
     ])
     setOrders(await oRes.json())
     try { setDailySummary(await sRes.json()) } catch { setDailySummary(null) }
+    try {
+      const data = await rRes.json()
+      setReturnsHistory(Array.isArray(data) ? data : [])
+    } catch { setReturnsHistory([]) }
     setShowOrders(true)
+  }
+
+  const deleteReturn = async (ret) => {
+    const label = ret.return_number || `#${ret.id}`
+    if (!confirm(`ຍົກເລີກການຮັບຄືນ ${label}?\nສະຕັອກສິນຄ້າທີ່ຄືນຈະຖືກລົບກັບ.`)) return
+    const res = await fetch(`${API}/returns/${ret.id}`, { method: 'DELETE' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      showToast(data.error || 'ລົບບໍ່ສຳເລັດ', 'error')
+      return
+    }
+    showToast(`ຍົກເລີກແລ້ວ ${label}`)
+    loadOrders()
+    fetchProducts()
   }
 
   const lookupReturnOrder = async (term = returnSearch) => {
@@ -1338,7 +1508,7 @@ export default function POS({ user, onLogout }) {
             <span className="ml-2 hidden md:inline text-[10px] font-bold text-amber-300/80">🏬 {activeBranch.name}</span>
           )}
           {promotions.length > 0 && (
-            <button onClick={reloadPromotions} title="ໂຫຼດໂປຣໂມຊັ່ນໃໝ່"
+            <button onClick={() => setShowPromoList(true)} title="ເບິ່ງໂປຣໂມຊັ່ນທີ່ໃຊ້ໄດ້"
               className="hidden md:flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 bg-violet-500/20 text-violet-300 border border-violet-500/40 rounded hover:bg-violet-500/30">
               🎁 {promotions.length} ໂປຣ
             </button>
@@ -1351,9 +1521,10 @@ export default function POS({ user, onLogout }) {
             <span className="hidden md:inline">ຈໍລູກຄ້າ</span>
           </button>
           <button onClick={() => setShowCatalog(true)}
-            className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="Catalog">
+            className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="Catalog (F2)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             <span className="hidden md:inline">Catalog</span>
+            <kbd className="hidden lg:inline px-1 py-0.5 bg-slate-950 border border-slate-700 rounded text-[9px] font-mono text-slate-400">F2</kbd>
           </button>
           <button onClick={openDailySummary}
             className="px-2 sm:px-3 py-1.5 bg-gradient-to-br from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 rounded-md text-xs font-bold flex items-center gap-1.5 shadow" title="ສະຫຼຸບຍອດຂາຍປະຈຳວັນ">
@@ -1401,6 +1572,7 @@ export default function POS({ user, onLogout }) {
               Admin
             </button>
           )}
+          <ThemeToggle compact />
           <button onClick={onLogout}
             className="w-8 h-8 rounded-md hover:bg-rose-600 flex items-center justify-center" title="Logout">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -1438,9 +1610,12 @@ export default function POS({ user, onLogout }) {
                 if (e.key !== 'Enter') return
                 const bc = normalizeBarcode(e.currentTarget.value)
                 if (!bc) return
+                e.preventDefault()
+                // Guard against the auto-add useEffect having already handled this barcode
+                // (scanners type chars + send Enter — both paths would otherwise trigger).
+                if (lastScannedBarcodeRef.current === bc) { setSearch(''); return }
                 const m = findBarcodeMatch(bc)
                 if (!m) { showToast(`ບໍ່ພົບລະຫັດ: ${bc}`, 'error'); setSearch(''); return }
-                e.preventDefault()
                 handleBarcodeAutoAdd(m, bc)
               }}
               autoFocus
@@ -1536,11 +1711,15 @@ export default function POS({ user, onLogout }) {
                           </td>
                           <td className="py-2 px-2 text-right">
                             <div className="inline-flex items-center bg-slate-800 rounded border border-slate-700 overflow-hidden">
-                              <button onClick={() => updateQuantity(item.product_id, -1)}
-                                className="w-7 h-7 hover:bg-slate-700 text-white">−</button>
-                              <span className="px-2 font-extrabold text-white w-10 text-center">{item.quantity}</span>
-                              <button onClick={() => updateQuantity(item.product_id, 1)}
-                                className="w-7 h-7 hover:bg-slate-700 text-white">+</button>
+                              <button onClick={() => updateQuantity(item.product_id, -1, item.variant_id)}
+                                className="w-7 h-7 hover:bg-slate-700 text-slate-100">−</button>
+                              <QtyInput
+                                value={item.quantity}
+                                max={item.stock}
+                                onCommit={n => setQuantity(item.product_id, n, item.variant_id)}
+                              />
+                              <button onClick={() => updateQuantity(item.product_id, 1, item.variant_id)}
+                                className="w-7 h-7 hover:bg-slate-700 text-slate-100">+</button>
                             </div>
                           </td>
                           <td className="py-2 px-2 text-right">
@@ -1900,9 +2079,11 @@ export default function POS({ user, onLogout }) {
                 setAmountPaid(String(finalTotal)); setShowCheckout(true)
               }}
               disabled={cart.length === 0}
+              title="ຮັບເງິນ (F12)"
               className="pos-checkout-button w-full h-12 bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-white rounded-lg font-extrabold text-base tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-500/20 disabled:shadow-none transition-all active:scale-[0.98]">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 12h.01M17 12h.01"/></svg>
               PAY
+              <kbd className="ml-1 px-1.5 py-0.5 bg-black/25 border border-white/25 rounded text-[10px] font-mono">F12</kbd>
             </button>
             <div className="mt-2 grid grid-cols-2 gap-1.5">
               <button onClick={parkCurrentCart} disabled={cart.length === 0}
@@ -2037,6 +2218,25 @@ export default function POS({ user, onLogout }) {
                   </div>
                 )
               })
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Promotion list modal */}
+      {showPromoList && (
+        <Modal onClose={() => setShowPromoList(false)} title="🎁 ໂປຣໂມຊັ່ນທີ່ໃຊ້ໄດ້" size="lg">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[11px] text-slate-500">ທັງໝົດ {promotions.length} ລາຍການ</div>
+            <button onClick={reloadPromotions}
+              className="text-[11px] font-bold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded">
+              ↻ ໂຫຼດຄືນ
+            </button>
+          </div>
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+            {promotions.map(p => <PromoCard key={p.id} promo={p} products={products} />)}
+            {promotions.length === 0 && (
+              <div className="text-center py-12 text-slate-400 text-sm">ບໍ່ມີໂປຣໂມຊັ່ນ</div>
             )}
           </div>
         </Modal>
@@ -2945,6 +3145,59 @@ export default function POS({ user, onLogout }) {
             </div>
           )}
 
+          {/* Tab switcher */}
+          <div className="flex gap-1 mb-3 p-1 bg-slate-100 rounded-lg w-fit">
+            <button onClick={() => setOrdersTab('sales')}
+              className={`px-3 py-1.5 rounded-md text-[11px] font-extrabold transition ${ordersTab === 'sales' ? 'bg-white text-slate-900 shadow' : 'text-slate-500 hover:text-slate-700'}`}>
+              ບິນຂາຍ · {orders.length}
+            </button>
+            <button onClick={() => setOrdersTab('returns')}
+              className={`px-3 py-1.5 rounded-md text-[11px] font-extrabold transition ${ordersTab === 'returns' ? 'bg-white text-rose-700 shadow' : 'text-slate-500 hover:text-slate-700'}`}>
+              ↩ ບິນຮັບຄືນ · {returnsHistory.length}
+            </button>
+          </div>
+
+          {ordersTab === 'returns' && (
+            <div className="space-y-2 max-h-[55vh] overflow-y-auto">
+              {returnsHistory.map(r => (
+                <div key={r.id} className="bg-white border border-slate-200 rounded-xl p-3 hover:border-slate-400 transition">
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-mono-t bg-rose-100 text-rose-900 font-extrabold px-2 py-0.5 rounded shrink-0">{r.return_number || `#${r.id}`}</span>
+                        <span className="text-[10px] font-mono-t bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">ບິນ {r.bill_number || `#${r.order_id}`}</span>
+                        <span className="text-[10px] text-slate-500">{new Date(r.created_at).toLocaleString('lo-LA')}</span>
+                      </div>
+                      <div className="mt-1.5 text-[11px] text-slate-600">
+                        {(r.items || []).map((it, i) => (
+                          <span key={i}>{i > 0 && ', '}{it.product_name || '—'} × {it.quantity}</span>
+                        ))}
+                      </div>
+                      {r.customer_name && <div className="text-[10px] text-slate-500 mt-0.5">ລູກຄ້າ: {r.customer_name}</div>}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="text-right">
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider">ຍອດຄືນ</div>
+                        <div className="text-lg font-extrabold text-rose-700 font-mono-t">{formatPrice(r.refund_amount)}</div>
+                      </div>
+                      {user.role === 'admin' && (
+                        <button onClick={() => deleteReturn(r)}
+                          className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded flex items-center justify-center" title="ຍົກເລີກການຮັບຄືນ (ສະຕັອກກັບ)">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {returnsHistory.length === 0 && (
+                <div className="text-center py-12 text-slate-400 text-sm">ຍັງບໍ່ມີການຮັບຄືນ</div>
+              )}
+            </div>
+          )}
+
+          {ordersTab === 'sales' && (
+          <>
           {/* Orders list */}
           <div className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-2">ບິນຫຼ້າສຸດ · {orders.length} ລາຍການ</div>
           <div className="space-y-2 max-h-[50vh] overflow-y-auto">
@@ -2987,10 +3240,12 @@ export default function POS({ user, onLogout }) {
                         className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded flex items-center justify-center" title="ຮັບຄືນ / ຄືນເງິນ">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
                       </button>
-                      <button onClick={() => cancelOrder(order.id)}
-                        className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded flex items-center justify-center" title="ຍົກເລີກບິນ">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                      </button>
+                      {user.role === 'admin' && (
+                        <button onClick={() => cancelOrder(order.id)}
+                          className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded flex items-center justify-center" title="ຍົກເລີກບິນ">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-2 border border-slate-100 space-y-0.5">
@@ -3019,6 +3274,8 @@ export default function POS({ user, onLogout }) {
               <div className="text-center py-12 text-slate-400 text-sm">ຍັງບໍ່ມີການຂາຍ</div>
             )}
           </div>
+          </>
+          )}
         </Modal>
       )}
 

@@ -49,8 +49,14 @@ export default function Products() {
 
   const openDetail = async (p) => {
     setViewDetail(p)
-    const res = await fetch(`${API}/admin/products/${p.id}/movements`)
-    setMovements(await res.json())
+    try {
+      const res = await fetch(`${API}/admin/products/${p.id}/movements`)
+      const data = await res.json()
+      setMovements(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('Failed to load movements:', err)
+      setMovements([])
+    }
   }
 
   const load = () => {

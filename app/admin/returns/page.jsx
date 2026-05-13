@@ -210,6 +210,19 @@ export default function ReturnsPage() {
     }
   };
 
+  const deleteReturn = async (ret) => {
+    const label = ret.return_number || `#${ret.id}`;
+    if (!window.confirm(`ຍົກເລີກການຮັບຄືນ ${label}?\nສະຕັອກຂອງສິນຄ້າທີ່ຄືນຈະຖືກລົບກັບຄືນ.`)) return;
+    const res = await fetch(`${API}/returns/${ret.id}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || 'ລົບບໍ່ສຳເລັດ', 'error');
+      return;
+    }
+    showToast(`ຍົກເລີກແລ້ວ ${label}`);
+    await loadReturns();
+  };
+
   return (
     <div className="space-y-4 pb-6">
       <AdminHero
@@ -401,6 +414,7 @@ export default function ReturnsPage() {
                 <th className="px-3 py-2">ວິທີຄືນເງິນ</th>
                 <th className="px-3 py-2 text-right">ຍອດຄືນ</th>
                 <th className="px-3 py-2 text-center">ພິມ</th>
+                <th className="px-3 py-2 text-center">ຍົກເລີກ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -419,9 +433,16 @@ export default function ReturnsPage() {
                       🖨️ ພິມ
                     </button>
                   </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-center">
+                    <button onClick={() => deleteReturn(r)}
+                      title="ຍົກເລີກການຮັບຄືນ (ລົບສະຕັອກກັບ)"
+                      className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-extrabold text-rose-700 hover:bg-rose-50">
+                      🗑 ລົບ
+                    </button>
+                  </td>
                 </tr>
               ))}
-              {returns.length === 0 && <tr><td colSpan="8" className="py-10 text-center text-slate-400">ຍັງບໍ່ມີການຮັບຄືນ</td></tr>}
+              {returns.length === 0 && <tr><td colSpan="9" className="py-10 text-center text-slate-400">ຍັງບໍ່ມີການຮັບຄືນ</td></tr>}
             </tbody>
           </table>
         </div>
