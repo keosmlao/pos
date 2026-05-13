@@ -2,13 +2,23 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok } from '@/lib/api';
+import { extractActor } from '@/lib/audit';
+import { publishEvent } from '@/lib/appEvents';
 
-export const DELETE = handle(async (_request, { params }) => {
+export const DELETE = handle(async (request, { params }) => {
   const { id } = await params;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    const purchaseRes = await client.query(
+      `SELECT p.ref_number, p.total, p.currency, s.name AS supplier_name
+       FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id
+       WHERE p.id = $1`,
+      [id]
+    );
+    const purchase = purchaseRes.rows[0];
 
     const items = await client.query('SELECT * FROM purchase_items WHERE purchase_id = $1', [id]);
     for (const item of items.rows) {
@@ -24,6 +34,14 @@ export const DELETE = handle(async (_request, { params }) => {
     await client.query('DELETE FROM purchases WHERE id = $1', [id]);
 
     await client.query('COMMIT');
+    const actor = extractActor(request);
+    publishEvent({
+      type: 'purchase.void',
+      title: 'ຍົກເລີກບິນຊື້',
+      body: `${purchase?.ref_number || '#' + id} · ${purchase?.supplier_name || 'ບໍ່ມີຜູ້ສະໜອງ'} · ${Number(purchase?.total || 0).toLocaleString('en-US')} ${purchase?.currency || 'LAK'}`,
+      data: { purchase_id: Number(id), ref_number: purchase?.ref_number, supplier_name: purchase?.supplier_name, total: Number(purchase?.total) || 0 },
+      actor: actor.username,
+    }).catch(() => {});
     return ok({ message: 'Purchase deleted' });
   } catch (error) {
     await client.query('ROLLBACK');

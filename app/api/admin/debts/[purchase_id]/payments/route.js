@@ -4,6 +4,8 @@ import pool from '@/lib/db';
 import { handle, ok, readJson } from '@/lib/api';
 import { ensureCompanyProfileSchema } from '@/lib/migrations';
 import { allocateDocumentNumber } from '@/lib/billNumber';
+import { extractActor } from '@/lib/audit';
+import { publishEvent } from '@/lib/appEvents';
 
 export const GET = handle(async (_request, { params }) => {
   const { purchase_id } = await params;
@@ -49,7 +51,21 @@ export const POST = handle(async (request, { params }) => {
     }
 
     await client.query('COMMIT');
-    return ok(paymentResult.rows[0]);
+    const payment = paymentResult.rows[0];
+    const supplierRes = await pool.query(
+      `SELECT s.name FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id WHERE p.id = $1`,
+      [purchase_id]
+    );
+    const supplierName = supplierRes.rows[0]?.name || null;
+    const actor = extractActor(request);
+    publishEvent({
+      type: 'debt.supplier_payment',
+      title: 'ມີໃບຊຳລະໜີ້ຜູ້ສະໜອງໃໝ່',
+      body: `${resolvedPaymentNumber || '#' + payment.id} · ${supplierName || 'ຜູ້ສະໜອງ'} · ${Number(amountInLAK).toLocaleString('en-US')} ກີບ`,
+      data: { payment_id: payment.id, payment_number: resolvedPaymentNumber, purchase_id: Number(purchase_id), supplier_name: supplierName, amount: Number(amountInLAK), currency: currency || 'LAK' },
+      actor: actor.username,
+    }).catch(() => {});
+    return ok(payment);
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

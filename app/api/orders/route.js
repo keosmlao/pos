@@ -7,6 +7,7 @@ import { allocateBillNumber } from '@/lib/billNumber';
 import { normalizeVatSettings, applyVat } from '@/lib/vat';
 import { applyRounding } from '@/lib/rounding';
 import { extractActor, logAudit } from '@/lib/audit';
+import { publishEvent } from '@/lib/appEvents';
 
 export const GET = handle(async () => {
   await ensureOrdersSchema();
@@ -307,6 +308,14 @@ export const POST = handle(async (request) => {
       summary: `${billNumber} · ${methodFinal} · ${totalNum}`,
       payload: { bill_number: billNumber, total: totalNum, items: items.length, member_id: member?.id || null },
     });
+    const actor = extractActor(request);
+    publishEvent({
+      type: isCredit ? 'order.credit' : 'order.create',
+      title: isCredit ? 'ມີບິນຂາຍແບບໜີ້ໃໝ່' : 'ມີບິນຂາຍໃໝ່',
+      body: `ບິນ ${billNumber} · ${methodFinal} · ${Number(totalNum).toLocaleString('en-US')} ກີບ`,
+      data: { bill_number: billNumber, order_id: order.id, total: totalNum, items: items.length, member_id: member?.id || null },
+      actor: actor.username,
+    }).catch(() => {});
     return ok({ ...order, items: itemsRes.rows });
   } catch (error) {
     await client.query('ROLLBACK');

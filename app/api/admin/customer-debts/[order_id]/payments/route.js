@@ -4,6 +4,8 @@ import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureCompanyProfileSchema, ensureCustomerDebtPaymentsSchema } from '@/lib/migrations';
 import { allocateDocumentNumber } from '@/lib/billNumber';
+import { extractActor } from '@/lib/audit';
+import { publishEvent } from '@/lib/appEvents';
 
 export const GET = handle(async (request, { params }) => {
   await ensureCustomerDebtPaymentsSchema();
@@ -80,7 +82,23 @@ export const POST = handle(async (request, { params }) => {
     );
 
     await client.query('COMMIT');
-    return ok(payRes.rows[0]);
+    const payment = payRes.rows[0];
+    const billRes = await pool.query(
+      `SELECT o.bill_number, m.full_name AS member_name
+       FROM orders o LEFT JOIN members m ON m.id = o.member_id
+       WHERE o.id = $1`,
+      [orderId]
+    );
+    const bill = billRes.rows[0] || {};
+    const actor = extractActor(request);
+    publishEvent({
+      type: 'debt.customer_payment',
+      title: 'ມີໃບຊຳລະໜີ້ລູກຄ້າໃໝ່',
+      body: `${paymentNumber || '#' + payment.id} · ${bill.member_name || bill.bill_number || 'ລູກຄ້າ'} · ${Number(payAmount).toLocaleString('en-US')} ກີບ`,
+      data: { payment_id: payment.id, payment_number: paymentNumber, order_id: orderId, bill_number: bill.bill_number, member_name: bill.member_name, amount: payAmount },
+      actor: actor.username,
+    }).catch(() => {});
+    return ok(payment);
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

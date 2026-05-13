@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson, getQuery } from '@/lib/api';
 import { ensureCashTransactionsSchema } from '@/lib/migrations';
+import { extractActor } from '@/lib/audit';
+import { publishEvent } from '@/lib/appEvents';
 
 const VALID_TYPES = new Set(['income', 'expense']);
 const VALID_METHODS = new Set(['cash', 'transfer', 'qr', 'cheque']);
@@ -91,5 +93,15 @@ export const POST = handle(async (request) => {
       String(body.created_by || '').trim() || null,
     ]
   );
-  return ok(result.rows[0]);
+  const row = result.rows[0];
+  const actor = extractActor(request);
+  const isIncome = txnType === 'income';
+  publishEvent({
+    type: isIncome ? 'cash.income' : 'cash.expense',
+    title: isIncome ? 'ມີລາຍຮັບເງິນສົດໃໝ່' : 'ມີລາຍຈ່າຍເງິນສົດໃໝ່',
+    body: `${row.category || '-'} · ${Number(row.amount).toLocaleString('en-US')} ${row.currency || 'LAK'}${row.description ? ' · ' + row.description : ''}`,
+    data: { cash_id: row.id, txn_type: row.txn_type, category: row.category, amount: Number(row.amount), currency: row.currency, account: row.account, method: row.payment_method },
+    actor: actor.username,
+  }).catch(() => {});
+  return ok(row);
 });

@@ -4,6 +4,8 @@ import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureCompanyProfileSchema, ensurePendingInvoicesSchema } from '@/lib/migrations';
 import { allocateDocumentNumber } from '@/lib/billNumber';
+import { extractActor } from '@/lib/audit';
+import { publishEvent } from '@/lib/appEvents';
 
 export const GET = handle(async () => {
   await ensurePendingInvoicesSchema();
@@ -103,6 +105,14 @@ export const POST = handle(async (request) => {
     }
 
     await client.query('COMMIT');
+    const actor = extractActor(request);
+    publishEvent({
+      type: normalizedPaymentType === 'debt' ? 'purchase.credit' : 'purchase.create',
+      title: normalizedPaymentType === 'debt' ? 'ມີບິນຊື້ແບບໜີ້ໃໝ່' : 'ມີບິນຊື້ໃໝ່',
+      body: `${resolvedRefNumber || '#' + purchase.id} · ${supplierName || 'ບໍ່ມີຜູ້ສະໜອງ'} · ${Number(normalizedTotal).toLocaleString('en-US')} ${currency || 'LAK'}`,
+      data: { purchase_id: purchase.id, ref_number: resolvedRefNumber, supplier_id, supplier_name: supplierName, total: normalizedTotal, currency: currency || 'LAK', payment_type: normalizedPaymentType },
+      actor: actor.username,
+    }).catch(() => {});
     return ok(purchase);
   } catch (error) {
     await client.query('ROLLBACK');

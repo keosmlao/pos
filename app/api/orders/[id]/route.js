@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { handle, ok, fail } from '@/lib/api';
 import { ensureMembersSchema, ensureOrdersSchema } from '@/lib/migrations';
+import { extractActor } from '@/lib/audit';
+import { publishEvent } from '@/lib/appEvents';
 
 export const DELETE = handle(async (request, { params }) => {
   await ensureOrdersSchema();
@@ -14,7 +16,7 @@ export const DELETE = handle(async (request, { params }) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const orderRes = await client.query('SELECT member_id, total, member_points_earned, member_points_used FROM orders WHERE id = $1', [numericId]);
+    const orderRes = await client.query('SELECT id, bill_number, member_id, total, member_points_earned, member_points_used FROM orders WHERE id = $1', [numericId]);
     const items = await client.query('SELECT * FROM order_items WHERE order_id = $1', [numericId]);
     if (items.rowCount === 0) {
       if (orderRes.rowCount === 0) {
@@ -57,6 +59,14 @@ export const DELETE = handle(async (request, { params }) => {
     await client.query('DELETE FROM order_items WHERE order_id = $1', [numericId]);
     await client.query('DELETE FROM orders WHERE id = $1', [numericId]);
     await client.query('COMMIT');
+    const actor = extractActor(request);
+    publishEvent({
+      type: 'order.void',
+      title: 'ຍົກເລີກບິນຂາຍ',
+      body: `ບິນ ${order?.bill_number || '#' + numericId} · ${Number(order?.total || 0).toLocaleString('en-US')} ກີບ`,
+      data: { order_id: numericId, bill_number: order?.bill_number, total: Number(order?.total) || 0 },
+      actor: actor.username,
+    }).catch(() => {});
     return ok({ message: 'Order cancelled', id: numericId, restored_items: items.rowCount });
   } catch (error) {
     await client.query('ROLLBACK');

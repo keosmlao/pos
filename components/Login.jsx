@@ -73,7 +73,10 @@ export default function Login({ onLogin }) {
             ))}
           </div>
         </div>
-        <div className="absolute bottom-7 left-14 text-xs text-white/25 z-10">POS System v1.0</div>
+        <div className="absolute bottom-7 left-14 right-14 text-xs text-white/35 z-10 leading-relaxed">
+          <div className="font-semibold">ພັດທະນາໂດຍ ບໍລິສັດ ເອັສເອັມລາວ ພັດທະນາ ຈຳກັດ ຜູ້ດຽວ</div>
+          <div className="text-white/25">ໂທ: 020 99910808</div>
+        </div>
       </div>
       <div className="flex-1 flex items-center justify-center bg-slate-50 px-6">
         <div className="w-full max-w-md">
