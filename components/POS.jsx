@@ -182,10 +182,10 @@ function Toast({ message, type, onClose }) {
   )
 }
 
-function Modal({ children, onClose, title, size = 'md' }) {
+function Modal({ children, onClose, title, size = 'md', zClass = 'z-50' }) {
   const sizes = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-3xl', '2xl': 'max-w-3xl' }
   return (
-    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur flex items-center justify-center z-50 p-4 animate-fade-in text-slate-900" onClick={onClose}>
+    <div className={`fixed inset-0 bg-slate-950/70 backdrop-blur flex items-center justify-center ${zClass} p-4 animate-fade-in text-slate-900`} onClick={onClose}>
       <div className={`bg-white text-slate-900 rounded-2xl shadow-2xl w-full ${sizes[size]} max-h-[90vh] overflow-hidden flex flex-col animate-scale-in`} onClick={e => e.stopPropagation()}>
         {title && (
           <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
@@ -419,10 +419,13 @@ export default function POS({ user, onLogout }) {
 
   // Layby state (declared here so anyModalOpen can reference showLaybyPicker)
   const [showLaybyPicker, setShowLaybyPicker] = useState(false)
+  const [laybyPickerMode, setLaybyPickerMode] = useState('load') // 'load' | 'apply'
   const [openLaybys, setOpenLaybys] = useState([])
   const [laybySearch, setLaybySearch] = useState('')
-  const [loadedLayby, setLoadedLayby] = useState(null) // { id, layby_number, total, paid, balance, customer_name, customer_phone, member_id, discount, note }
+  const [loadedLayby, setLoadedLayby] = useState(null) // { id, layby_number, total, paid, balance, customer_name, customer_phone, member_id, discount, note, depositOnly }
   const [laybyBusy, setLaybyBusy] = useState(false)
+  // Ref so layby callbacks declared above finalTotal can still read its current value
+  const finalTotalRef = useRef(0)
 
   // Refocus scan input ONLY when all modals just closed (no polling to avoid stealing focus from other inputs)
   const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary || showMemberModal || showDebtAlerts || showReturn || showPromoList || showLaybyPicker
@@ -474,6 +477,7 @@ export default function POS({ user, onLogout }) {
   }
 
   const addToCart = (product) => {
+    if (loadedLayby && !loadedLayby.depositOnly) { showToast('Layby ມີສິນຄ້າຜູກໄວ້ແລ້ວ — ບໍ່ສາມາດເພີ່ມ', 'error'); return }
     if (product.qty_on_hand <= 0) { showToast('ສິນຄ້າໝົດສະຕ໊ອກ', 'error'); return }
     setCart(prev => {
       const existing = prev.find(item => item.product_id === product.id && !item.variant_id)
@@ -491,6 +495,7 @@ export default function POS({ user, onLogout }) {
   }
 
   const addVariantToCart = (product, variant) => {
+    if (loadedLayby && !loadedLayby.depositOnly) { showToast('Layby ມີສິນຄ້າຜູກໄວ້ແລ້ວ — ບໍ່ສາມາດເພີ່ມ', 'error'); return }
     if (variant.qty_on_hand <= 0) { showToast(`ສິນຄ້າ "${variant.variant_name}" ໝົດ`, 'error'); return }
     const price = variant.selling_price != null ? Number(variant.selling_price) : Number(product.selling_price)
     setCart(prev => {
@@ -513,6 +518,7 @@ export default function POS({ user, onLogout }) {
     setCart(prev => prev.map(item => {
       const matches = item.product_id === productId && (item.variant_id || null) === (variantId || null)
       if (!matches) return item
+      if (item._layby) { showToast('Layby — ສິນຄ້າຖືກລັອກ', 'error'); return item }
       const newQty = item.quantity + delta
       if (newQty <= 0) return null
       if (newQty > item.stock) { showToast('ເກີນຈຳນວນສະຕ໊ອກ', 'error'); return item }
@@ -526,13 +532,18 @@ export default function POS({ user, onLogout }) {
     setCart(prev => prev.map(item => {
       const matches = item.product_id === productId && (item.variant_id || null) === (variantId || null)
       if (!matches) return item
+      if (item._layby) { showToast('Layby — ສິນຄ້າຖືກລັອກ', 'error'); return item }
       if (n > item.stock) { showToast('ເກີນຈຳນວນສະຕ໊ອກ', 'error'); return { ...item, quantity: item.stock } }
       return { ...item, quantity: n }
     }))
   }
 
   const removeFromCart = (productId) => {
-    setCart(prev => prev.filter(item => item.product_id !== productId))
+    setCart(prev => {
+      const target = prev.find(item => item.product_id === productId)
+      if (target?._layby) { showToast('Layby — ສິນຄ້າຖືກລັອກ', 'error'); return prev }
+      return prev.filter(item => item.product_id !== productId)
+    })
   }
 
   useEffect(() => {
@@ -656,10 +667,69 @@ export default function POS({ user, onLogout }) {
     if (cart.length > 0 && !loadedLayby) {
       if (!window.confirm('ບີນປະຈຸບັນຍັງມີສິນຄ້າ — ໂຫຼດ Layby ຈະທົດແທນ. ດຳເນີນຕໍ່?')) return
     }
+    setLaybyPickerMode('load')
     loadOpenLaybys()
     setLaybySearch('')
     setShowLaybyPicker(true)
   }, [cart.length, loadedLayby, loadOpenLaybys])
+
+  const openLaybyPickerForPay = useCallback(() => {
+    setLaybyPickerMode('apply')
+    loadOpenLaybys()
+    setLaybySearch('')
+    setShowLaybyPicker(true)
+  }, [loadOpenLaybys])
+
+  const applyDepositLayby = useCallback(async (lid) => {
+    setLaybyBusy(true)
+    try {
+      const res = await fetch(`${API}/admin/laybys/${lid}`)
+      const data = await res.json()
+      if (!res.ok || !data?.id) { showToast(data?.error || 'ໂຫຼດ Layby ບໍ່ສຳເລັດ', 'error'); setLaybyBusy(false); return }
+      const items = Array.isArray(data.items) ? data.items : []
+      if (items.length > 0) {
+        showToast('Layby ນີ້ມີສິນຄ້າຜູກໄວ້ແລ້ວ — ໃຊ້ "ໂຫຼດ Layby" ແທນ', 'error')
+        setLaybyBusy(false)
+        return
+      }
+      const paid = Number(data.paid) || 0
+      const creditUsed = Number(data.credit_used) || 0
+      const available = Math.max(0, paid - creditUsed)
+      if (available <= 0) {
+        showToast('Layby ນີ້ໃຊ້ມັດຈຳໝົດແລ້ວ', 'error')
+        setLaybyBusy(false)
+        return
+      }
+      setLoadedLayby({
+        id: data.id,
+        layby_number: data.layby_number,
+        total: Number(data.total) || 0,
+        paid: available, // use available credit as "paid" for downstream tender calc
+        balance: Number(data.balance) || 0,
+        customer_name: data.customer_name || '',
+        customer_phone: data.customer_phone || '',
+        member_id: data.member_id || null,
+        discount: Number(data.discount) || 0,
+        note: data.note || '',
+        depositOnly: true,
+        itemsInLayby: 0,
+        originalPaid: paid,
+        creditUsed,
+      })
+      // Recompute the prefilled tender amount against the new amountDue.
+      // Read finalTotal via ref to avoid the useCallback dependency (declared later in this file).
+      const ft = finalTotalRef.current || 0
+      const newDeposit = Math.min(available, ft)
+      const newAmountDue = Math.max(0, ft - newDeposit)
+      setPayments([])
+      setAmountPaid(String(newAmountDue))
+      setShowLaybyPicker(false)
+      showToast(`ໃຊ້ມັດຈຳ ${formatPrice(available)} ຈາກ ${data.layby_number}`, 'success')
+    } catch {
+      showToast('ໂຫຼດ Layby ບໍ່ສຳເລັດ', 'error')
+    }
+    setLaybyBusy(false)
+  }, [])
 
   const loadLaybyToCart = useCallback(async (lid) => {
     setLaybyBusy(true)
@@ -668,20 +738,26 @@ export default function POS({ user, onLogout }) {
       const data = await res.json()
       if (!res.ok || !data?.id) { showToast(data?.error || 'ໂຫຼດ Layby ບໍ່ສຳເລັດ', 'error'); setLaybyBusy(false); return }
       const items = Array.isArray(data.items) ? data.items : []
-      const newCart = items.map(it => ({
-        product_id: it.product_id,
-        variant_id: it.variant_id || null,
-        name: it.variant_name ? `${it.product_name} · ${it.variant_name}` : (it.product_name || `#${it.product_id}`),
-        code: it.product_code || '',
-        price: Number(it.price) || 0,
-        unit: it.unit || '',
-        quantity: Number(it.quantity) || 0,
-        stock: 9999999, // already reserved at layby creation
-        variant_name: it.variant_name || null,
-        _laybyItemId: it.id,
-        _layby: true,
-      }))
-      setCart(newCart)
+      const depositOnly = items.length === 0
+      if (depositOnly) {
+        // Deposit-only: leave cart unchanged (cashier scans new products)
+        setCart([])
+      } else {
+        const newCart = items.map(it => ({
+          product_id: it.product_id,
+          variant_id: it.variant_id || null,
+          name: it.variant_name ? `${it.product_name} · ${it.variant_name}` : (it.product_name || `#${it.product_id}`),
+          code: it.product_code || '',
+          price: Number(it.price) || 0,
+          unit: it.unit || '',
+          quantity: Number(it.quantity) || 0,
+          stock: 9999999, // already reserved at layby creation
+          variant_name: it.variant_name || null,
+          _laybyItemId: it.id,
+          _layby: true,
+        }))
+        setCart(newCart)
+      }
       setLoadedLayby({
         id: data.id,
         layby_number: data.layby_number,
@@ -693,9 +769,16 @@ export default function POS({ user, onLogout }) {
         member_id: data.member_id || null,
         discount: Number(data.discount) || 0,
         note: data.note || '',
+        depositOnly,
+        itemsInLayby: items.length,
       })
-      // Reset modifiers that don't apply to a layby (prices already negotiated)
-      setDiscount(Number(data.discount) || 0); setDiscountMode('amount')
+      // Reset modifiers that don't apply (prices already negotiated for item-locked layby).
+      // For deposit-only we still let the cashier apply discounts/promos on new items.
+      if (!depositOnly) {
+        setDiscount(Number(data.discount) || 0); setDiscountMode('amount')
+      } else {
+        setDiscount(0); setDiscountMode('percent')
+      }
       setActiveCoupons([]); setCouponInput('')
       setPointsToRedeem(0)
       setPayments([])
@@ -703,7 +786,11 @@ export default function POS({ user, onLogout }) {
       setAmountPaid('')
       setCustomerNote(data.note || '')
       setShowLaybyPicker(false)
-      showToast(`ໂຫຼດ ${data.layby_number} ສຳເລັດ · ຄ້າງ ${formatPrice(Number(data.balance) || 0)}`, 'success')
+      if (depositOnly) {
+        showToast(`ໂຫຼດ ${data.layby_number} (ມັດຈຳ ${formatPrice(Number(data.paid) || 0)}) · ແສກນສິນຄ້າ`, 'success')
+      } else {
+        showToast(`ໂຫຼດ ${data.layby_number} ສຳເລັດ · ຄ້າງ ${formatPrice(Number(data.balance) || 0)}`, 'success')
+      }
     } catch {
       showToast('ໂຫຼດ Layby ບໍ່ສຳເລັດ', 'error')
     }
@@ -711,8 +798,14 @@ export default function POS({ user, onLogout }) {
   }, [])
 
   const clearLoadedLayby = useCallback(() => {
-    setLoadedLayby(null)
-    setCart([])
+    // For deposit-only applied at pay-time, preserve the cashier's cart.
+    // For item-locked layby, the cart was loaded from the layby — clear it.
+    setLoadedLayby(prev => {
+      if (prev && !prev.depositOnly) {
+        setCart([])
+      }
+      return null
+    })
     setAmountPaid('')
     setPayments([])
     setCustomerNote('')
@@ -743,6 +836,7 @@ export default function POS({ user, onLogout }) {
   const rounding = useMemo(() => applyRounding(vatBreakdown.total, company), [vatBreakdown.total, company])
   const roundingAdjustment = rounding.adjustment
   const finalTotal = rounding.rounded
+  finalTotalRef.current = finalTotal
   const laybyDeposit = loadedLayby ? Math.min(Number(loadedLayby.paid) || 0, finalTotal) : 0
   const amountDue = Math.max(0, finalTotal - laybyDeposit)
   const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart])
@@ -977,6 +1071,7 @@ export default function POS({ user, onLogout }) {
     // Layby completion path: bypass /api/orders and call /api/admin/laybys/[id]/complete
     if (loadedLayby) {
       if (paymentMethod === 'credit') { showToast('Layby ບໍ່ຮອງຮັບການຕິດໜີ້', 'error'); return }
+      if (cart.length === 0) { showToast('ກະຣຸນາແສກນສິນຄ້າກ່ອນ', 'error'); return }
       const useMultiL = payments.length > 0
       let paidL, paymentsPayloadL = null
       if (useMultiL) {
@@ -991,6 +1086,12 @@ export default function POS({ user, onLogout }) {
         paidL = Number(amountPaid) || amountDue
       }
       if (paidL + 0.5 < amountDue) { showToast('ຈຳນວນເງິນບໍ່ພຽງພໍ', 'error'); return }
+      // For deposit-only laybys, send the POS cart items so /complete can build
+      // the order and decrement stock. Also send the POS-calculated order_total
+      // and discount so backend balance checks include POS discounts/promos.
+      const laybyItemsPayload = loadedLayby.depositOnly
+        ? cart.map(it => ({ product_id: it.product_id, variant_id: it.variant_id || null, quantity: it.quantity, price: it.price }))
+        : null
       const res = await fetch(`${API}/admin/laybys/${loadedLayby.id}/complete`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -999,6 +1100,9 @@ export default function POS({ user, onLogout }) {
           change_amount: Math.max(0, paidL - amountDue),
           payments: paymentsPayloadL,
           note: customerNote || null,
+          items: laybyItemsPayload,
+          order_total: loadedLayby.depositOnly ? finalTotal : undefined,
+          discount: loadedLayby.depositOnly ? discountAmount : undefined,
         })
       })
       if (res.ok) {
@@ -2245,11 +2349,7 @@ export default function POS({ user, onLogout }) {
               PAY
               <kbd className="ml-1 px-1.5 py-0.5 bg-black/25 border border-white/25 rounded text-[10px] font-mono">F12</kbd>
             </button>
-            <div className="mt-2 grid grid-cols-3 gap-1.5">
-              <button onClick={openLaybyPicker} disabled={!!loadedLayby}
-                className="py-2 bg-emerald-500/15 hover:bg-emerald-500/25 disabled:bg-slate-800/50 disabled:text-slate-600 text-emerald-200 border border-emerald-500/30 rounded-md text-[11px] font-extrabold transition">
-                📦 Layby
-              </button>
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
               <button onClick={parkCurrentCart} disabled={cart.length === 0 || !!loadedLayby}
                 className="py-2 bg-amber-500/15 hover:bg-amber-500/25 disabled:bg-slate-800/50 disabled:text-slate-600 text-amber-200 border border-amber-500/30 rounded-md text-[11px] font-extrabold transition">
                 🅿️ ພັກບີນ
@@ -2408,7 +2508,9 @@ export default function POS({ user, onLogout }) {
 
       {/* Layby picker */}
       {showLaybyPicker && (
-        <Modal onClose={() => setShowLaybyPicker(false)} title="📦 ໂຫຼດ Layby (ມັດຈຳ)" size="xl">
+        <Modal onClose={() => setShowLaybyPicker(false)}
+          title={laybyPickerMode === 'apply' ? '💰 ໃຊ້ມັດຈຳ (ມັດຈຳບໍ່ມີສິນຄ້າ)' : '📦 ໂຫຼດ Layby (ມັດຈຳ)'} size="xl"
+          zClass={laybyPickerMode === 'apply' ? 'z-[60]' : 'z-50'}>
           <div className="space-y-3">
             <input
               type="text"
@@ -2419,16 +2521,27 @@ export default function POS({ user, onLogout }) {
             <div className="space-y-2 max-h-[60vh] overflow-y-auto">
               {(() => {
                 const term = laybySearch.trim().toLowerCase()
-                const list = !term ? openLaybys : openLaybys.filter(l =>
+                let list = !term ? openLaybys : openLaybys.filter(l =>
                   String(l.layby_number || '').toLowerCase().includes(term) ||
                   String(l.customer_name || '').toLowerCase().includes(term) ||
                   String(l.customer_phone || '').toLowerCase().includes(term)
                 )
-                if (list.length === 0) {
-                  return <div className="text-center py-12 text-slate-400 text-sm">ບໍ່ມີ Layby ເປີດຢູ່</div>
+                // 'apply' mode only allows deposit-only laybys (no items pre-bound)
+                // with available credit remaining
+                if (laybyPickerMode === 'apply') {
+                  list = list.filter(l => !Number(l.item_count) &&
+                    (Number(l.paid) - Number(l.credit_used || 0)) > 0)
                 }
+                if (list.length === 0) {
+                  return <div className="text-center py-12 text-slate-400 text-sm">
+                    {laybyPickerMode === 'apply'
+                      ? 'ບໍ່ມີ Layby ປະເພດ "ມັດຈຳເທົ່ານັ້ນ" ເປີດຢູ່'
+                      : 'ບໍ່ມີ Layby ເປີດຢູ່'}
+                  </div>
+                }
+                const onPick = laybyPickerMode === 'apply' ? applyDepositLayby : loadLaybyToCart
                 return list.map(l => (
-                  <button key={l.id} type="button" onClick={() => loadLaybyToCart(l.id)} disabled={laybyBusy}
+                  <button key={l.id} type="button" onClick={() => onPick(l.id)} disabled={laybyBusy}
                     className="w-full text-left border border-slate-200 rounded-lg p-3 hover:border-emerald-400 hover:bg-emerald-50/30 transition disabled:opacity-50">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
@@ -2444,7 +2557,13 @@ export default function POS({ user, onLogout }) {
                         <div className="text-[10px] text-slate-500 font-bold">ລວມ</div>
                         <div className="text-sm font-mono font-extrabold text-slate-900">{formatPrice(l.total)}</div>
                         <div className="text-[10px] text-emerald-600 font-bold mt-1">ມັດຈຳ {formatPrice(l.paid)}</div>
-                        <div className="text-[11px] font-mono font-extrabold text-amber-700">ຄ້າງ {formatPrice(l.balance)}</div>
+                        {!Number(l.item_count) ? (
+                          <div className="text-[11px] font-mono font-extrabold text-emerald-700">
+                            ຍັງເຫຼືອ {formatPrice(Math.max(0, Number(l.paid) - Number(l.credit_used || 0)))}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] font-mono font-extrabold text-amber-700">ຄ້າງ {formatPrice(l.balance)}</div>
+                        )}
                       </div>
                     </div>
                   </button>
@@ -2540,7 +2659,10 @@ export default function POS({ user, onLogout }) {
       {/* Checkout Modal — redesigned */}
       {showCheckout && (() => {
         const isCredit = paymentMethod === 'credit'
-        const targetTotal = loadedLayby ? amountDue : finalTotal
+        // Bill total always = finalTotal. Layby deposit (if applied) counts as a
+        // separate tender contributing to paidNow, like cash/transfer/etc.
+        const targetTotal = finalTotal
+        const laybyTender = loadedLayby ? Math.min(Number(loadedLayby.paid) || 0, finalTotal) : 0
         const amountByCode = {}
         if (!isCredit && payments.length > 0) {
           for (const p of payments) amountByCode[p.currency] = p.amount
@@ -2575,7 +2697,7 @@ export default function POS({ user, onLogout }) {
             const r = (currencies.find(x => x.code === c) || { rate: 1 }).rate
             return s + (Number(v) || 0) * (Number(r) || 1)
           }, 0)
-          const remLak = Math.max(0, targetTotal - otherLak)
+          const remLak = Math.max(0, targetTotal - otherLak - laybyTender)
           const amt = code === 'LAK' ? remLak : Math.ceil(remLak / (Number(cur.rate) || 1))
           setAmountFor(code, String(amt))
         }
@@ -2588,10 +2710,11 @@ export default function POS({ user, onLogout }) {
           VND: [10000, 20000, 50000, 100000, 200000, 500000],
         }
 
-        const paidNow = isCredit ? 0 : Object.entries(amountByCode).reduce((s, [c, v]) => {
+        const cashTendersLak = isCredit ? 0 : Object.entries(amountByCode).reduce((s, [c, v]) => {
           const r = (currencies.find(x => x.code === c) || { rate: 1 }).rate
           return s + (Number(v) || 0) * (Number(r) || 1)
         }, 0)
+        const paidNow = cashTendersLak + laybyTender
         const remaining = Math.max(0, targetTotal - paidNow)
         const change = Math.max(0, paidNow - targetTotal)
         const fullyPaid = isCredit ? (creditCustomer.name.trim().length > 0 || !!selectedMember) && !!creditCustomer.dueDate : paidNow >= targetTotal && targetTotal > 0
@@ -2620,17 +2743,46 @@ export default function POS({ user, onLogout }) {
           <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-3">
             {/* LEFT: info + tenders + method */}
             <div className="space-y-2">
+              {/* Use Layby deposit at pay time */}
+              {!isCredit && (
+                <div className="flex items-center gap-2">
+                  {loadedLayby ? (
+                    <div className="flex-1 flex items-center justify-between gap-2 rounded-lg border border-emerald-300 bg-emerald-50/50 px-2.5 py-1.5">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-extrabold text-emerald-700 uppercase tracking-wider">
+                          {loadedLayby.depositOnly ? '💰 ໃຊ້ມັດຈຳ' : '📦 Layby (ມີສິນຄ້າຜູກໄວ້)'}
+                        </div>
+                        <div className="text-[11px] font-mono text-emerald-800 truncate">
+                          {loadedLayby.layby_number} · ມັດຈຳ {formatPrice(loadedLayby.paid)}
+                          {loadedLayby.depositOnly && <span className="ml-1 px-1 bg-emerald-200 text-emerald-800 rounded text-[9px] font-bold">ມັດຈຳເທົ່ານັ້ນ</span>}
+                        </div>
+                      </div>
+                      {loadedLayby.depositOnly && (
+                        <button type="button" onClick={() => { setLoadedLayby(null); setPayments([]); setAmountPaid(String(finalTotal)) }}
+                          className="text-[10px] font-bold px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded">✕</button>
+                      )}
+                    </div>
+                  ) : (
+                    <button type="button" onClick={openLaybyPickerForPay}
+                      className="flex-1 rounded-lg border-2 border-dashed border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50/50 px-2.5 py-1.5 text-emerald-700 text-[11px] font-extrabold transition">
+                      💰 ໃຊ້ມັດຈຳ (Layby)
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* HERO */}
               <div className={`rounded-lg border p-2 ${
                 fullyPaid ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200 bg-slate-50'
               }`}>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider">{loadedLayby ? 'ຮັບເພີ່ມ (ຫຼັງຫັກມັດຈຳ)' : 'ຕ້ອງຊຳລະ'}</span>
+                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider">ຕ້ອງຊຳລະ</span>
                   <span className="text-2xl font-extrabold font-mono-t text-slate-900 tracking-tight">{formatPrice(targetTotal)}</span>
                 </div>
-                {loadedLayby && (
-                  <div className="text-[9px] text-slate-500 text-right">
-                    ລວມ {formatPrice(finalTotal)} · <span className="text-emerald-600 font-bold">ມັດຈຳແລ້ວ −{formatPrice(laybyDeposit)}</span>
+                {loadedLayby && laybyTender > 0 && (
+                  <div className="mt-1 flex items-center justify-between text-[10px] font-bold bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
+                    <span className="text-emerald-700">💰 ມັດຈຳ Layby ({loadedLayby.layby_number})</span>
+                    <span className="font-mono text-emerald-800">{formatPrice(laybyTender)}</span>
                   </div>
                 )}
                 {discount > 0 && (

@@ -141,10 +141,18 @@ export default function LaybyDetailPage({ params }) {
             <div className="text-[10px] font-bold uppercase text-emerald-600">ຊຳລະແລ້ວ</div>
             <div className="text-lg font-extrabold text-emerald-700">{fmtPrice(data.paid)}</div>
           </div>
-          <div className="rounded-lg border border-amber-200 p-3">
-            <div className="text-[10px] font-bold uppercase text-amber-600">ຄ້າງ</div>
-            <div className="text-lg font-extrabold text-amber-700">{fmtPrice(data.balance)}</div>
-          </div>
+          {(data.items?.length === 0) ? (
+            <div className="rounded-lg border border-emerald-200 p-3">
+              <div className="text-[10px] font-bold uppercase text-emerald-600">ມັດຈຳເຫຼືອ</div>
+              <div className="text-lg font-extrabold text-emerald-700">{fmtPrice(Math.max(0, Number(data.paid) - Number(data.credit_used || 0)))}</div>
+              <div className="text-[9px] text-slate-400 mt-0.5">ໃຊ້ໄປ {fmtPrice(data.credit_used || 0)}</div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-amber-200 p-3">
+              <div className="text-[10px] font-bold uppercase text-amber-600">ຄ້າງ</div>
+              <div className="text-lg font-extrabold text-amber-700">{fmtPrice(data.balance)}</div>
+            </div>
+          )}
           <div className="rounded-lg border border-slate-200 p-3">
             <div className="text-[10px] font-bold uppercase text-slate-500">ສ່ວນຫຼຸດ</div>
             <div className="text-lg font-extrabold">{fmtPrice(data.discount)}</div>

@@ -38,13 +38,15 @@ export const POST = handle(async (request) => {
   const customerName = String(body.customer_name || '').trim();
   if (!customerName) return fail(400, 'customer_name is required');
   const items = normalizeItems(body.items);
-  if (items.length === 0) return fail(400, 'items is required');
+  const deposit = Math.max(0, Number(body.deposit) || 0);
+  if (items.length === 0 && deposit <= 0) return fail(400, 'ຕ້ອງມີສິນຄ້າ ຫຼື ມັດຈຳຢ່າງໜຶ່ງ');
 
   const subtotal = items.reduce((s, it) => s + it.quantity * it.price, 0);
   const discount = Math.max(0, Number(body.discount) || 0);
-  const total = Math.max(0, subtotal - discount);
-  const deposit = Math.max(0, Number(body.deposit) || 0);
-  if (deposit > total) return fail(400, 'deposit ເກີນຍອດລວມ');
+  // Deposit-only layby (no items): total = deposit so balance = 0 and the
+  // deposit acts as available credit for a future POS transaction.
+  const total = items.length === 0 ? deposit : Math.max(0, subtotal - discount);
+  if (items.length > 0 && deposit > total) return fail(400, 'deposit ເກີນຍອດລວມ');
 
   const actor = extractActor(request);
   const client = await pool.connect();

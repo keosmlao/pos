@@ -13,8 +13,12 @@ export default function NewLaybyPage() {
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [items, setItems] = useState([]);
+  const [memberId, setMemberId] = useState(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [memberSearch, setMemberSearch] = useState('');
+  const [members, setMembers] = useState([]);
+  const [showMemberPicker, setShowMemberPicker] = useState(false);
   const [discount, setDiscount] = useState(0);
   const [deposit, setDeposit] = useState(0);
   const [dueDate, setDueDate] = useState('');
@@ -28,6 +32,43 @@ export default function NewLaybyPage() {
     fetch(`${API}/admin/products`).then(r => r.json()).then(d => setProducts(Array.isArray(d) ? d : []));
   }, []);
 
+  const loadMembers = async (q = '') => {
+    const params = new URLSearchParams();
+    if (q.trim()) params.set('search', q.trim());
+    try {
+      const res = await fetch(`${API}/members?${params}`);
+      const d = await res.json();
+      setMembers(Array.isArray(d) ? d : []);
+    } catch {
+      setMembers([]);
+    }
+  };
+
+  useEffect(() => {
+    if (!showMemberPicker) return;
+    const tmr = setTimeout(() => loadMembers(memberSearch), 200);
+    return () => clearTimeout(tmr);
+  }, [memberSearch, showMemberPicker]);
+
+  const openMemberPicker = () => {
+    setMemberSearch('');
+    setShowMemberPicker(true);
+    loadMembers('');
+  };
+
+  const pickMember = (m) => {
+    setMemberId(m.id);
+    setCustomerName(m.name || '');
+    setCustomerPhone(m.phone || '');
+    setShowMemberPicker(false);
+  };
+
+  const clearMember = () => {
+    setMemberId(null);
+    setCustomerName('');
+    setCustomerPhone('');
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
@@ -39,7 +80,8 @@ export default function NewLaybyPage() {
   }, [search, products]);
 
   const subtotal = items.reduce((s, it) => s + it.quantity * it.price, 0);
-  const total = Math.max(0, subtotal - Number(discount));
+  const isDepositOnly = items.length === 0;
+  const total = isDepositOnly ? Number(deposit) || 0 : Math.max(0, subtotal - Number(discount));
   const balance = Math.max(0, total - Number(deposit));
 
   const addItem = (p) => {
@@ -60,8 +102,7 @@ export default function NewLaybyPage() {
   };
 
   const submit = async () => {
-    if (!customerName.trim()) { showToast('ກະຣຸນາໃສ່ຊື່ລູກຄ້າ', 'error'); return; }
-    if (items.length === 0) { showToast('ກະຣຸນາເພີ່ມສິນຄ້າ', 'error'); return; }
+    if (!memberId) { showToast('ກະຣຸນາເລືອກສະມາຊິກ', 'error'); return; }
     if (Number(deposit) <= 0) { showToast('ມັດຈຳຕ້ອງ > 0', 'error'); return; }
     setSaving(true);
     try {
@@ -69,6 +110,7 @@ export default function NewLaybyPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          member_id: memberId,
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim() || null,
           items: items.map(it => ({ product_id: it.product_id, quantity: it.quantity, price: it.price })),
@@ -100,18 +142,41 @@ export default function NewLaybyPage() {
         <div className="space-y-4">
           {/* Customer */}
           <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 space-y-3">
-            <h2 className="font-bold text-slate-900">ລູກຄ້າ</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="ຊື່ລູກຄ້າ *"
-                className="px-3 py-2 border border-slate-200 rounded-lg text-sm" />
-              <input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="ເບີໂທ"
-                className="px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-slate-900">ລູກຄ້າ (ສະມາຊິກ)</h2>
+              {memberId && (
+                <button type="button" onClick={clearMember}
+                  className="text-[11px] font-bold text-rose-600 hover:text-rose-700">✕ ລ້າງ</button>
+              )}
             </div>
+            {memberId ? (
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50/40 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-extrabold text-emerald-800">{customerName}</div>
+                    <div className="text-[11px] text-emerald-700 font-mono">{customerPhone || '—'}</div>
+                  </div>
+                  <button type="button" onClick={openMemberPicker}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">
+                    ປ່ຽນ
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={openMemberPicker}
+                className="w-full rounded-lg border-2 border-dashed border-slate-300 hover:border-red-400 hover:bg-red-50/30 p-4 text-center transition">
+                <div className="text-sm font-bold text-slate-700">👤 ເລືອກສະມາຊິກ *</div>
+                <div className="text-[11px] text-slate-500 mt-1">ຄົ້ນຫາດ້ວຍຊື່ / ເບີໂທ / ລະຫັດ</div>
+              </button>
+            )}
           </div>
 
           {/* Products */}
           <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 space-y-3">
-            <h2 className="font-bold text-slate-900">ສິນຄ້າ</h2>
+            <div className="flex items-baseline justify-between">
+              <h2 className="font-bold text-slate-900">ສິນຄ້າ</h2>
+              <span className="text-[11px] text-slate-500">ບໍ່ບັງຄັບ — ມັດຈຳເທົ່ານັ້ນກໍໄດ້</span>
+            </div>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ຄົ້ນຫາ barcode / ຊື່ / ລະຫັດ..."
               className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
             {filtered.length > 0 && (
@@ -176,14 +241,56 @@ export default function NewLaybyPage() {
               <input value={note} onChange={e => setNote(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
             </div>
-            <button onClick={submit} disabled={saving || items.length === 0 || !customerName.trim()}
+            <button onClick={submit} disabled={saving || !memberId || Number(deposit) <= 0}
               className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg font-extrabold">
               {saving ? 'ກຳລັງສ້າງ...' : '✓ ສ້າງ Layby'}
             </button>
-            <div className="text-[10px] text-slate-500 text-center">ສິນຄ້າຈະຖືກສະຫງວນອອກຈາກສະຕັອກທັນທີ</div>
+            <div className="text-[10px] text-slate-500 text-center">
+              {isDepositOnly
+                ? 'ບໍ່ມີສິນຄ້າ — ມັດຈຳຈະຖືກໃຊ້ເປັນເຄຣດິດໃນບີນຕໍ່ໄປຂອງລູກຄ້າ'
+                : 'ສິນຄ້າຈະຖືກສະຫງວນອອກຈາກສະຕັອກທັນທີ'}
+            </div>
           </div>
         </div>
       </div>
+
+      {showMemberPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowMemberPicker(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-base font-extrabold text-slate-900">ເລືອກສະມາຊິກ</h3>
+              <button type="button" onClick={() => setShowMemberPicker(false)}
+                className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500">✕</button>
+            </div>
+            <div className="p-4 border-b border-slate-100">
+              <input autoFocus value={memberSearch} onChange={e => setMemberSearch(e.target.value)}
+                placeholder="ຄົ້ນຫາດ້ວຍ ຊື່ / ເບີໂທ / ລະຫັດ..."
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:border-red-500" />
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {members.length === 0 && (
+                <div className="text-center py-12 text-slate-400 text-sm">ບໍ່ພົບສະມາຊິກ</div>
+              )}
+              {members.map(m => (
+                <button key={m.id} type="button" onClick={() => pickMember(m)}
+                  className="w-full text-left rounded-lg border border-slate-200 bg-white hover:border-emerald-400 hover:bg-emerald-50/30 p-3 transition">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-extrabold text-slate-900 truncate">{m.name}</div>
+                      <div className="text-[11px] text-slate-500 font-mono">{m.member_code}{m.phone ? ` · ${m.phone}` : ''}</div>
+                      <div className="text-[10px] text-slate-400 truncate">{[m.village, m.district, m.province].filter(Boolean).join(', ')}</div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-[10px] text-emerald-600 font-bold">Points</div>
+                      <div className="font-mono text-sm font-extrabold text-emerald-700">{fmtNum(m.points || 0)}</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 ${toast.type === 'error' ? 'bg-rose-600' : 'bg-emerald-600'} text-white px-5 py-2.5 rounded-full shadow-2xl z-50 text-sm font-semibold`}>
