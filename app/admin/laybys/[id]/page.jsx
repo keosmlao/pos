@@ -87,6 +87,28 @@ export default function LaybyDetailPage({ params }) {
     setBusy(false);
   };
 
+  const remove = async () => {
+    const msg = data?.status === 'open'
+      ? 'ລົບ Layby ນີ້ທັງໝົດ?\nສິນຄ້າຈະຄືນເຂົ້າສະຕັອກ. ປະຫວັດການຊຳລະ ແລະ ມັດຈຳຈະຫາຍຖາວອນ.'
+      : 'ລົບ Layby ນີ້ທັງໝົດ? ປະຫວັດການຊຳລະ ແລະ ມັດຈຳຈະຫາຍຖາວອນ.';
+    if (!window.confirm(msg)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`${API}/admin/laybys/${id}`, { method: 'DELETE' });
+      const j = await res.json();
+      if (res.ok) {
+        showToast('ລົບ Layby ສຳເລັດ');
+        router.push('/admin/laybys');
+      } else {
+        showToast(j.error || 'ບໍ່ສຳເລັດ', 'error');
+        setBusy(false);
+      }
+    } catch {
+      showToast('ບໍ່ສຳເລັດ', 'error');
+      setBusy(false);
+    }
+  };
+
   if (loading) return <div className="text-slate-400 text-center py-12">ກຳລັງໂຫຼດ...</div>;
   if (!data) return <div className="text-rose-600 text-center py-12">ບໍ່ພົບ Layby</div>;
 
@@ -128,17 +150,25 @@ export default function LaybyDetailPage({ params }) {
             <div className="text-lg font-extrabold">{fmtPrice(data.discount)}</div>
           </div>
         </div>
-        {isOpen && (
+        {(isOpen || data.status === 'cancelled') && (
           <div className="mt-4 flex flex-wrap gap-2 border-t pt-4">
-            <button disabled={busy || !isPaid} onClick={complete}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg text-sm font-bold">
-              ✓ ປິດ + ສ້າງບີນຂາຍ
+            {isOpen && (
+              <>
+                <button disabled={busy || !isPaid} onClick={complete}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg text-sm font-bold">
+                  ✓ ປິດ + ສ້າງບີນຂາຍ
+                </button>
+                <button disabled={busy} onClick={cancel}
+                  className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-sm font-bold">
+                  ✕ ຍົກເລີກ
+                </button>
+              </>
+            )}
+            <button disabled={busy} onClick={remove}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white rounded-lg text-sm font-bold ml-auto">
+              🗑 ລົບ Layby
             </button>
-            <button disabled={busy} onClick={cancel}
-              className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-sm font-bold">
-              ✕ ຍົກເລີກ
-            </button>
-            {!isPaid && <div className="text-xs text-amber-700 self-center">⚠ ຍັງຄ້າງ {fmtPrice(data.balance)} — ກະຣຸນາຮັບຊຳລະໃຫ້ຄົບກ່ອນປິດ</div>}
+            {isOpen && !isPaid && <div className="text-xs text-amber-700 self-center">⚠ ຍັງຄ້າງ {fmtPrice(data.balance)} — ກະຣຸນາຮັບຊຳລະໃຫ້ຄົບກ່ອນປິດ</div>}
           </div>
         )}
         {data.completed_order_id && (

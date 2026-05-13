@@ -30,9 +30,12 @@ export const GET = handle(async (request) => {
 
   const transactions = [];
 
-  // 1. Sales (orders) — non-credit; explode multi-currency payments
+  // 1. Sales (orders) — non-credit; explode multi-currency payments.
+  // Inflow is the bill total (= net cash kept). Change given back to the
+  // customer (change_amount, always in LAK) is deducted from LAK payment lines
+  // so the cash flow reflects only what stayed in the drawer.
   const ordersRes = await pool.query(
-    `SELECT id, bill_number, created_at, payment_method, amount_paid, total, payments, customer_name
+    `SELECT id, bill_number, created_at, payment_method, amount_paid, change_amount, total, payments, customer_name
      FROM orders
      WHERE payment_method <> 'credit'
        AND DATE(created_at) BETWEEN $1 AND $2
@@ -42,13 +45,26 @@ export const GET = handle(async (request) => {
   for (const o of ordersRes.rows) {
     const payments = Array.isArray(o.payments) ? o.payments
       : (typeof o.payments === 'string' ? (() => { try { return JSON.parse(o.payments); } catch { return []; } })() : []);
+    const change = Math.max(0, Number(o.change_amount) || 0);
     if (payments && payments.length > 0) {
-      for (const p of payments) {
+      // Subtract change from LAK lines (change is always returned in LAK)
+      let remainingChange = change;
+      const adjusted = payments.map(p => {
         const cur = String(p.currency || 'LAK').toUpperCase();
-        const amount = Number(p.amount) || 0;
-        if (amount <= 0) continue;
         const rate = Number(p.rate) || 1;
+        const amount = Number(p.amount) || 0;
         const amountLak = Number(p.amount_lak) || amount * rate;
+        return { ...p, currency: cur, rate, amount, amount_lak: amountLak };
+      });
+      for (let i = adjusted.length - 1; i >= 0 && remainingChange > 0; i--) {
+        if (adjusted[i].currency !== 'LAK') continue;
+        const take = Math.min(remainingChange, adjusted[i].amount_lak);
+        adjusted[i].amount -= take; // rate = 1 for LAK
+        adjusted[i].amount_lak -= take;
+        remainingChange -= take;
+      }
+      for (const p of adjusted) {
+        if ((Number(p.amount) || 0) <= 0) continue;
         transactions.push({
           source: 'sale',
           source_id: o.id,
@@ -56,13 +72,16 @@ export const GET = handle(async (request) => {
           date: o.created_at,
           txn_type: 'income',
           description: `ຂາຍ${o.customer_name ? ` · ${o.customer_name}` : ''}`,
-          amount, currency: cur, exchange_rate: rate, amount_lak: amountLak,
+          amount: p.amount,
+          currency: p.currency,
+          exchange_rate: p.rate,
+          amount_lak: p.amount_lak,
           payment_method: o.payment_method,
           account: accountFromMethod(o.payment_method),
         });
       }
     } else {
-      const amount = Number(o.amount_paid) || Number(o.total) || 0;
+      const amount = Math.max(0, (Number(o.amount_paid) || Number(o.total) || 0) - change);
       if (amount > 0) {
         transactions.push({
           source: 'sale',

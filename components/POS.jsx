@@ -418,7 +418,7 @@ export default function POS({ user, onLogout }) {
   }, [loadDebtAlerts])
 
   // Refocus scan input ONLY when all modals just closed (no polling to avoid stealing focus from other inputs)
-  const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary || showMemberModal || showDebtAlerts || showReturn || showPromoList
+  const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary || showMemberModal || showDebtAlerts || showReturn || showPromoList || showLaybyPicker
   useEffect(() => {
     if (anyModalOpen) return
     const tmr = setTimeout(() => {
@@ -634,6 +634,89 @@ export default function POS({ user, onLogout }) {
     loadParkedCarts()
   }, [loadParkedCarts])
 
+  // Layby (ມັດຈຳ) -----------------------------------------------------------
+  const [showLaybyPicker, setShowLaybyPicker] = useState(false)
+  const [openLaybys, setOpenLaybys] = useState([])
+  const [laybySearch, setLaybySearch] = useState('')
+  const [loadedLayby, setLoadedLayby] = useState(null) // { id, layby_number, total, paid, balance, customer_name, customer_phone, member_id, discount, note }
+  const [laybyBusy, setLaybyBusy] = useState(false)
+
+  const loadOpenLaybys = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/admin/laybys?status=open`)
+      const data = await res.json()
+      setOpenLaybys(Array.isArray(data) ? data : [])
+    } catch {
+      setOpenLaybys([])
+    }
+  }, [])
+
+  const openLaybyPicker = useCallback(() => {
+    if (cart.length > 0 && !loadedLayby) {
+      if (!window.confirm('ບີນປະຈຸບັນຍັງມີສິນຄ້າ — ໂຫຼດ Layby ຈະທົດແທນ. ດຳເນີນຕໍ່?')) return
+    }
+    loadOpenLaybys()
+    setLaybySearch('')
+    setShowLaybyPicker(true)
+  }, [cart.length, loadedLayby, loadOpenLaybys])
+
+  const loadLaybyToCart = useCallback(async (lid) => {
+    setLaybyBusy(true)
+    try {
+      const res = await fetch(`${API}/admin/laybys/${lid}`)
+      const data = await res.json()
+      if (!res.ok || !data?.id) { showToast(data?.error || 'ໂຫຼດ Layby ບໍ່ສຳເລັດ', 'error'); setLaybyBusy(false); return }
+      const items = Array.isArray(data.items) ? data.items : []
+      const newCart = items.map(it => ({
+        product_id: it.product_id,
+        variant_id: it.variant_id || null,
+        name: it.variant_name ? `${it.product_name} · ${it.variant_name}` : (it.product_name || `#${it.product_id}`),
+        code: it.product_code || '',
+        price: Number(it.price) || 0,
+        unit: it.unit || '',
+        quantity: Number(it.quantity) || 0,
+        stock: 9999999, // already reserved at layby creation
+        variant_name: it.variant_name || null,
+        _laybyItemId: it.id,
+        _layby: true,
+      }))
+      setCart(newCart)
+      setLoadedLayby({
+        id: data.id,
+        layby_number: data.layby_number,
+        total: Number(data.total) || 0,
+        paid: Number(data.paid) || 0,
+        balance: Number(data.balance) || 0,
+        customer_name: data.customer_name || '',
+        customer_phone: data.customer_phone || '',
+        member_id: data.member_id || null,
+        discount: Number(data.discount) || 0,
+        note: data.note || '',
+      })
+      // Reset modifiers that don't apply to a layby (prices already negotiated)
+      setDiscount(Number(data.discount) || 0); setDiscountMode('amount')
+      setActiveCoupons([]); setCouponInput('')
+      setPointsToRedeem(0)
+      setPayments([])
+      setPaymentMethod('cash')
+      setAmountPaid('')
+      setCustomerNote(data.note || '')
+      setShowLaybyPicker(false)
+      showToast(`ໂຫຼດ ${data.layby_number} ສຳເລັດ · ຄ້າງ ${formatPrice(Number(data.balance) || 0)}`, 'success')
+    } catch {
+      showToast('ໂຫຼດ Layby ບໍ່ສຳເລັດ', 'error')
+    }
+    setLaybyBusy(false)
+  }, [])
+
+  const clearLoadedLayby = useCallback(() => {
+    setLoadedLayby(null)
+    setCart([])
+    setAmountPaid('')
+    setPayments([])
+    setCustomerNote('')
+  }, [])
+
   const promoResult = useMemo(() => calculatePromotions(cart, promotions, products, activeCouponCodes), [cart, promotions, products, activeCouponCodes])
   const promoLineDiscTotal = useMemo(() => Object.values(promoResult.lineDiscounts || {}).reduce((a, b) => a + b, 0), [promoResult])
   const promoCartDisc = promoResult.cartDiscount || 0
@@ -659,6 +742,8 @@ export default function POS({ user, onLogout }) {
   const rounding = useMemo(() => applyRounding(vatBreakdown.total, company), [vatBreakdown.total, company])
   const roundingAdjustment = rounding.adjustment
   const finalTotal = rounding.rounded
+  const laybyDeposit = loadedLayby ? Math.min(Number(loadedLayby.paid) || 0, finalTotal) : 0
+  const amountDue = Math.max(0, finalTotal - laybyDeposit)
   const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantity, 0), [cart])
 
   // Global keyboard shortcuts: F2 = Catalog, F12 = Pay
@@ -672,13 +757,13 @@ export default function POS({ user, onLogout }) {
       if (e.key === 'F12') {
         e.preventDefault()
         if (anyModalOpen || cart.length === 0) return
-        setAmountPaid(String(finalTotal))
+        setAmountPaid(String(amountDue))
         setShowCheckout(true)
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [anyModalOpen, cart.length, finalTotal])
+  }, [anyModalOpen, cart.length, amountDue])
   const selectedReturnItems = useMemo(() => {
     return (returnLookup?.items || []).map(item => {
       const qty = Math.max(0, Math.min(Number(returnQty[item.order_item_id]) || 0, Number(item.returnable_qty) || 0))
@@ -888,6 +973,51 @@ export default function POS({ user, onLogout }) {
   }
 
   const handleCheckout = async () => {
+    // Layby completion path: bypass /api/orders and call /api/admin/laybys/[id]/complete
+    if (loadedLayby) {
+      if (paymentMethod === 'credit') { showToast('Layby ບໍ່ຮອງຮັບການຕິດໜີ້', 'error'); return }
+      const useMultiL = payments.length > 0
+      let paidL, paymentsPayloadL = null
+      if (useMultiL) {
+        paymentsPayloadL = payments.map(p => {
+          const cur = currencies.find(c => c.code === p.currency) || { rate: 1 }
+          const amount = Number(p.amount) || 0
+          const rate = Number(cur.rate) || 1
+          return { currency: p.currency, amount, rate, amount_lak: amount * rate }
+        }).filter(p => p.amount > 0)
+        paidL = paymentsPayloadL.reduce((s, p) => s + p.amount_lak, 0)
+      } else {
+        paidL = Number(amountPaid) || amountDue
+      }
+      if (paidL + 0.5 < amountDue) { showToast('ຈຳນວນເງິນບໍ່ພຽງພໍ', 'error'); return }
+      const res = await fetch(`${API}/admin/laybys/${loadedLayby.id}/complete`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          payment_method: paymentsPayloadL && paymentsPayloadL.length > 1 ? 'mixed' : paymentMethod,
+          amount_paid: paidL,
+          change_amount: Math.max(0, paidL - amountDue),
+          payments: paymentsPayloadL,
+          note: customerNote || null,
+        })
+      })
+      if (res.ok) {
+        const { order } = await res.json()
+        showToast(`ປິດ Layby ສຳເລັດ · ${order?.bill_number || ''}`, 'success')
+        if (paymentMethod === 'cash' || (paymentsPayloadL && paymentsPayloadL.length > 0)) kickCashDrawer()
+        try { bcRef.current?.postMessage({ type: 'complete', order }) } catch {}
+        clearPosDraft()
+        setShowReceipt(order); setCart([]); setAmountPaid(''); setShowCheckout(false)
+        setDiscount(0); setDiscountMode('percent'); setCustomerNote('')
+        setLastScan(null); setPayments([])
+        setLoadedLayby(null)
+        fetchProducts()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        showToast(err.error || 'ປິດ Layby ບໍ່ສຳເລັດ', 'error')
+      }
+      return
+    }
+
     if (!selectedMember) { showToast('ກະລຸນາເລືອກສະມາຊິກກ່ອນອອກບິນ', 'error'); return }
     const isCredit = paymentMethod === 'credit'
     if (isCredit && selectedMember?.isDefault) { showToast('ກະລຸນາເລືອກສະມາຊິກກ່ອນຂາຍຕິດໜີ້', 'error'); return }
@@ -1827,13 +1957,40 @@ export default function POS({ user, onLogout }) {
         {/* Right: summary + actions */}
         <aside className="pos-summary w-full md:w-[300px] lg:w-[360px] max-h-[43vh] md:max-h-none shrink-0 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950 shadow-lg shadow-slate-950/30 flex flex-col">
           <section className="pos-summary-card m-2 mb-0 rounded-xl border-2 border-red-500/30 bg-gradient-to-br from-red-500/10 to-red-600/5 p-4">
-            <div className="text-[10px] text-red-300 uppercase tracking-widest font-extrabold mb-1">ມູນຄ່າລວມ</div>
-            <div className="text-5xl font-extrabold text-red-400 font-mono-t tracking-tight leading-none">{formatPrice(finalTotal)}</div>
+            <div className="text-[10px] text-red-300 uppercase tracking-widest font-extrabold mb-1">
+              {loadedLayby ? 'ຄ້າງຊຳລະ (Layby)' : 'ມູນຄ່າລວມ'}
+            </div>
+            <div className="text-5xl font-extrabold text-red-400 font-mono-t tracking-tight leading-none">{formatPrice(amountDue)}</div>
             <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 font-bold">
-              {/* <span>{cart.length} ລາຍການ · {cartCount} ຊິ້ນ</span> */}
               {discountAmount > 0 && <span className="text-rose-300">−{formatPrice(discountAmount)}</span>}
             </div>
+            {loadedLayby && (
+              <div className="mt-2 pt-2 border-t border-red-500/20 space-y-0.5">
+                <div className="flex items-center justify-between text-[10px] font-bold text-slate-300">
+                  <span>ມູນຄ່າລວມ</span>
+                  <span className="font-mono">{formatPrice(finalTotal)}</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] font-bold text-emerald-300">
+                  <span>ມັດຈຳແລ້ວ</span>
+                  <span className="font-mono">−{formatPrice(laybyDeposit)}</span>
+                </div>
+              </div>
+            )}
           </section>
+
+          {loadedLayby && (
+            <section className="pos-summary-card m-2 mb-0 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] font-extrabold text-amber-300 uppercase tracking-wider">📦 Layby</div>
+                <button type="button" onClick={clearLoadedLayby}
+                  className="text-[10px] font-extrabold px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded hover:bg-rose-500/30">
+                  ✕ ຍົກເລີກໂຫຼດ
+                </button>
+              </div>
+              <div className="text-xs font-extrabold text-amber-100 font-mono">{loadedLayby.layby_number}</div>
+              <div className="text-[11px] text-amber-200/80 truncate">{loadedLayby.customer_name}{loadedLayby.customer_phone ? ` · ${loadedLayby.customer_phone}` : ''}</div>
+            </section>
+          )}
 
           <section className="pos-summary-card m-2 mb-0 rounded-lg border border-slate-800 bg-slate-900/70 p-2.5">
             <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-2">ລູກຄ້າ / ສະມາຊິກ</div>
@@ -2076,7 +2233,7 @@ export default function POS({ user, onLogout }) {
               )}
             </div>
             <button onClick={() => {
-                setAmountPaid(String(finalTotal)); setShowCheckout(true)
+                setAmountPaid(String(amountDue)); setShowCheckout(true)
               }}
               disabled={cart.length === 0}
               title="ຮັບເງິນ (F12)"
@@ -2085,12 +2242,16 @@ export default function POS({ user, onLogout }) {
               PAY
               <kbd className="ml-1 px-1.5 py-0.5 bg-black/25 border border-white/25 rounded text-[10px] font-mono">F12</kbd>
             </button>
-            <div className="mt-2 grid grid-cols-2 gap-1.5">
-              <button onClick={parkCurrentCart} disabled={cart.length === 0}
+            <div className="mt-2 grid grid-cols-3 gap-1.5">
+              <button onClick={openLaybyPicker} disabled={!!loadedLayby}
+                className="py-2 bg-emerald-500/15 hover:bg-emerald-500/25 disabled:bg-slate-800/50 disabled:text-slate-600 text-emerald-200 border border-emerald-500/30 rounded-md text-[11px] font-extrabold transition">
+                📦 Layby
+              </button>
+              <button onClick={parkCurrentCart} disabled={cart.length === 0 || !!loadedLayby}
                 className="py-2 bg-amber-500/15 hover:bg-amber-500/25 disabled:bg-slate-800/50 disabled:text-slate-600 text-amber-200 border border-amber-500/30 rounded-md text-[11px] font-extrabold transition">
                 🅿️ ພັກບີນ
               </button>
-              <button onClick={() => setCart([])} disabled={cart.length === 0}
+              <button onClick={() => { if (loadedLayby) clearLoadedLayby(); else setCart([]) }} disabled={cart.length === 0}
                 className="py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/50 disabled:text-slate-600 text-slate-300 rounded-md text-[11px] font-bold transition">
                 ✕ ລ້າງ
               </button>
@@ -2242,6 +2403,55 @@ export default function POS({ user, onLogout }) {
         </Modal>
       )}
 
+      {/* Layby picker */}
+      {showLaybyPicker && (
+        <Modal onClose={() => setShowLaybyPicker(false)} title="📦 ໂຫຼດ Layby (ມັດຈຳ)" size="xl">
+          <div className="space-y-3">
+            <input
+              type="text"
+              value={laybySearch}
+              onChange={e => setLaybySearch(e.target.value)}
+              placeholder="ຄົ້ນຫາ Layby #, ຊື່ລູກຄ້າ, ເບີໂທ..."
+              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:border-emerald-500" />
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+              {(() => {
+                const term = laybySearch.trim().toLowerCase()
+                const list = !term ? openLaybys : openLaybys.filter(l =>
+                  String(l.layby_number || '').toLowerCase().includes(term) ||
+                  String(l.customer_name || '').toLowerCase().includes(term) ||
+                  String(l.customer_phone || '').toLowerCase().includes(term)
+                )
+                if (list.length === 0) {
+                  return <div className="text-center py-12 text-slate-400 text-sm">ບໍ່ມີ Layby ເປີດຢູ່</div>
+                }
+                return list.map(l => (
+                  <button key={l.id} type="button" onClick={() => loadLaybyToCart(l.id)} disabled={laybyBusy}
+                    className="w-full text-left border border-slate-200 rounded-lg p-3 hover:border-emerald-400 hover:bg-emerald-50/30 transition disabled:opacity-50">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-extrabold text-slate-900 font-mono">{l.layby_number}</div>
+                        <div className="text-sm font-bold text-slate-700 truncate">{l.customer_name}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {l.customer_phone && <span className="mr-2">📞 {l.customer_phone}</span>}
+                          <span className="mr-2">📦 {l.item_count || 0} ລາຍການ</span>
+                          {l.due_date && <span>📅 {new Date(l.due_date).toLocaleDateString('lo-LA')}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-[10px] text-slate-500 font-bold">ລວມ</div>
+                        <div className="text-sm font-mono font-extrabold text-slate-900">{formatPrice(l.total)}</div>
+                        <div className="text-[10px] text-emerald-600 font-bold mt-1">ມັດຈຳ {formatPrice(l.paid)}</div>
+                        <div className="text-[11px] font-mono font-extrabold text-amber-700">ຄ້າງ {formatPrice(l.balance)}</div>
+                      </div>
+                    </div>
+                  </button>
+                ))
+              })()}
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Catalog overlay */}
       {showCatalog && (
         <div className="fixed inset-0 z-40 flex" onClick={() => setShowCatalog(false)}>
@@ -2327,6 +2537,7 @@ export default function POS({ user, onLogout }) {
       {/* Checkout Modal — redesigned */}
       {showCheckout && (() => {
         const isCredit = paymentMethod === 'credit'
+        const targetTotal = loadedLayby ? amountDue : finalTotal
         const amountByCode = {}
         if (!isCredit && payments.length > 0) {
           for (const p of payments) amountByCode[p.currency] = p.amount
@@ -2361,7 +2572,7 @@ export default function POS({ user, onLogout }) {
             const r = (currencies.find(x => x.code === c) || { rate: 1 }).rate
             return s + (Number(v) || 0) * (Number(r) || 1)
           }, 0)
-          const remLak = Math.max(0, finalTotal - otherLak)
+          const remLak = Math.max(0, targetTotal - otherLak)
           const amt = code === 'LAK' ? remLak : Math.ceil(remLak / (Number(cur.rate) || 1))
           setAmountFor(code, String(amt))
         }
@@ -2378,12 +2589,12 @@ export default function POS({ user, onLogout }) {
           const r = (currencies.find(x => x.code === c) || { rate: 1 }).rate
           return s + (Number(v) || 0) * (Number(r) || 1)
         }, 0)
-        const remaining = Math.max(0, finalTotal - paidNow)
-        const change = Math.max(0, paidNow - finalTotal)
-        const fullyPaid = isCredit ? (creditCustomer.name.trim().length > 0 || !!selectedMember) && !!creditCustomer.dueDate : paidNow >= finalTotal && finalTotal > 0
+        const remaining = Math.max(0, targetTotal - paidNow)
+        const change = Math.max(0, paidNow - targetTotal)
+        const fullyPaid = isCredit ? (creditCustomer.name.trim().length > 0 || !!selectedMember) && !!creditCustomer.dueDate : paidNow >= targetTotal && targetTotal > 0
         const creditDueDays = daysUntilDate(creditCustomer.dueDate)
 
-        const progress = isCredit ? 100 : Math.min(100, finalTotal > 0 ? (paidNow / finalTotal) * 100 : 0)
+        const progress = isCredit ? 100 : Math.min(100, targetTotal > 0 ? (paidNow / targetTotal) * 100 : 0)
         const activeCur = currencies.find(c => c.code === activeCurrencyCode) || currencies[0] || { code: 'LAK', symbol: '₭', rate: 1 }
         const activeVal = amountByCode[activeCur.code] || ''
         const activeLak = (Number(activeVal) || 0) * (Number(activeCur.rate) || 1)
@@ -2411,9 +2622,14 @@ export default function POS({ user, onLogout }) {
                 fullyPaid ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200 bg-slate-50'
               }`}>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider">ຕ້ອງຊຳລະ</span>
-                  <span className="text-2xl font-extrabold font-mono-t text-slate-900 tracking-tight">{formatPrice(finalTotal)}</span>
+                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider">{loadedLayby ? 'ຮັບເພີ່ມ (ຫຼັງຫັກມັດຈຳ)' : 'ຕ້ອງຊຳລະ'}</span>
+                  <span className="text-2xl font-extrabold font-mono-t text-slate-900 tracking-tight">{formatPrice(targetTotal)}</span>
                 </div>
+                {loadedLayby && (
+                  <div className="text-[9px] text-slate-500 text-right">
+                    ລວມ {formatPrice(finalTotal)} · <span className="text-emerald-600 font-bold">ມັດຈຳແລ້ວ −{formatPrice(laybyDeposit)}</span>
+                  </div>
+                )}
                 {discount > 0 && (
                   <div className="text-[9px] font-bold text-rose-600 text-right">✂️ ຫຼຸດ −{formatPrice(discountAmount)}</div>
                 )}
@@ -2428,7 +2644,7 @@ export default function POS({ user, onLogout }) {
                   </div>
                   <div>
                     <div className="text-[8px] text-slate-400 font-extrabold uppercase leading-none">{isCredit ? 'ຄ້າງຮັບ' : 'ຍັງຂາດ'}</div>
-                    <div className={`text-[11px] font-extrabold font-mono-t mt-0.5 ${!fullyPaid ? 'text-amber-600' : 'text-slate-400'}`}>{formatPrice(!fullyPaid || isCredit ? remaining || finalTotal : 0)}</div>
+                    <div className={`text-[11px] font-extrabold font-mono-t mt-0.5 ${!fullyPaid ? 'text-amber-600' : 'text-slate-400'}`}>{formatPrice(!fullyPaid || isCredit ? remaining || targetTotal : 0)}</div>
                   </div>
                   <div>
                     <div className={`text-[8px] font-extrabold uppercase leading-none ${change > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{change > 0 ? '💰 ທອນ' : 'ເງິນທອນ'}</div>
@@ -2670,7 +2886,7 @@ export default function POS({ user, onLogout }) {
               ) : fullyPaid ? (
                 <>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                  ຊຳລະ {formatPrice(finalTotal)}{change > 0 ? ` · ທອນ ${formatPrice(change)}` : ''}
+                  {loadedLayby ? 'ປິດ Layby' : 'ຊຳລະ'} {formatPrice(targetTotal)}{change > 0 ? ` · ທອນ ${formatPrice(change)}` : ''}
                 </>
               ) : (
                 <>ຍັງຂາດ {formatPrice(remaining)}</>

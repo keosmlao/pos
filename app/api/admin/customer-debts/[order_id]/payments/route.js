@@ -84,7 +84,7 @@ export const POST = handle(async (request, { params }) => {
     await client.query('COMMIT');
     const payment = payRes.rows[0];
     const billRes = await pool.query(
-      `SELECT o.bill_number, m.full_name AS member_name
+      `SELECT o.bill_number, m.name AS member_name
        FROM orders o LEFT JOIN members m ON m.id = o.member_id
        WHERE o.id = $1`,
       [orderId]

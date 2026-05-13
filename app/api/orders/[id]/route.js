@@ -56,6 +56,36 @@ export const DELETE = handle(async (request, { params }) => {
         [pointsRevert, Number(order.total) || 0, order.member_id]
       );
     }
+    // Revert any quotation that was converted into this order back to 'accepted'
+    // so the user can re-convert or edit it again.
+    await client.query(
+      `UPDATE quotations
+         SET status = 'accepted', converted_order_id = NULL, updated_at = NOW()
+       WHERE converted_order_id = $1`,
+      [numericId]
+    );
+
+    // Revert any layby that was completed into this order back to 'open'. The
+    // stock loop above already added the order items back; we need to re-deduct
+    // them because an open layby keeps its items reserved.
+    const laybyRevert = await client.query(
+      `UPDATE laybys
+         SET status = 'open', completed_at = NULL, completed_order_id = NULL, updated_at = NOW()
+       WHERE completed_order_id = $1
+       RETURNING id`,
+      [numericId]
+    );
+    for (const lay of laybyRevert.rows) {
+      const liRes = await client.query(`SELECT * FROM layby_items WHERE layby_id = $1`, [lay.id]);
+      for (const li of liRes.rows) {
+        if (li.variant_id) {
+          await client.query(`UPDATE product_variants SET qty_on_hand = qty_on_hand - $1 WHERE id = $2`, [li.quantity, li.variant_id]);
+        } else {
+          await client.query(`UPDATE products SET qty_on_hand = qty_on_hand - $1 WHERE id = $2`, [li.quantity, li.product_id]);
+        }
+      }
+    }
+
     await client.query('DELETE FROM order_items WHERE order_id = $1', [numericId]);
     await client.query('DELETE FROM orders WHERE id = $1', [numericId]);
     await client.query('COMMIT');
