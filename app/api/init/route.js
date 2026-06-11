@@ -278,12 +278,26 @@ export const GET = handle(async () => {
       active BOOLEAN DEFAULT true,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
-  `);
 
-  await pool.query(
-    "INSERT INTO settings (key, value) VALUES ('lao_locations', $1) ON CONFLICT DO NOTHING",
-    [JSON.stringify(defaultLocations)]
-  );
+    CREATE TABLE IF NOT EXISTS provinces (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE
+    );
+
+    CREATE TABLE IF NOT EXISTS districts (
+      id SERIAL PRIMARY KEY,
+      province_id INTEGER NOT NULL REFERENCES provinces(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      UNIQUE (province_id, name)
+    );
+
+    CREATE TABLE IF NOT EXISTS villages (
+      id SERIAL PRIMARY KEY,
+      district_id INTEGER NOT NULL REFERENCES districts(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      UNIQUE (district_id, name)
+    );
+  `);
 
   const products = [
     { code: 'PVC-001', name: 'ທໍ່ PVC 1/2"', cat: 'ທໍ່ນ້ຳ', brand: 'Thai Pipe', cost: 10000, sell: 15000, qty: 200, unit: 'ທ່ອນ', supplier: 'ບໍລິສັດ ທໍ່ໄທ' },

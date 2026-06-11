@@ -41,6 +41,7 @@ export const adminMenuSections = [
       { path: '/admin/sales', icon: '\u{1F4CB}', label: 'ປະຫວັດການຂາຍ' },
       { path: '/admin/returns', icon: '\u{21A9}', label: 'ຮັບຄືນ / ຄືນເງິນ' },
       { path: '/admin/cash-handovers', icon: '\u{1F4B0}', label: 'ລາຍການສົ່ງເງິນ' },
+      { path: '/admin/cashier-receipts', icon: '\u{1F9FE}', label: 'ສະຫຼຸບການຮັບເງິນ' },
     ],
   },
   {

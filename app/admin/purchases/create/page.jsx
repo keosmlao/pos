@@ -23,7 +23,8 @@ const paymentMethods = [
 
 function formatAmount(amount, currency = 'LAK') {
   const cur = defaultCurrencies.find(c => c.value === currency)
-  return new Intl.NumberFormat('lo-LA').format(amount) + ' ' + (cur?.symbol || currency)
+  const decimals = currency === 'LAK' ? 0 : 2
+  return new Intl.NumberFormat('lo-LA', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(Number(amount) || 0) + ' ' + (cur?.symbol || currency)
 }
 
 export default function PurchaseCreate() {
@@ -103,7 +104,18 @@ export default function PurchaseCreate() {
           return 0
         }
         const productByCode = new Map(productsData.map(p => [String(p.product_code || '').trim(), p]))
-        const mappedItems = (Array.isArray(pendingInvoice.items) ? pendingInvoice.items : [])
+        const getLineNo = (it) => {
+          for (const k of ['line_num', 'line_no', 'lineno', 'line_number', 'seq', 'seq_no', 'line', 'order_no', 'sort_order']) {
+            const v = Number(it?.[k])
+            if (!isNaN(v) && v > 0) return v
+          }
+          return Number.MAX_SAFE_INTEGER
+        }
+        const sortedRawItems = (Array.isArray(pendingInvoice.items) ? [...pendingInvoice.items] : [])
+          .map((it, idx) => ({ it, idx, lineNo: getLineNo(it) }))
+          .sort((a, b) => (a.lineNo - b.lineNo) || (a.idx - b.idx))
+          .map(x => x.it)
+        const mappedItems = sortedRawItems
           .map(it => {
             const code = String(it.item_code || '').trim()
             const p = productByCode.get(code)
@@ -173,15 +185,17 @@ export default function PurchaseCreate() {
   const removeItem = (i) => items.length > 1 && setItems(items.filter((_, idx) => idx !== i))
   const updateItem = (i, field, val) => { const u = [...items]; u[i] = { ...u[i], [field]: val }; setItems(u) }
 
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100
+
   const selectProduct = (i, val) => {
     const p = products.find(pr => pr.id === Number(val))
     const lp = lastPrices[Number(val)]
     const u = [...items]
     let price = ''
     if (lp && lp.last_cost_lak > 0) {
-      price = exchangeRate > 0 ? Math.round(lp.last_cost_lak / exchangeRate) : lp.last_cost_lak
+      price = exchangeRate > 0 ? round2(lp.last_cost_lak / exchangeRate) : lp.last_cost_lak
     } else if (p?.cost_price > 0) {
-      price = exchangeRate > 0 ? Math.round(p.cost_price / exchangeRate) : p.cost_price
+      price = exchangeRate > 0 ? round2(p.cost_price / exchangeRate) : p.cost_price
     }
     u[i] = { ...u[i], product_id: val, cost_price: price, unit: p?.unit || '', disc_type: 'none', disc_value: '' }
     setItems(u)
@@ -191,16 +205,16 @@ export default function PurchaseCreate() {
     const qty = Number(item.quantity) || 0
     const price = Number(item.cost_price) || 0
     const disc = Number(item.disc_value) || 0
-    if (item.disc_type === 'percent') return Math.round(qty * price * (1 - disc / 100))
-    if (item.disc_type === 'fixed') return Math.round(qty * Math.max(0, price - disc))
-    return qty * price
+    if (item.disc_type === 'percent') return round2(qty * price * (1 - disc / 100))
+    if (item.disc_type === 'fixed') return round2(qty * Math.max(0, price - disc))
+    return round2(qty * price)
   }
 
   const calcNetUnitPrice = (item) => {
     const price = Number(item.cost_price) || 0
     const disc = Number(item.disc_value) || 0
-    if (item.disc_type === 'percent') return Math.round(price * (1 - disc / 100))
-    if (item.disc_type === 'fixed') return Math.max(0, price - disc)
+    if (item.disc_type === 'percent') return round2(price * (1 - disc / 100))
+    if (item.disc_type === 'fixed') return Math.max(0, round2(price - disc))
     return price
   }
 
@@ -225,10 +239,10 @@ export default function PurchaseCreate() {
     setUploading(false)
   }
 
-  const subtotal = items.reduce((s, i) => s + calcLineTotal(i), 0)
-  const discountAmount = discount.type === 'percent' ? Math.round(subtotal * (Number(discount.value) || 0) / 100) :
-    discount.type === 'fixed' ? (Number(discount.value) || 0) : 0
-  const itemsTotal = Math.max(0, subtotal - discountAmount)
+  const subtotal = round2(items.reduce((s, i) => s + calcLineTotal(i), 0))
+  const discountAmount = discount.type === 'percent' ? round2(subtotal * (Number(discount.value) || 0) / 100) :
+    discount.type === 'fixed' ? round2(discount.value) : 0
+  const itemsTotal = Math.max(0, round2(subtotal - discountAmount))
   const totalAmountLAK = Math.max(0, Math.round(itemsTotal * exchangeRate))
   const paidAmountLAK = form.payment_type === 'debt' ? 0 : totalAmountLAK
   const remainingAmountLAK = Math.max(0, totalAmountLAK - paidAmountLAK)

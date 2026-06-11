@@ -18,6 +18,195 @@ const POS_DRAFT_KEY = 'pos_sale_draft_v1'
 
 function formatPrice(price) { return new Intl.NumberFormat('lo-LA').format(price) + ' ₭' }
 function formatNumber(n) { return new Intl.NumberFormat('lo-LA').format(n) }
+function fmtReceiptCell(n) {
+  const v = Number(n) || 0
+  if (v === 0) return ''
+  return new Intl.NumberFormat('lo-LA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
+}
+function fmtReceiptTotal(n) {
+  return new Intl.NumberFormat('lo-LA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0)
+}
+function fmtReceiptDate(s) {
+  if (!s) return ''
+  const d = new Date(s)
+  return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`
+}
+function escapeReceiptHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]))
+}
+// Shared print/PDF stylesheet for the cashier cash-submission summary.
+function receiptsSummaryStyles() {
+  return `
+  @page { size: A4 landscape; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .rpt { font-family: "Noto Sans Lao", "Phetsarath OT", system-ui, -apple-system, sans-serif; font-size: 11px; color: #111; }
+  .rpt h1 { font-size: 16px; margin: 0 0 2px 0; }
+  .rpt .meta { font-size: 11px; color: #555; margin-bottom: 8px; }
+  .rpt table { width: 100%; border-collapse: collapse; }
+  .rpt th, .rpt td { border: 1px solid #999; padding: 3px 5px; vertical-align: middle; }
+  .rpt thead th { background: #eef2f7; font-weight: 700; text-align: center; font-size: 10px; }
+  .rpt td { font-size: 11px; }
+  .rpt .num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; }
+  .rpt .mono { font-family: ui-monospace, Menlo, monospace; }
+  .rpt tfoot td { font-weight: 800; background: #f1f5f9; color: #111; }
+  .rpt .footer-summary { margin-top: 8px; display: flex; gap: 12px; }
+  .rpt .footer-summary .box { border: 1px solid #999; padding: 6px 10px; min-width: 180px; }
+  .rpt .footer-summary .label { font-size: 10px; color: #555; font-weight: 700; }
+  .rpt .footer-summary .value { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .rpt .sig { margin-top: 26px; display: flex; justify-content: space-between; gap: 32px; }
+  .rpt .sig .col { flex: 1; text-align: center; font-size: 11px; }
+  .rpt .sig .line { margin: 24px auto 4px; border-top: 1px solid #555; width: 70%; }
+  `
+}
+
+// Official cashier cash-submission layout (matches the on-screen detail table):
+// ວັນທີ | ເລກທີ | ປະເພດເອກະສານ | ຍອດບິນຂາຍສົດ(ສົດ/ໂອນ) | ຍອດບິນຂາຍຕິດໜີ້ |
+// ຍອດຮັບຄືນສິນຄ້າ (ສ່ງເງິນຄືນ)(ສົດ/ໂອນ) | ຍອດຊຳລະໜີ້(ສົດ/ໂອນ) | ເງິນໄດ້ຮັບທັງໝົດ(ສົດ/ໂອນ)
+// Per-row, ເງິນໄດ້ຮັບທັງໝົດ stays blank — it is summed only on the ລວມທັງໝົດ line.
+function buildReceiptsSummaryBody({ rows, totals, cashierName, dateLabel, company }) {
+  const companyName = company?.name || company?.company_name || ''
+  const bodyRows = rows.map(r => `
+      <tr>
+        <td>${fmtReceiptDate(r.date)}</td>
+        <td class="mono">${escapeReceiptHtml(r.doc_number)}</td>
+        <td>${escapeReceiptHtml(r.doc_type_label || '')}</td>
+        <td class="num">${fmtReceiptCell(r.cash_sale_cash)}</td>
+        <td class="num">${fmtReceiptCell(r.cash_sale_transfer)}</td>
+        <td class="num">${fmtReceiptCell(r.credit_sale)}</td>
+        <td class="num">${fmtReceiptCell(r.refund_cash)}</td>
+        <td class="num">${fmtReceiptCell(r.refund_transfer)}</td>
+        <td class="num">${fmtReceiptCell(r.customer_down_cash)}</td>
+        <td class="num">${fmtReceiptCell(r.customer_down_transfer)}</td>
+        <td class="num"></td>
+        <td class="num"></td>
+      </tr>`).join('')
+  return `<div class="rpt">
+  <h1>ສະຫຼຸບການຮັບເງິນ — ປະຈຳວັນ${companyName ? ' · ' + escapeReceiptHtml(companyName) : ''}</h1>
+  <div class="meta">
+    ວັນທີ: <b>${dateLabel}</b>
+    ${cashierName ? ` · Cashier: <b>${escapeReceiptHtml(cashierName)}</b>` : ''}
+    · ພິມເມື່ອ: ${new Date().toLocaleString('lo-LA')}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2">ວັນທີ</th>
+        <th rowspan="2">ເລກທີ</th>
+        <th rowspan="2">ປະເພດເອກະສານ</th>
+        <th colspan="2">ຍອດບິນຂາຍສົດ</th>
+        <th rowspan="2">ຍອດບິນຂາຍຕິດໜີ້</th>
+        <th colspan="2">ຍອດຮັບຄືນສິນຄ້າ (ສ່ງເງິນຄືນ)</th>
+        <th colspan="2">ຍອດຊຳລະໜີ້</th>
+        <th colspan="2">ເງິນໄດ້ຮັບທັງໝົດ</th>
+      </tr>
+      <tr>
+        <th>ເງິນສົດ</th><th>ເງິນໂອນ</th>
+        <th>ເງິນສົດ</th><th>ເງິນໂອນ</th>
+        <th>ເງິນສົດ</th><th>ເງິນໂອນ</th>
+        <th>ເງິນສົດ</th><th>ເງິນໂອນ</th>
+      </tr>
+    </thead>
+    <tbody>${bodyRows || '<tr><td colspan="12" style="text-align:center;padding:18px;color:#888;">ບໍ່ມີຂໍ້ມູນ</td></tr>'}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="3" style="text-align:right;">ລວມທັງໝົດ</td>
+        <td class="num">${fmtReceiptTotal(totals.cash_sale_cash)}</td>
+        <td class="num">${fmtReceiptTotal(totals.cash_sale_transfer)}</td>
+        <td class="num">${fmtReceiptTotal(totals.credit_sale)}</td>
+        <td class="num">${fmtReceiptTotal(totals.refund_cash)}</td>
+        <td class="num">${fmtReceiptTotal(totals.refund_transfer)}</td>
+        <td class="num">${fmtReceiptTotal(totals.customer_down_cash)}</td>
+        <td class="num">${fmtReceiptTotal(totals.customer_down_transfer)}</td>
+        <td class="num">${fmtReceiptTotal(totals.total_received_cash)}</td>
+        <td class="num">${fmtReceiptTotal(totals.total_received_transfer)}</td>
+      </tr>
+    </tfoot>
+  </table>
+  <div class="footer-summary">
+    <div class="box">
+      <div class="label">ລວມຮັບເງິນສົດ</div>
+      <div class="value">${fmtReceiptTotal(totals.total_received_cash)} ₭</div>
+    </div>
+    <div class="box">
+      <div class="label">ລວມຮັບເງິນໂອນ</div>
+      <div class="value">${fmtReceiptTotal(totals.total_received_transfer)} ₭</div>
+    </div>
+    <div class="box">
+      <div class="label">ລວມຮັບເງິນທັງໝົດ</div>
+      <div class="value">${fmtReceiptTotal(totals.grand_total_received)} ₭</div>
+    </div>
+  </div>
+  <div class="sig">
+    <div class="col"><div class="line"></div>Cashier</div>
+    <div class="col"><div class="line"></div>ຜູ້ກວດສອບ</div>
+    <div class="col"><div class="line"></div>ຜູ້ຮັບເງິນ</div>
+  </div>
+</div>`
+}
+
+function printReceiptsSummary(receipts, user, company) {
+  const rows = receipts?.rows || []
+  const totals = receipts?.totals || {}
+  if (rows.length === 0) return
+  const cashierName = user?.display_name || user?.username || ''
+  const dateLabel = new Date().toLocaleDateString('lo-LA', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>ສະຫຼຸບການຮັບເງິນ ${dateLabel}</title>
+<style>${receiptsSummaryStyles()}</style></head>
+<body>${buildReceiptsSummaryBody({ rows, totals, cashierName, dateLabel, company })}</body></html>`
+  const w = window.open('', '_blank', 'width=1100,height=800')
+  if (!w) return
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
+  w.focus()
+  setTimeout(() => { try { w.print() } catch {} }, 250)
+}
+
+// Render the same layout off-screen at A4-landscape width and rasterize to a PDF.
+async function downloadReceiptsSummaryPdf(receipts, user, company) {
+  const rows = receipts?.rows || []
+  const totals = receipts?.totals || {}
+  if (rows.length === 0) return
+  const cashierName = user?.display_name || user?.username || ''
+  const dateLabel = new Date().toLocaleDateString('lo-LA', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const isoDate = new Date().toISOString().slice(0, 10)
+  const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+    import('jspdf'),
+    import('html2canvas'),
+  ])
+  const holder = document.createElement('div')
+  holder.style.cssText = 'position:fixed;left:-12000px;top:0;width:1123px;background:#fff;'
+  holder.innerHTML = `<style>${receiptsSummaryStyles()}</style><div style="padding:28px;">${buildReceiptsSummaryBody({ rows, totals, cashierName, dateLabel, company })}</div>`
+  document.body.appendChild(holder)
+  try {
+    await (document.fonts?.ready || Promise.resolve())
+    await new Promise(r => setTimeout(r, 120))
+    const canvas = await html2canvas(holder, { scale: 2, backgroundColor: '#ffffff' })
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+    const pageW = 297, pageH = 210, margin = 8
+    const imgW = pageW - margin * 2
+    const imgH = canvas.height * imgW / canvas.width
+    const usableH = pageH - margin * 2
+    const img = canvas.toDataURL('image/png')
+    let position = margin
+    let heightLeft = imgH
+    pdf.addImage(img, 'PNG', margin, position, imgW, imgH)
+    heightLeft -= usableH
+    while (heightLeft > 0) {
+      position -= usableH
+      pdf.addPage()
+      pdf.addImage(img, 'PNG', margin, position, imgW, imgH)
+      heightLeft -= usableH
+    }
+    pdf.save(`ສະຫຼຸບການຮັບເງິນ_${isoDate}.pdf`)
+  } finally {
+    holder.remove()
+  }
+}
 function dateAfterDays(days) {
   const date = new Date()
   date.setDate(date.getDate() + days)
@@ -268,13 +457,18 @@ export default function POS({ user, onLogout }) {
   const [lastScan, setLastScan] = useState(null)
   const [flash, setFlash] = useState(0)
   const [currencies, setCurrencies] = useState([])
-  const [payments, setPayments] = useState(() => Array.isArray(initialDraft.payments) ? initialDraft.payments : []) // [{ currency, amount }]
+  const [payments, setPayments] = useState(() => Array.isArray(initialDraft.payments) ? initialDraft.payments : []) // [{ method, currency, amount }]
+  const [activeMethod, setActiveMethod] = useState('cash') // which tender (cash/transfer/qr) the numpad edits
+  const [cashAuto, setCashAuto] = useState(true) // cash auto-fills the remaining amount until typed manually
   const [promotions, setPromotions] = useState([])
   const [dailySummary, setDailySummary] = useState(null)
   const [showDailySummary, setShowDailySummary] = useState(false)
   const [todayHandovers, setTodayHandovers] = useState([])
   const [handoverForm, setHandoverForm] = useState({ actual_cash: '', received_by: '', note: '' })
   const [handoverSaving, setHandoverSaving] = useState(false)
+  const [todayReceipts, setTodayReceipts] = useState({ rows: [], totals: null })
+  const [showReceiptsDetail, setShowReceiptsDetail] = useState(false)
+  const [receiptsPdfBusy, setReceiptsPdfBusy] = useState(false)
   const [drawerBusy, setDrawerBusy] = useState(false)
   const [drawerReady, setDrawerReady] = useState(false)
   const [cashDrawerSupported, setCashDrawerSupported] = useState(false)
@@ -426,6 +620,14 @@ export default function POS({ user, onLogout }) {
   const [laybyBusy, setLaybyBusy] = useState(false)
   // Ref so layby callbacks declared above finalTotal can still read its current value
   const finalTotalRef = useRef(0)
+  // Latest-value refs so a physical keyboard can drive the same amount entry as
+  // the on-screen numpad without relying on render-time closures.
+  const activeMethodRef = useRef('cash')
+  const activeCurrencyRef = useRef('LAK')
+  const isCreditRef = useRef(false)
+  const fullyPaidRef = useRef(false)
+  const checkoutRef = useRef(null)
+  const amountInputRef = useRef(null) // the real focused amount field in the pay modal
 
   // Refocus scan input ONLY when all modals just closed (no polling to avoid stealing focus from other inputs)
   const anyModalOpen = showCheckout || showOrders || showReceipt || showCatalog || showDailySummary || showMemberModal || showDebtAlerts || showReturn || showPromoList || showLaybyPicker
@@ -716,13 +918,11 @@ export default function POS({ user, onLogout }) {
         originalPaid: paid,
         creditUsed,
       })
-      // Recompute the prefilled tender amount against the new amountDue.
-      // Read finalTotal via ref to avoid the useCallback dependency (declared later in this file).
-      const ft = finalTotalRef.current || 0
-      const newDeposit = Math.min(available, ft)
-      const newAmountDue = Math.max(0, ft - newDeposit)
+      // Cash auto-fills the remaining balance after the deposit is applied.
       setPayments([])
-      setAmountPaid(String(newAmountDue))
+      setAmountPaid('')
+      setCashAuto(true)
+      setActiveMethod('cash')
       setShowLaybyPicker(false)
       showToast(`ໃຊ້ມັດຈຳ ${formatPrice(available)} ຈາກ ${data.layby_number}`, 'success')
     } catch {
@@ -852,7 +1052,7 @@ export default function POS({ user, onLogout }) {
       if (e.key === 'F12') {
         e.preventDefault()
         if (anyModalOpen || cart.length === 0) return
-        setAmountPaid(String(amountDue))
+        setPayments([]); setAmountPaid(''); setActiveMethod('cash'); setCashAuto(true)
         setShowCheckout(true)
       }
     }
@@ -1068,23 +1268,42 @@ export default function POS({ user, onLogout }) {
   }
 
   const handleCheckout = async () => {
+    // Order-level payment_method from the tender mix: 'mixed' when >1 distinct
+    // method (e.g. cash + transfer), otherwise the single method.
+    const orderMethodFromPayments = (payload, fallback) => {
+      if (!payload || payload.length === 0) return fallback
+      const methods = [...new Set(payload.map(p => p.method || 'cash'))]
+      return methods.length > 1 ? 'mixed' : (methods[0] || fallback)
+    }
+    const rateForCode = (code) => Number((currencies.find(x => x.code === code) || { rate: 1 }).rate) || 1
+    // Effective tenders to charge against `total`: explicit non-cash + (auto or manual) cash.
+    // When cashAuto, cash isn't stored in `payments` — it fills the remaining amount here.
+    const buildEffectiveTenders = (total, laybyDep) => {
+      let list = cashAuto ? payments.filter(p => (p.method || 'cash') !== 'cash') : payments.slice()
+      list = list.map(p => {
+        const amount = Number(p.amount) || 0
+        const rate = rateForCode(p.currency)
+        return { method: p.method || 'cash', currency: p.currency, amount, rate, amount_lak: amount * rate }
+      }).filter(p => p.amount > 0)
+      if (cashAuto) {
+        const nonCashLak = list.reduce((s, p) => s + p.amount_lak, 0)
+        const autoCash = Math.max(0, total - nonCashLak - (laybyDep || 0))
+        if (autoCash > 0) list.push({ method: 'cash', currency: 'LAK', amount: autoCash, rate: 1, amount_lak: autoCash })
+      }
+      return list
+    }
+    // Any actual cash tender → worth kicking the cash drawer.
+    const laybyDepForCash = loadedLayby ? Math.min(Number(loadedLayby.paid) || 0, finalTotal) : 0
+    const hasCashTender = buildEffectiveTenders(finalTotal, laybyDepForCash)
+      .some(p => p.method === 'cash' && p.amount_lak > 0)
     // Layby completion path: bypass /api/orders and call /api/admin/laybys/[id]/complete
     if (loadedLayby) {
       if (paymentMethod === 'credit') { showToast('Layby ບໍ່ຮອງຮັບການຕິດໜີ້', 'error'); return }
       if (cart.length === 0) { showToast('ກະຣຸນາແສກນສິນຄ້າກ່ອນ', 'error'); return }
-      const useMultiL = payments.length > 0
-      let paidL, paymentsPayloadL = null
-      if (useMultiL) {
-        paymentsPayloadL = payments.map(p => {
-          const cur = currencies.find(c => c.code === p.currency) || { rate: 1 }
-          const amount = Number(p.amount) || 0
-          const rate = Number(cur.rate) || 1
-          return { currency: p.currency, amount, rate, amount_lak: amount * rate }
-        }).filter(p => p.amount > 0)
-        paidL = paymentsPayloadL.reduce((s, p) => s + p.amount_lak, 0)
-      } else {
-        paidL = Number(amountPaid) || amountDue
-      }
+      const laybyDep = Math.min(Number(loadedLayby.paid) || 0, finalTotal)
+      let paymentsPayloadL = buildEffectiveTenders(finalTotal, laybyDep)
+      let paidL = paymentsPayloadL.reduce((s, p) => s + p.amount_lak, 0)
+      if (paymentsPayloadL.length === 0) { paidL = amountDue; paymentsPayloadL = null }
       if (paidL + 0.5 < amountDue) { showToast('ຈຳນວນເງິນບໍ່ພຽງພໍ', 'error'); return }
       // For deposit-only laybys, send the POS cart items so /complete can build
       // the order and decrement stock. Also send the POS-calculated order_total
@@ -1095,7 +1314,7 @@ export default function POS({ user, onLogout }) {
       const res = await fetch(`${API}/admin/laybys/${loadedLayby.id}/complete`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          payment_method: paymentsPayloadL && paymentsPayloadL.length > 1 ? 'mixed' : paymentMethod,
+          payment_method: orderMethodFromPayments(paymentsPayloadL, paymentMethod),
           amount_paid: paidL,
           change_amount: Math.max(0, paidL - amountDue),
           payments: paymentsPayloadL,
@@ -1108,12 +1327,12 @@ export default function POS({ user, onLogout }) {
       if (res.ok) {
         const { order } = await res.json()
         showToast(`ປິດ Layby ສຳເລັດ · ${order?.bill_number || ''}`, 'success')
-        if (paymentMethod === 'cash' || (paymentsPayloadL && paymentsPayloadL.length > 0)) kickCashDrawer()
+        if (hasCashTender) kickCashDrawer()
         try { bcRef.current?.postMessage({ type: 'complete', order }) } catch {}
         clearPosDraft()
         setShowReceipt(order); setCart([]); setAmountPaid(''); setShowCheckout(false)
         setDiscount(0); setDiscountMode('percent'); setCustomerNote('')
-        setLastScan(null); setPayments([])
+        setLastScan(null); setPayments([]); setActiveMethod('cash'); setCashAuto(true)
         setLoadedLayby(null)
         fetchProducts()
       } else {
@@ -1129,20 +1348,13 @@ export default function POS({ user, onLogout }) {
     const creditName = creditCustomer.name.trim() || selectedMember?.name || ''
     if (isCredit && !creditName) { showToast('ກະລຸນາປ້ອນຊື່ລູກຄ້າສຳລັບບິນຕິດໜີ້', 'error'); return }
     if (isCredit && !creditCustomer.dueDate) { showToast('ກະລຸນາກຳນົດວັນຄົບກຳນົດຊຳລະ', 'error'); return }
-    const useMulti = payments.length > 0
     let paid, paymentsPayload = null
     if (isCredit) {
       paid = 0
-    } else if (useMulti) {
-      paymentsPayload = payments.map(p => {
-        const cur = currencies.find(c => c.code === p.currency) || { rate: 1 }
-        const amount = Number(p.amount) || 0
-        const rate = Number(cur.rate) || 1
-        return { currency: p.currency, amount, rate, amount_lak: amount * rate }
-      }).filter(p => p.amount > 0)
-      paid = paymentsPayload.reduce((s, p) => s + p.amount_lak, 0)
     } else {
-      paid = Number(amountPaid) || finalTotal
+      paymentsPayload = buildEffectiveTenders(finalTotal, 0)
+      paid = paymentsPayload.reduce((s, p) => s + p.amount_lak, 0)
+      if (paymentsPayload.length === 0) { paid = Number(amountPaid) || finalTotal; paymentsPayload = null }
     }
     if (!isCredit && paid < finalTotal) { showToast('ຈຳນວນເງິນບໍ່ພຽງພໍ', 'error'); return }
     const minRedeem = Number(loyaltySettings.min_points_to_redeem) || 0
@@ -1166,7 +1378,7 @@ export default function POS({ user, onLogout }) {
         items: checkoutItems,
         total: finalTotal,
         change_amount: isCredit ? 0 : paid - finalTotal,
-        payment_method: isCredit ? 'credit' : (paymentsPayload && paymentsPayload.length > 1 ? 'mixed' : paymentMethod),
+        payment_method: isCredit ? 'credit' : orderMethodFromPayments(paymentsPayload, paymentMethod),
         amount_paid: paid,
         discount: discountAmount,
         note: customerNote,
@@ -1184,16 +1396,87 @@ export default function POS({ user, onLogout }) {
     if (res.ok) {
       const order = await res.json()
       showToast(isCredit ? 'ອອກບິນຕິດໜີ້ສຳເລັດ' : 'ການຊຳລະສຳເລັດ', 'success')
-      const shouldOpenDrawer = !isCredit && (paymentMethod === 'cash' || (paymentsPayload && paymentsPayload.length > 0))
+      const shouldOpenDrawer = !isCredit && hasCashTender
       if (shouldOpenDrawer) kickCashDrawer()
       try { bcRef.current?.postMessage({ type: 'complete', order }) } catch {}
       clearPosDraft()
       setShowReceipt(order); setCart([]); setAmountPaid(''); setShowCheckout(false)
-      setDiscount(0); setDiscountMode('percent'); setCustomerNote(''); setCreditCustomer({ name: '', phone: '', dueDate: dateAfterDays(30) }); setLastScan(null); setPayments([]); setSelectedMember(DEFAULT_MEMBER); setPointsToRedeem(0); setActiveCoupons([]); setCouponInput('')
+      setDiscount(0); setDiscountMode('percent'); setCustomerNote(''); setCreditCustomer({ name: '', phone: '', dueDate: dateAfterDays(30) }); setLastScan(null); setPayments([]); setActiveMethod('cash'); setCashAuto(true); setSelectedMember(DEFAULT_MEMBER); setPointsToRedeem(0); setActiveCoupons([]); setCouponInput('')
       loadMembers('')
       fetchProducts()
     } else { const err = await res.json(); showToast(err.error, 'error') }
   }
+
+  // ── Amount entry shared by the on-screen numpad AND the physical keyboard ──
+  // Cash auto-fills the remaining amount until typed; tender stored per method|currency.
+  const ckRate = (code) => Number((currencies.find(x => x.code === code) || { rate: 1 }).rate) || 1
+  const reAutoCashMain = () => {
+    setCashAuto(true)
+    setPayments(prev => prev.filter(p => (p.method || 'cash') !== 'cash'))
+    setAmountPaid('')
+  }
+  const numpadPressMain = (digit) => {
+    const method = activeMethodRef.current || 'cash'
+    const code = activeCurrencyRef.current || 'LAK'
+    if (method === 'cash') {
+      if (digit === 'C') { reAutoCashMain(); return }
+      setCashAuto(false)
+    }
+    setPayments(prev => {
+      const map = {}
+      for (const p of prev) map[`${p.method || 'cash'}|${p.currency}`] = p.amount
+      const k = `${method}|${code}`
+      const cur = String(map[k] ?? '')
+      let next = cur
+      if (digit === 'C') next = ''
+      else if (digit === '⌫') next = cur.slice(0, -1)
+      else if (digit === '00') next = (cur === '' || cur === '0') ? '0' : cur + '00'
+      else if (digit === '.') { if (!cur.includes('.')) next = cur === '' ? '0.' : cur + '.' }
+      else next = (cur === '0') ? String(digit) : cur + String(digit)
+      const clean = String(next).replace(/[^\d.]/g, '')
+      if (clean === '') delete map[k]; else map[k] = clean
+      return Object.keys(map).map(x => { const [m, c] = x.split('|'); return { method: m, currency: c, amount: map[x] } })
+    })
+    setAmountPaid('')
+  }
+
+  // Keep latest-value refs in sync (safe primitive mirrors used by the key handler).
+  const ckLaybyTender = loadedLayby ? Math.min(Number(loadedLayby.paid) || 0, finalTotal) : 0
+  const ckNonCashLak = payments.reduce((s, p) => (p.method || 'cash') !== 'cash' ? s + (Number(p.amount) || 0) * ckRate(p.currency) : s, 0)
+  const ckManualCashLak = payments.reduce((s, p) => (p.method || 'cash') === 'cash' ? s + (Number(p.amount) || 0) * ckRate(p.currency) : s, 0)
+  const ckCashLak = (paymentMethod !== 'credit' && cashAuto) ? Math.max(0, finalTotal - ckNonCashLak - ckLaybyTender) : ckManualCashLak
+  const ckPaidNow = ckNonCashLak + ckCashLak + ckLaybyTender
+  activeMethodRef.current = activeMethod
+  activeCurrencyRef.current = activeCurrencyCode
+  isCreditRef.current = paymentMethod === 'credit'
+  fullyPaidRef.current = paymentMethod !== 'credit' && finalTotal > 0 && ckPaidNow >= finalTotal
+  checkoutRef.current = handleCheckout
+
+  // Physical keyboard entry for the pay modal — ONE window listener in the CAPTURE
+  // phase. It runs before any element's own handler and regardless of which element
+  // holds focus, so digits reach the numpad even when the barcode box is still
+  // focused (preventDefault stops them leaking there). Only the modal's own note /
+  // credit text fields are left to type normally.
+  useEffect(() => {
+    if (!showCheckout) return
+    const ae = document.activeElement
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && !(ae.closest && ae.closest('[data-pay-modal]'))) {
+      try { ae.blur() } catch {}
+    }
+    const onKey = (e) => {
+      if (isCreditRef.current) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const t = e.target
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) && t.closest && t.closest('[data-pay-modal]')) return
+      if (e.key >= '0' && e.key <= '9') { e.preventDefault(); numpadPressMain(e.key) }
+      else if (e.key === 'Backspace') { e.preventDefault(); numpadPressMain('⌫') }
+      else if (e.key === '.' || e.key === ',') { e.preventDefault(); numpadPressMain('.') }
+      else if (e.key === 'Enter') { e.preventDefault(); if (fullyPaidRef.current) checkoutRef.current?.() }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCheckout])
 
   const loadOrders = async () => {
     const [oRes, sRes, rRes] = await Promise.all([
@@ -1291,14 +1574,20 @@ export default function POS({ user, onLogout }) {
 
   const openDailySummary = async () => {
     try {
-      const [sRes, hRes] = await Promise.all([
+      const [sRes, hRes, rRes] = await Promise.all([
         fetch(`${API}/orders/summary`),
-        fetch(`${API}/cash-handovers/today`)
+        fetch(`${API}/cash-handovers/today`),
+        fetch(`${API}/orders/today-receipts`),
       ])
       setDailySummary(await sRes.json())
       try { setTodayHandovers(await hRes.json()) } catch { setTodayHandovers([]) }
-    } catch { setDailySummary(null); setTodayHandovers([]) }
+      try {
+        const data = await rRes.json()
+        setTodayReceipts({ rows: data?.rows || [], totals: data?.totals || null })
+      } catch { setTodayReceipts({ rows: [], totals: null }) }
+    } catch { setDailySummary(null); setTodayHandovers([]); setTodayReceipts({ rows: [], totals: null }) }
     setHandoverForm({ actual_cash: '', received_by: '', note: '' })
+    setShowReceiptsDetail(false)
     setShowDailySummary(true)
   }
 
@@ -1347,7 +1636,7 @@ export default function POS({ user, onLogout }) {
     if (!order) return
     const size = sizeOverride || receiptSize || '80mm'
     const isPaper = size === 'a4' || size === 'a5'
-    const methodText = order.payment_method === 'cash' ? 'ເງິນສົດ' : order.payment_method === 'transfer' ? 'ໂອນ' : order.payment_method === 'qr' ? 'QR' : order.payment_method === 'credit' ? 'ຂາຍຕິດໜີ້' : order.payment_method
+    const methodText = order.payment_method === 'cash' ? 'ເງິນສົດ' : order.payment_method === 'transfer' ? 'ໂອນ' : order.payment_method === 'qr' ? 'QR' : order.payment_method === 'credit' ? 'ຂາຍຕິດໜີ້' : order.payment_method === 'mixed' ? 'ຫຼາຍຊ່ອງທາງ' : order.payment_method
     const isCreditOrder = order.payment_method === 'credit'
     const dt = new Date(order.created_at || Date.now())
     const dateStr = dt.toLocaleString('lo-LA')
@@ -1389,15 +1678,18 @@ export default function POS({ user, onLogout }) {
     win.document.close()
   }
 
+  const tenderMethodLabel = (m) => ({ cash: 'ສົດ', transfer: 'ໂອນ', qr: 'QR' }[String(m || '').toLowerCase()] || '')
+
   const buildThermalReceipt = ({ order, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel, vatInfo }) => {
     const paymentLines = orderPayments.map(p => {
       const currency = p.currency || 'LAK'
       const rate = Number(p.rate) || 1
       const amount = Number(p.amount) || 0
       const amountLak = Number(p.amount_lak) || amount * rate
+      const mLabel = tenderMethodLabel(p.method)
       return `
         <div class="payrow">
-          <span>${currency} ${formatNumber(amount)}</span>
+          <span>${mLabel ? mLabel + ' · ' : ''}${currency} ${formatNumber(amount)}</span>
           <span>@ ${formatNumber(rate)} = ${formatPrice(amountLak)}</span>
         </div>
       `
@@ -1520,7 +1812,8 @@ export default function POS({ user, onLogout }) {
       const rate = Number(p.rate) || 1
       const amount = Number(p.amount) || 0
       const amountLak = Number(p.amount_lak) || amount * rate
-      return `<tr><td>${currency}</td><td class="money">${formatNumber(amount)}</td><td>@ ${formatNumber(rate)}</td><td class="money">${formatPrice(amountLak)}</td></tr>`
+      const mLabel = tenderMethodLabel(p.method)
+      return `<tr><td>${mLabel ? mLabel + ' · ' : ''}${currency}</td><td class="money">${formatNumber(amount)}</td><td>@ ${formatNumber(rate)}</td><td class="money">${formatPrice(amountLak)}</td></tr>`
     }).join('')
     const outstanding = isCreditOrder ? Math.max(0, Number(order.total) - Number(order.amount_paid || 0)) : Number(order.change_amount || 0)
 
@@ -2340,7 +2633,7 @@ export default function POS({ user, onLogout }) {
               )}
             </div>
             <button onClick={() => {
-                setAmountPaid(String(amountDue)); setShowCheckout(true)
+                setPayments([]); setAmountPaid(''); setActiveMethod('cash'); setCashAuto(true); setShowCheckout(true)
               }}
               disabled={cart.length === 0}
               title="ຮັບເງິນ (F12)"
@@ -2663,43 +2956,20 @@ export default function POS({ user, onLogout }) {
         // separate tender contributing to paidNow, like cash/transfer/etc.
         const targetTotal = finalTotal
         const laybyTender = loadedLayby ? Math.min(Number(loadedLayby.paid) || 0, finalTotal) : 0
-        const amountByCode = {}
+        // Tenders are keyed by `${method}|${currency}` so one customer can split a
+        // single bill across cash + transfer + QR (and multiple currencies) at once.
+        const METHOD_META = {
+          cash: { icon: '💵', label: 'ສົດ' },
+          transfer: { icon: '🏦', label: 'ໂອນ' },
+          qr: { icon: '📱', label: 'QR' },
+        }
+        const rateOf = (code) => Number((currencies.find(x => x.code === code) || { rate: 1 }).rate) || 1
+
+        // Explicit tenders the cashier typed. Non-cash always lives here; cash lives
+        // here only once typed manually — otherwise cash auto-fills the remainder.
+        const tenderMap = {}
         if (!isCredit && payments.length > 0) {
-          for (const p of payments) amountByCode[p.currency] = p.amount
-        } else if (!isCredit && amountPaid) {
-          amountByCode['LAK'] = amountPaid
-        }
-
-        const setAmountFor = (code, value) => {
-          const clean = String(value || '').replace(/[^\d.]/g, '')
-          const next = { ...amountByCode, [code]: clean }
-          if (clean === '') delete next[code]
-          const keys = Object.keys(next)
-          if (keys.length === 0) {
-            setPayments([]); setAmountPaid(''); return
-          }
-          if (keys.length === 1 && keys[0] === 'LAK') {
-            setPayments([]); setAmountPaid(clean); return
-          }
-          setPayments(keys.map(k => ({ currency: k, amount: next[k] })))
-          setAmountPaid('')
-        }
-
-        const addDenomination = (code, denom) => {
-          const cur = (amountByCode[code] && Number(amountByCode[code])) || 0
-          setAmountFor(code, String(cur + denom))
-        }
-
-        const fillExact = (code) => {
-          const cur = currencies.find(c => c.code === code) || { rate: 1 }
-          const otherLak = Object.entries(amountByCode).reduce((s, [c, v]) => {
-            if (c === code) return s
-            const r = (currencies.find(x => x.code === c) || { rate: 1 }).rate
-            return s + (Number(v) || 0) * (Number(r) || 1)
-          }, 0)
-          const remLak = Math.max(0, targetTotal - otherLak - laybyTender)
-          const amt = code === 'LAK' ? remLak : Math.ceil(remLak / (Number(cur.rate) || 1))
-          setAmountFor(code, String(amt))
+          for (const p of payments) tenderMap[`${p.method || 'cash'}|${p.currency}`] = p.amount
         }
 
         const denomMap = {
@@ -2710,11 +2980,20 @@ export default function POS({ user, onLogout }) {
           VND: [10000, 20000, 50000, 100000, 200000, 500000],
         }
 
-        const cashTendersLak = isCredit ? 0 : Object.entries(amountByCode).reduce((s, [c, v]) => {
-          const r = (currencies.find(x => x.code === c) || { rate: 1 }).rate
-          return s + (Number(v) || 0) * (Number(r) || 1)
-        }, 0)
-        const paidNow = cashTendersLak + laybyTender
+        // LAK subtotals. Cash either auto-fills the remaining (cashAuto) or is the manual entries.
+        const nonCashLak = Object.entries(tenderMap).reduce((s, [k, v]) =>
+          k.split('|')[0] === 'cash' ? s : s + (Number(v) || 0) * rateOf(k.split('|')[1]), 0)
+        const manualCashLak = Object.entries(tenderMap).reduce((s, [k, v]) =>
+          k.split('|')[0] === 'cash' ? s + (Number(v) || 0) * rateOf(k.split('|')[1]) : s, 0)
+        const autoCashLak = (!isCredit && cashAuto) ? Math.max(0, targetTotal - nonCashLak - laybyTender) : 0
+        const cashRowLak = cashAuto ? autoCashLak : manualCashLak
+        const methodTotals = { cash: cashRowLak, transfer: 0, qr: 0 }
+        if (!isCredit) for (const [k, v] of Object.entries(tenderMap)) {
+          const [m, c] = k.split('|')
+          if (m === 'cash') continue
+          methodTotals[m] = (methodTotals[m] || 0) + (Number(v) || 0) * rateOf(c)
+        }
+        const paidNow = nonCashLak + cashRowLak + laybyTender
         const remaining = Math.max(0, targetTotal - paidNow)
         const change = Math.max(0, paidNow - targetTotal)
         const fullyPaid = isCredit ? (creditCustomer.name.trim().length > 0 || !!selectedMember) && !!creditCustomer.dueDate : paidNow >= targetTotal && targetTotal > 0
@@ -2722,24 +3001,58 @@ export default function POS({ user, onLogout }) {
 
         const progress = isCredit ? 100 : Math.min(100, targetTotal > 0 ? (paidNow / targetTotal) * 100 : 0)
         const activeCur = currencies.find(c => c.code === activeCurrencyCode) || currencies[0] || { code: 'LAK', symbol: '₭', rate: 1 }
-        const activeVal = amountByCode[activeCur.code] || ''
+        const cashFocusedAuto = activeMethod === 'cash' && cashAuto
+        const activeVal = cashFocusedAuto ? '' : (tenderMap[`${activeMethod}|${activeCur.code}`] || '')
         const activeLak = (Number(activeVal) || 0) * (Number(activeCur.rate) || 1)
         const denoms = denomMap[activeCur.code] || []
 
-        const numpadPress = (digit) => {
-          const cur = String(amountByCode[activeCur.code] || '')
-          let next = cur
-          if (digit === 'C') next = ''
-          else if (digit === '⌫') next = cur.slice(0, -1)
-          else if (digit === '00') next = (cur === '' || cur === '0') ? '0' : cur + '00'
-          else if (digit === '.') { if (!cur.includes('.')) next = cur === '' ? '0.' : cur + '.' }
-          else next = (cur === '0') ? String(digit) : cur + String(digit)
-          setAmountFor(activeCur.code, next)
+        // Switch cash back to auto-fill (and drop any manual cash tenders).
+        const reAutoCash = () => {
+          setCashAuto(true)
+          setPayments(Object.entries(tenderMap)
+            .filter(([k]) => k.split('|')[0] !== 'cash')
+            .map(([k, v]) => { const [m, c] = k.split('|'); return { method: m, currency: c, amount: v } }))
+          setAmountPaid('')
         }
+
+        const setTender = (method, code, value) => {
+          const clean = String(value || '').replace(/[^\d.]/g, '')
+          if (method === 'cash') {
+            if (clean === '') { reAutoCash(); return }   // clearing cash → auto-fill again
+            setCashAuto(false)
+          }
+          const key = `${method}|${code}`
+          const next = { ...tenderMap, [key]: clean }
+          if (clean === '') delete next[key]
+          setPayments(Object.keys(next).map(k => {
+            const [m, c] = k.split('|')
+            return { method: m, currency: c, amount: next[k] }
+          }))
+          setAmountPaid('')
+        }
+
+        const addDenomination = (method, code, denom) => {
+          const base = (method === 'cash' && cashAuto) ? 0 : (Number(tenderMap[`${method}|${code}`]) || 0)
+          setTender(method, code, String(base + denom))
+        }
+
+        // "ພໍດີ": cash just re-auto-fills; other methods take the remaining amount.
+        const fillExact = (method, code) => {
+          if (method === 'cash') { reAutoCash(); return }
+          const key = `${method}|${code}`
+          const otherLak = Object.entries(tenderMap).reduce((s, [k, v]) =>
+            k === key ? s : s + (Number(v) || 0) * rateOf(k.split('|')[1]), 0)
+          const remLak = Math.max(0, targetTotal - otherLak - laybyTender)
+          const amt = code === 'LAK' ? remLak : Math.ceil(remLak / rateOf(code))
+          setTender(method, code, String(amt))
+        }
+
+        // On-screen numpad shares the exact handler the physical keyboard uses.
+        const numpadPress = numpadPressMain
 
         return (
         <Modal onClose={() => setShowCheckout(false)} title={isCredit ? 'ອອກບິນຕິດໜີ້' : 'ຊຳລະເງິນ'} size="2xl">
-          <div className="space-y-2">
+          <div className="space-y-2" data-pay-modal>
           <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-3">
             {/* LEFT: info + tenders + method */}
             <div className="space-y-2">
@@ -2758,7 +3071,7 @@ export default function POS({ user, onLogout }) {
                         </div>
                       </div>
                       {loadedLayby.depositOnly && (
-                        <button type="button" onClick={() => { setLoadedLayby(null); setPayments([]); setAmountPaid(String(finalTotal)) }}
+                        <button type="button" onClick={() => { setLoadedLayby(null); setPayments([]); setAmountPaid(''); setCashAuto(true); setActiveMethod('cash') }}
                           className="text-[10px] font-bold px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded">✕</button>
                       )}
                     </div>
@@ -2808,115 +3121,128 @@ export default function POS({ user, onLogout }) {
                 </div>
               </div>
 
-              {/* Payment method */}
-              <div className="grid grid-cols-4 gap-1">
-                {[
-                  { key: 'cash', icon: '💵', label: 'ສົດ', color: 'emerald' },
-                  { key: 'transfer', icon: '🏦', label: 'ໂອນ', color: 'blue' },
-                  { key: 'qr', icon: '📱', label: 'QR', color: 'violet' },
-                  { key: 'credit', icon: '🧾', label: 'ຕິດໜີ້', color: 'amber' }
-                ].map(m => {
-                  const active = paymentMethod === m.key
-                  const isCreditDisabled = m.key === 'credit' && !!selectedMember?.isDefault
-                  const activeClasses = {
-                    emerald: 'border-emerald-500 bg-emerald-50 text-emerald-800',
-                    blue: 'border-blue-500 bg-blue-50 text-blue-800',
-                    violet: 'border-violet-500 bg-violet-50 text-violet-800',
-                    amber: 'border-amber-500 bg-amber-50 text-amber-800',
-                  }
-                  return (
-                    <button key={m.key}
-                      disabled={isCreditDisabled}
-                      title={isCreditDisabled ? 'ກະລຸນາເລືອກສະມາຊິກກ່ອນ (ຕິດໜີ້ບໍ່ໄດ້ສຳລັບລູກຄ້າທົ່ວໄປ)' : ''}
-                      onClick={() => {
-                        if (isCreditDisabled) return
-                        setPaymentMethod(m.key)
-                        if (m.key === 'credit') {
-                          setPayments([])
-                          setAmountPaid('')
-                          setCreditCustomer(c => c.dueDate ? c : { ...c, dueDate: dateAfterDays(30) })
-                        }
-                      }}
-                      className={`py-1.5 rounded-md text-[10px] font-extrabold transition border ${
-                        isCreditDisabled
-                          ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed opacity-60'
-                          : active
-                            ? activeClasses[m.color]
-                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                      }`}>
-                      <span className="text-sm mr-1">{m.icon}</span>{m.label}
-                      {isCreditDisabled && <span className="ml-1 text-[9px]">🔒</span>}
-                    </button>
-                  )
-                })}
-              </div>
+              {/* Mode toggle: receive money (cash/transfer/QR) vs sell on credit */}
+              {!loadedLayby && (
+                <div className="grid grid-cols-2 gap-1">
+                  <button type="button"
+                    onClick={() => { if (isCredit) { setPaymentMethod('cash'); setActiveMethod('cash'); setCashAuto(true); setPayments([]); setAmountPaid('') } }}
+                    className={`py-1.5 rounded-md text-[11px] font-extrabold transition border ${!isCredit ? 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-200' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}>
+                    💵 ຮັບເງິນ
+                  </button>
+                  <button type="button"
+                    disabled={!!selectedMember?.isDefault}
+                    title={selectedMember?.isDefault ? 'ກະລຸນາເລືອກສະມາຊິກກ່ອນ (ຕິດໜີ້ບໍ່ໄດ້ສຳລັບລູກຄ້າທົ່ວໄປ)' : ''}
+                    onClick={() => { setPaymentMethod('credit'); setPayments([]); setAmountPaid(''); setCashAuto(false); setCreditCustomer(c => c.dueDate ? c : { ...c, dueDate: dateAfterDays(30) }) }}
+                    className={`py-1.5 rounded-md text-[11px] font-extrabold transition border ${selectedMember?.isDefault ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed opacity-60' : isCredit ? 'border-amber-500 bg-amber-50 text-amber-800 ring-2 ring-amber-200' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}>
+                    🧾 ຂາຍຕິດໜີ້ {selectedMember?.isDefault ? '🔒' : ''}
+                  </button>
+                </div>
+              )}
 
-              {/* Currency tabs + active display */}
+              {/* All payment channels visible at once — tap a row to enter, ສົດ auto-fills the rest */}
               {!isCredit && (
-                <div className="rounded-lg border border-slate-200 bg-white p-2">
-                  <div className="flex items-center gap-1 mb-1.5 overflow-x-auto">
-                    {currencies.map(c => {
-                      const v = Number(amountByCode[c.code]) || 0
-                      const isActive = c.code === activeCur.code
-                      const hasVal = v > 0
+                <>
+                  <div className="space-y-1">
+                    {['cash', 'transfer', 'qr'].map(key => {
+                      const meta = METHOD_META[key]
+                      const focused = activeMethod === key
+                      const lak = methodTotals[key] || 0
+                      const isAutoCash = key === 'cash' && cashAuto
+                      const ring = {
+                        cash: 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200',
+                        transfer: 'border-blue-500 bg-blue-50 ring-2 ring-blue-200',
+                        qr: 'border-violet-500 bg-violet-50 ring-2 ring-violet-200',
+                      }[key]
+                      const filled = { cash: 'border-emerald-300 bg-emerald-50/60', transfer: 'border-blue-300 bg-blue-50/60', qr: 'border-violet-300 bg-violet-50/60' }[key]
                       return (
-                        <button key={c.code} type="button"
-                          onClick={() => setActiveCurrencyCode(c.code)}
-                          className={`shrink-0 px-2 py-1 rounded text-[11px] font-extrabold transition border flex items-center gap-1 ${
-                            isActive
-                              ? 'border-slate-900 bg-slate-900 text-white'
-                              : hasVal
-                                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                          }`}>
-                          <span className="text-sm">{c.symbol}</span>
-                          <span>{c.code}</span>
-                          {hasVal && <span className={`text-[8px] font-mono px-1 rounded ${isActive ? 'bg-white/20' : 'bg-emerald-200 text-emerald-800'}`}>{formatNumber(v)}</span>}
+                        <button key={key} type="button" onClick={() => { setActiveMethod(key); requestAnimationFrame(() => amountInputRef.current?.focus()) }}
+                          className={`w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 transition ${focused ? ring : lak > 0 ? filled : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span className="text-lg leading-none">{meta.icon}</span>
+                            <span className="text-sm font-extrabold text-slate-800">{meta.label}</span>
+                            {isAutoCash && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 whitespace-nowrap">ຕື່ມສ່ວນທີ່ເຫຼືອ</span>}
+                          </span>
+                          <span className="flex items-baseline gap-1 shrink-0">
+                            <span className={`font-mono-t font-extrabold tabular-nums ${focused ? 'text-xl' : 'text-base'} ${lak > 0 ? 'text-slate-900' : 'text-slate-300'}`}>{formatNumber(Math.round(lak))}</span>
+                            <span className="text-[10px] text-slate-400 font-bold">₭</span>
+                          </span>
                         </button>
                       )
                     })}
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-lg font-black text-slate-700 leading-none">{activeCur.symbol}</span>
-                      <div className="leading-tight">
-                        <div className="text-[8px] font-extrabold text-slate-400 uppercase">ປ້ອນ ({activeCur.code})</div>
-                        {activeCur.code !== 'LAK' && Number(activeVal) > 0 && (
-                          <div className="text-[9px] font-bold text-emerald-700 font-mono-t">≈ {formatPrice(Math.round(activeLak))}</div>
-                        )}
-                        {activeCur.code !== 'LAK' && !Number(activeVal) && (
-                          <div className="text-[9px] font-bold text-slate-400">@ {formatNumber(activeCur.rate)}</div>
-                        )}
-                      </div>
+                  {/* Entry controls for the focused channel */}
+                  <div className="rounded-lg border border-slate-200 bg-white p-2 space-y-1.5">
+                    <div className="text-[10px] font-extrabold text-slate-500">
+                      ກຳລັງປ້ອນ: {METHOD_META[activeMethod]?.icon} {METHOD_META[activeMethod]?.label}
+                      {cashFocusedAuto && <span className="text-emerald-600"> · ອັດຕະໂນມັດ — ກົດຕົວເລກເພື່ອປ້ອນເອງ</span>}
                     </div>
-                    <div className="text-lg font-extrabold font-mono-t text-slate-900 tracking-tight">
-                      {activeVal ? formatNumber(activeVal) : <span className="text-slate-300">0</span>}
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-1 mt-1.5">
-                    <button onClick={() => fillExact(activeCur.code)}
-                      className="h-7 rounded bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold">
-                      ⚡ ພໍດີ
-                    </button>
-                    <button onClick={() => setAmountFor(activeCur.code, '')}
-                      disabled={!activeVal}
-                      className="h-7 rounded bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 text-[10px] font-extrabold disabled:opacity-40">
-                      ✕ ລ້າງ
-                    </button>
-                  </div>
-                  {denoms.length > 0 && (
-                    <div className="grid grid-cols-4 gap-1 mt-1">
-                      {denoms.slice(0, 8).map(d => (
-                        <button key={d} onClick={() => addDenomination(activeCur.code, d)}
-                          className="h-6 rounded text-[9px] font-extrabold font-mono-t bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 hover:border-slate-300 transition">
-                          +{d >= 1000 ? (d / 1000) + 'K' : d}
-                        </button>
-                      ))}
+                    {currencies.length > 1 && (
+                      <div className="flex items-center gap-1 overflow-x-auto">
+                        {currencies.map(c => {
+                          const v = Number(tenderMap[`${activeMethod}|${c.code}`]) || 0
+                          const isActive = c.code === activeCur.code
+                          return (
+                            <button key={c.code} type="button" onClick={() => setActiveCurrencyCode(c.code)}
+                              className={`shrink-0 px-2 py-1 rounded text-[11px] font-extrabold transition border flex items-center gap-1 ${isActive ? 'border-slate-900 bg-slate-900 text-white' : v > 0 ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}>
+                              <span className="text-sm">{c.symbol}</span><span>{c.code}</span>
+                              {v > 0 && <span className={`text-[8px] font-mono px-1 rounded ${isActive ? 'bg-white/20' : 'bg-emerald-200 text-emerald-800'}`}>{formatNumber(v)}</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-lg font-black text-slate-700 leading-none">{cashFocusedAuto ? '₭' : activeCur.symbol}</span>
+                        <div className="leading-tight">
+                          <div className="text-[8px] font-extrabold text-slate-400 uppercase">ປ້ອນ {METHOD_META[activeMethod]?.label || ''} ({cashFocusedAuto ? 'LAK' : activeCur.code})</div>
+                          {!cashFocusedAuto && activeCur.code !== 'LAK' && Number(activeVal) > 0 && (
+                            <div className="text-[9px] font-bold text-emerald-700 font-mono-t">≈ {formatPrice(Math.round(activeLak))}</div>
+                          )}
+                          {!cashFocusedAuto && activeCur.code !== 'LAK' && !Number(activeVal) && (
+                            <div className="text-[9px] font-bold text-slate-400">@ {formatNumber(activeCur.rate)}</div>
+                          )}
+                        </div>
+                      </div>
+                      <input
+                        ref={amountInputRef}
+                        type="text"
+                        inputMode="decimal"
+                        autoFocus
+                        value={cashFocusedAuto ? '' : activeVal}
+                        placeholder={cashFocusedAuto ? formatNumber(Math.round(autoCashLak)) : '0'}
+                        onChange={(e) => setTender(activeMethod, activeCur.code, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (fullyPaid) handleCheckout() } }}
+                        className={`w-40 bg-transparent outline-none text-right text-2xl font-extrabold font-mono-t tracking-tight ${cashFocusedAuto ? 'text-emerald-600 placeholder:text-emerald-500/70' : 'text-slate-900 placeholder:text-slate-300'}`}
+                      />
                     </div>
-                  )}
-                </div>
+
+                    <div className="grid grid-cols-2 gap-1">
+                      <button onClick={() => fillExact(activeMethod, activeCur.code)}
+                        className="h-7 rounded bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold">
+                        {activeMethod === 'cash' ? '⚡ ຕື່ມສ່ວນທີ່ເຫຼືອ' : `⚡ ພໍດີ${remaining > 0 ? ' (ສ່ວນທີ່ຍັງຂາດ)' : ''}`}
+                      </button>
+                      <button onClick={() => (activeMethod === 'cash' ? reAutoCash() : setTender(activeMethod, activeCur.code, ''))}
+                        disabled={activeMethod === 'cash' ? cashAuto : !activeVal}
+                        className="h-7 rounded bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 text-[10px] font-extrabold disabled:opacity-40">
+                        {activeMethod === 'cash' ? '↺ ອັດຕະໂນມັດ' : '✕ ລ້າງ'}
+                      </button>
+                    </div>
+                    {denoms.length > 0 && (
+                      <div className="grid grid-cols-4 gap-1">
+                        {denoms.slice(0, 8).map(d => (
+                          <button key={d} onClick={() => addDenomination(activeMethod, activeCur.code, d)}
+                            className="h-6 rounded text-[9px] font-extrabold font-mono-t bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 hover:border-slate-300 transition">
+                            +{d >= 1000 ? (d / 1000) + 'K' : d}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
 
@@ -2939,6 +3265,7 @@ export default function POS({ user, onLogout }) {
                     C  ລ້າງທັງໝົດ
                   </button>
                 </div>
+                <div className="mt-1.5 text-center text-[9px] font-bold text-slate-400">⌨ ພິມຈາກ keyboard ໄດ້ · ⌫ ລຶບ · Enter = ຊຳລະ</div>
               </div>
             )}
           </div>
@@ -2993,7 +3320,7 @@ export default function POS({ user, onLogout }) {
               </div>
             )}
 
-            {paymentMethod === 'cash' && (
+            {!isCredit && (activeMethod === 'cash' || methodTotals.cash > 0) && (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-3 py-2.5">
                 <div className="min-w-0 flex items-center gap-2.5">
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${drawerReady ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>💴</div>
@@ -3132,6 +3459,140 @@ export default function POS({ user, onLogout }) {
           ) : (
             <div className="text-center py-10 text-slate-400">ຍັງບໍ່ມີຂໍ້ມູນການຂາຍວັນນີ້</div>
           )}
+
+          {/* Receipts detail table */}
+          <div className="pt-4 mt-4 border-t-2 border-dashed border-slate-300">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+                </span>
+                <h3 className="text-sm font-extrabold text-slate-900">ສະຫຼຸບການຮັບເງິນ — ລາຍລະອຽດ</h3>
+                <span className="text-[10px] font-bold text-slate-500">{formatNumber(todayReceipts.rows.length)} ລາຍການ</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => setShowReceiptsDetail(v => !v)}
+                  className="px-2.5 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-[11px] font-bold text-slate-700">
+                  {showReceiptsDetail ? 'ເຊື່ອງຕາຕະລາງ' : 'ສະແດງຕາຕະລາງ'}
+                </button>
+                <button onClick={() => printReceiptsSummary(todayReceipts, user, company)}
+                  disabled={todayReceipts.rows.length === 0}
+                  className="px-2.5 py-1.5 rounded-md bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 text-white text-[11px] font-bold flex items-center gap-1">
+                  🖨️ ພິມ
+                </button>
+                <button
+                  onClick={async () => {
+                    if (receiptsPdfBusy) return
+                    setReceiptsPdfBusy(true)
+                    try { await downloadReceiptsSummaryPdf(todayReceipts, user, company) }
+                    catch (e) { console.error(e); showToast('ສ້າງ PDF ບໍ່ສຳເລັດ', 'error') }
+                    finally { setReceiptsPdfBusy(false) }
+                  }}
+                  disabled={receiptsPdfBusy || todayReceipts.rows.length === 0}
+                  className="px-2.5 py-1.5 rounded-md bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white text-[11px] font-bold flex items-center gap-1">
+                  {receiptsPdfBusy ? '⏳ ກຳລັງສ້າງ...' : '📄 ດາວໂຫຼດ PDF'}
+                </button>
+              </div>
+            </div>
+
+            {showReceiptsDetail && (
+              <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 text-[10px]">
+                        <th rowSpan={2} className="border border-slate-200 px-2 py-1.5 font-bold">ວັນທີ</th>
+                        <th rowSpan={2} className="border border-slate-200 px-2 py-1.5 font-bold">ເລກທີ</th>
+                        <th rowSpan={2} className="border border-slate-200 px-2 py-1.5 font-bold">ປະເພດເອກະສານ</th>
+                        <th colSpan={2} className="border border-slate-200 px-2 py-1 font-bold bg-emerald-50">ຍອດບິນຂາຍສົດ</th>
+                        <th rowSpan={2} className="border border-slate-200 px-2 py-1.5 font-bold bg-amber-50">ຍອດບິນຂາຍຕິດໜີ້</th>
+                        <th colSpan={2} className="border border-slate-200 px-2 py-1 font-bold bg-rose-50">ຍອດຮັບຄືນສິນຄ້າ (ສ່ງເງິນຄືນ)</th>
+                        <th colSpan={2} className="border border-slate-200 px-2 py-1 font-bold bg-violet-50">ຍອດຊຳລະໜີ້</th>
+                        <th colSpan={2} className="border border-slate-200 px-2 py-1 font-bold bg-slate-200">ເງິນໄດ້ຮັບທັງໝົດ</th>
+                      </tr>
+                      <tr className="bg-slate-100 text-slate-600 text-[9px]">
+                        <th className="border border-slate-200 px-2 py-1 font-bold bg-emerald-50">ເງິນສົດ</th>
+                        <th className="border border-slate-200 px-2 py-1 font-bold bg-emerald-50">ເງິນໂອນ</th>
+                        <th className="border border-slate-200 px-2 py-1 font-bold bg-rose-50">ເງິນສົດ</th>
+                        <th className="border border-slate-200 px-2 py-1 font-bold bg-rose-50">ເງິນໂອນ</th>
+                        <th className="border border-slate-200 px-2 py-1 font-bold bg-violet-50">ເງິນສົດ</th>
+                        <th className="border border-slate-200 px-2 py-1 font-bold bg-violet-50">ເງິນໂອນ</th>
+                        <th className="border border-slate-200 px-2 py-1 font-bold bg-slate-200">ເງິນສົດ</th>
+                        <th className="border border-slate-200 px-2 py-1 font-bold bg-slate-200">ເງິນໂອນ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {todayReceipts.rows.length === 0 && (
+                        <tr><td colSpan={12} className="py-8 text-center text-slate-400">ບໍ່ມີຂໍ້ມູນວັນນີ້</td></tr>
+                      )}
+                      {todayReceipts.rows.map((r, i) => {
+                        const typeColor = {
+                          cash_sale: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                          credit_sale: 'bg-amber-50 text-amber-700 border-amber-200',
+                          debt_payment: 'bg-sky-50 text-sky-700 border-sky-200',
+                          layby_payment: 'bg-violet-50 text-violet-700 border-violet-200',
+                          refund: 'bg-rose-50 text-rose-700 border-rose-200',
+                        }[r.doc_type] || 'bg-slate-50 text-slate-600 border-slate-200'
+                        return (
+                          <tr key={i} className="hover:bg-slate-50">
+                            <td className="border border-slate-200 px-2 py-1 whitespace-nowrap">{fmtReceiptDate(r.date)}</td>
+                            <td className="border border-slate-200 px-2 py-1 font-mono text-[10px] whitespace-nowrap">{r.doc_number}</td>
+                            <td className="border border-slate-200 px-2 py-1 whitespace-nowrap">
+                              <span className={`inline-block px-1.5 py-0.5 rounded border text-[9px] font-bold ${typeColor}`}>
+                                {r.doc_type_label}
+                              </span>
+                            </td>
+                            <td className="border border-slate-200 px-2 py-1 text-right font-mono">{fmtReceiptCell(r.cash_sale_cash)}</td>
+                            <td className="border border-slate-200 px-2 py-1 text-right font-mono">{fmtReceiptCell(r.cash_sale_transfer)}</td>
+                            <td className="border border-slate-200 px-2 py-1 text-right font-mono">{fmtReceiptCell(r.credit_sale)}</td>
+                            <td className="border border-slate-200 px-2 py-1 text-right font-mono">{fmtReceiptCell(r.refund_cash)}</td>
+                            <td className="border border-slate-200 px-2 py-1 text-right font-mono">{fmtReceiptCell(r.refund_transfer)}</td>
+                            <td className="border border-slate-200 px-2 py-1 text-right font-mono">{fmtReceiptCell(r.customer_down_cash)}</td>
+                            <td className="border border-slate-200 px-2 py-1 text-right font-mono">{fmtReceiptCell(r.customer_down_transfer)}</td>
+                            <td className="border border-slate-200 px-2 py-1 text-right font-mono"></td>
+                            <td className="border border-slate-200 px-2 py-1 text-right font-mono"></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    {todayReceipts.totals && todayReceipts.rows.length > 0 && (
+                      <tfoot>
+                        <tr className="bg-slate-900 text-white font-bold">
+                          <td colSpan={3} className="border border-slate-700 px-2 py-1.5 text-right">ລວມທັງໝົດ</td>
+                          <td className="border border-slate-700 px-2 py-1.5 text-right font-mono">{fmtReceiptTotal(todayReceipts.totals.cash_sale_cash)}</td>
+                          <td className="border border-slate-700 px-2 py-1.5 text-right font-mono">{fmtReceiptTotal(todayReceipts.totals.cash_sale_transfer)}</td>
+                          <td className="border border-slate-700 px-2 py-1.5 text-right font-mono">{fmtReceiptTotal(todayReceipts.totals.credit_sale)}</td>
+                          <td className="border border-slate-700 px-2 py-1.5 text-right font-mono">{fmtReceiptTotal(todayReceipts.totals.refund_cash)}</td>
+                          <td className="border border-slate-700 px-2 py-1.5 text-right font-mono">{fmtReceiptTotal(todayReceipts.totals.refund_transfer)}</td>
+                          <td className="border border-slate-700 px-2 py-1.5 text-right font-mono">{fmtReceiptTotal(todayReceipts.totals.customer_down_cash)}</td>
+                          <td className="border border-slate-700 px-2 py-1.5 text-right font-mono">{fmtReceiptTotal(todayReceipts.totals.customer_down_transfer)}</td>
+                          <td className="border border-slate-700 px-2 py-1.5 text-right font-mono">{fmtReceiptTotal(todayReceipts.totals.total_received_cash)}</td>
+                          <td className="border border-slate-700 px-2 py-1.5 text-right font-mono">{fmtReceiptTotal(todayReceipts.totals.total_received_transfer)}</td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+
+                {todayReceipts.totals && todayReceipts.rows.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 border-t border-slate-200">
+                    <div className="bg-white border border-emerald-200 rounded-lg p-2">
+                      <div className="text-[9px] font-bold text-emerald-700 uppercase tracking-wider">ລວມຮັບເງິນສົດ</div>
+                      <div className="text-base font-extrabold text-emerald-700 font-mono-t mt-0.5">{fmtReceiptTotal(todayReceipts.totals.total_received_cash)} ₭</div>
+                    </div>
+                    <div className="bg-white border border-sky-200 rounded-lg p-2">
+                      <div className="text-[9px] font-bold text-sky-700 uppercase tracking-wider">ລວມຮັບເງິນໂອນ</div>
+                      <div className="text-base font-extrabold text-sky-700 font-mono-t mt-0.5">{fmtReceiptTotal(todayReceipts.totals.total_received_transfer)} ₭</div>
+                    </div>
+                    <div className="bg-white border border-slate-300 rounded-lg p-2">
+                      <div className="text-[9px] font-bold text-slate-700 uppercase tracking-wider">ລວມຮັບເງິນທັງໝົດ</div>
+                      <div className="text-base font-extrabold text-slate-900 font-mono-t mt-0.5">{fmtReceiptTotal(todayReceipts.totals.grand_total_received)} ₭</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Cash handover section */}
           <div className="pt-4 mt-4 border-t-2 border-dashed border-slate-300">
@@ -3581,7 +4042,7 @@ export default function POS({ user, onLogout }) {
                       <span className="text-[10px] font-mono-t bg-red-100 text-red-900 font-extrabold px-2 py-0.5 rounded shrink-0">{order.bill_number || `#${order.id}`}</span>
                       <div className="min-w-0">
                         <div className="text-sm font-bold text-slate-900">
-                          {order.payment_method === 'cash' ? '💵 ເງິນສົດ' : order.payment_method === 'transfer' ? '🏦 ໂອນ' : order.payment_method === 'credit' ? '🧾 ຂາຍຕິດໜີ້' : '📱 QR'}
+                          {order.payment_method === 'cash' ? '💵 ເງິນສົດ' : order.payment_method === 'transfer' ? '🏦 ໂອນ' : order.payment_method === 'credit' ? '🧾 ຂາຍຕິດໜີ້' : order.payment_method === 'mixed' ? '💵🏦 ຫຼາຍຊ່ອງທາງ' : '📱 QR'}
                           {order.member_id && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">ສະມາຊິກ</span>}
                           {isToday && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">ມື້ນີ້</span>}
                         </div>

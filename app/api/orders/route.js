@@ -98,7 +98,10 @@ export const POST = handle(async (request) => {
           const amount = Math.max(0, Number(p.amount) || 0);
           const rate = Math.max(0, Number(p.rate) || 1);
           const amount_lak = Math.max(0, Number(p.amount_lak) || amount * rate);
-          return { currency, amount, rate, amount_lak };
+          // Preserve the tender method (cash/transfer/qr) so reports can split
+          // a mixed payment by method, not just by the order-level payment_method.
+          const method = String(p.method || '').toLowerCase() || 'cash';
+          return { currency, amount, rate, amount_lak, method };
         })
         .filter((p) => p.amount > 0);
       paymentsSumLAK = paymentsNorm.reduce((s, p) => s + p.amount_lak, 0);
@@ -109,11 +112,11 @@ export const POST = handle(async (request) => {
     const methodFinal =
       isCredit ? 'credit' :
       payment_method ||
-      (paymentsNorm && paymentsNorm.length > 1
-        ? 'mixed'
-        : paymentsNorm?.[0]?.currency === 'LAK'
-        ? 'cash'
-        : 'cash');
+      (() => {
+        if (!paymentsNorm || paymentsNorm.length === 0) return 'cash';
+        const methods = [...new Set(paymentsNorm.map((p) => p.method))];
+        return methods.length > 1 ? 'mixed' : (methods[0] || 'cash');
+      })();
     const customerName = String(customer_name || '').trim();
     const dueDate = credit_due_date ? String(credit_due_date).slice(0, 10) : null;
     const memberId = Number(member_id) || null;

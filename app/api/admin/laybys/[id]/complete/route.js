@@ -92,10 +92,13 @@ export const POST = handle(async (request, { params }) => {
         for (const p of finalPaymentsJson) {
           const lakAmt = Number(p.amount_lak) || Number(p.amount) * (Number(p.rate) || 1);
           if (lakAmt <= 0) continue;
+          const lpMethod = p.method
+            ? String(p.method).toLowerCase()
+            : (p.currency ? `cash_${String(p.currency).toLowerCase()}` : finalPaymentMethod);
           await client.query(
             `INSERT INTO layby_payments (layby_id, amount, payment_method, payment_date, note, created_by)
              VALUES ($1, $2, $3, CURRENT_DATE, $4, $5)`,
-            [lid, lakAmt, p.currency ? `cash_${String(p.currency).toLowerCase()}` : finalPaymentMethod, body.note || 'POS ປິດ Layby', actor.username || null]
+            [lid, lakAmt, lpMethod, body.note || 'POS ປິດ Layby', actor.username || null]
           );
         }
       } else {

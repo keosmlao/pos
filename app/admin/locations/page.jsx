@@ -151,20 +151,20 @@ export default function LocationsPage() {
     updateLocations(next, selectedProvince, selectedDistrict);
   };
 
-  const save = async () => {
+  const migrateDefaults = async () => {
+    if (!confirm('ນີ້ຈະຍ້າຍຂໍ້ມູນຕົ້ນຕໍຂອງສະຖານທີ່ລາວໄປເກັບໄວ້ໃນຖານຂໍ້ມູນ. ຕົກລົງບໍ?')) return;
     setSaving(true);
     try {
-      const res = await fetch(`${API}/admin/locations`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ locations }),
-      });
+      const res = await fetch(`${API}/admin/locations/migrate`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return showToast(data.error || 'ບັນທຶກບໍ່ສຳເລັດ', 'error');
-      setLocations(data.locations || locations);
-      showToast('ບັນທຶກສຳເລັດ');
+      if (!res.ok) return showToast(data.error || 'ຍ້າຍຂໍ້ມູນບໍ່ສຳເລັດ', 'error');
+      // Reload locations
+      const locRes = await fetch(`${API}/admin/locations`);
+      const locData = await locRes.json();
+      setLocations(locData.locations || {});
+      showToast('ຍ້າຍຂໍ້ມູນສຳເລັດ');
     } catch {
-      showToast('ບັນທຶກບໍ່ສຳເລັດ', 'error');
+      showToast('ຍ້າຍຂໍ້ມູນບໍ່ສຳເລັດ', 'error');
     } finally {
       setSaving(false);
     }
@@ -179,10 +179,16 @@ export default function LocationsPage() {
         title="📍 ກຳນົດ ແຂວງ / ເມືອງ / ບ້ານ"
         subtitle="ໃຊ້ກັບຟອມສະມາຊິກ, POS ແລະ ຜູ້ສະໜອງ"
         action={
-          <button onClick={save} disabled={saving}
-            className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20 disabled:opacity-50">
-            {saving ? 'ກຳລັງບັນທຶກ...' : '💾 ບັນທຶກ'}
-          </button>
+          <div className="flex gap-2">
+            <button onClick={migrateDefaults} disabled={saving}
+              className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-blue-950/20 disabled:opacity-50">
+              {saving ? 'ກຳລັງຍ້າຍ...' : '📥 ຍ້າຍຂໍ້ມູນຕົ້ນຕໍ'}
+            </button>
+            <button onClick={save} disabled={saving}
+              className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20 disabled:opacity-50">
+              {saving ? 'ກຳລັງບັນທຶກ...' : '💾 ບັນທຶກ'}
+            </button>
+          </div>
         }
       />
 
