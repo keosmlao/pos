@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import ThemeToggle from '@/components/admin/ThemeToggle';
 import { useCompanyProfile } from '@/utils/useCompanyProfile';
-import { canAccessAdmin, firstAccessibleAdminPath } from '@/utils/adminPermissions';
+import { canAccessAdmin, firstAccessibleAdminPath, adminMenuItems, isMenuItemActive } from '@/utils/adminPermissions';
 import { installAuditFetch } from '@/utils/auditFetch';
 
 export default function AdminLayout({ children }) {
@@ -51,6 +51,17 @@ export default function AdminLayout({ children }) {
   }, [router, pathname]);
 
   if (!authorized) return null;
+
+  // ຊື່ໜ້າປັດຈຸບັນສຳລັບ topbar
+  const currentItem = [...adminMenuItems]
+    .sort((a, b) => b.path.length - a.path.length)
+    .find(item => isMenuItemActive(item, pathname));
+
+  const handleLogout = () => {
+    fetch('/api/logout', { method: 'POST' }).catch(() => {});
+    localStorage.removeItem('pos_user');
+    router.replace('/');
+  };
 
   const sidebarProps = {
     company,
@@ -101,6 +112,38 @@ export default function AdminLayout({ children }) {
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{company.name}</div>
           </div>
           <ThemeToggle compact />
+        </header>
+
+        {/* Desktop topbar: ຊື່ໜ້າ + ໂໝດມືດ + ຜູ້ໃຊ້ + ອອກຈາກລະບົບ */}
+        <header className="hidden md:flex items-center gap-3 px-5 h-14 bg-white/80 dark:bg-slate-900/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <span className="text-xl leading-none">{currentItem?.icon || '📊'}</span>
+            <div className="min-w-0">
+              <div className="text-[15px] font-extrabold text-slate-900 dark:text-slate-100 truncate leading-tight">
+                {currentItem?.label || 'ແຜງຄວບຄຸມ'}
+              </div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                {currentItem?.section || 'Admin'}
+              </div>
+            </div>
+          </div>
+          <ThemeToggle compact />
+          <div className="flex items-center gap-2 pl-3 border-l border-slate-200 dark:border-slate-700">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-red-700 text-xs font-black text-white">
+              {(user?.display_name || user?.username || '?').charAt(0).toUpperCase()}
+            </span>
+            <div className="leading-tight">
+              <div className="text-[12px] font-extrabold text-slate-800 dark:text-slate-200">{user?.display_name || user?.username}</div>
+              <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{user?.role}</div>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="ອອກຈາກລະບົບ"
+              className="ml-1 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto">

@@ -350,13 +350,13 @@ function SidebarItem({ item, pathname, pinned, onTogglePin, showSection, pinnedA
     <div className="group relative">
       <Link
         href={item.path}
-        className={`relative flex items-center gap-2.5 rounded-md pl-2.5 pr-8 py-1.5 text-[12.5px] font-bold transition-colors ${
+        className={`relative flex items-center gap-2.5 rounded-lg pl-2.5 pr-8 py-1.5 text-[12.5px] font-bold transition-all ${
           active
-            ? 'bg-red-500/20 text-white'
-            : 'text-slate-400 hover:bg-white/[0.04] hover:text-white'
+            ? 'bg-gradient-to-r from-red-600/40 to-red-500/10 text-white shadow-sm shadow-red-950/30'
+            : 'text-slate-400 hover:bg-white/[0.05] hover:text-white hover:translate-x-0.5'
         }`}
       >
-        {active && <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-red-400" />}
+        {active && <span className="absolute left-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-red-400" />}
         <span className={`text-base leading-none shrink-0 ${active ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'}`}>
           {item.icon}
         </span>
