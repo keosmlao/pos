@@ -6,7 +6,24 @@ import { adminMenuSections, isMenuItemActive, normalizePermissions } from '@/uti
 import ThemeToggle from '@/components/admin/ThemeToggle';
 
 const PINS_KEY = 'admin_sidebar_pins_v1';
+const OPEN_KEY = 'admin_sidebar_open_v1';
 const MAX_PINS = 12;
+
+function loadOpenSections() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(OPEN_KEY);
+    const obj = JSON.parse(raw || 'null');
+    return obj && typeof obj === 'object' ? obj : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveOpenSections(open) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(OPEN_KEY, JSON.stringify(open)); } catch {}
+}
 
 function loadPins() {
   if (typeof window === 'undefined') return [];
@@ -49,9 +66,30 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
 
   const [pins, setPins] = useState([]);
   const [search, setSearch] = useState('');
+  // ໝວດໃດເປີດ/ປິດ — ຄ່າເລີ່ມຕົ້ນເປີດໝົດ, ຈື່ໄວ້ໃນເຄື່ອງ
+  const [openSections, setOpenSections] = useState({});
+  const [openLoaded, setOpenLoaded] = useState(false);
 
   useEffect(() => { setPins(loadPins()); }, []);
   useEffect(() => { savePins(pins); }, [pins]);
+  useEffect(() => {
+    setOpenSections(loadOpenSections() || {});
+    setOpenLoaded(true);
+  }, []);
+  useEffect(() => { if (openLoaded) saveOpenSections(openSections); }, [openSections, openLoaded]);
+
+  // ໝວດທີ່ມີໜ້າປັດຈຸບັນຢູ່ ໃຫ້ເປີດສະເໝີ ເພື່ອເຫັນວ່າຢູ່ໃສ
+  const activeSection = useMemo(() => {
+    const item = [...allItems].sort((a, b) => b.path.length - a.path.length)
+      .find(it => isMenuItemActive(it, pathname));
+    return item?.section || null;
+  }, [allItems, pathname]);
+
+  const isSectionOpen = (title) =>
+    title === activeSection || openSections[title] !== false;
+
+  const toggleSection = (title) =>
+    setOpenSections(prev => ({ ...prev, [title]: !isSectionOpen(title) }));
 
   const togglePin = (path) => {
     setPins(prev => {
@@ -239,24 +277,44 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
               </div>
             )}
 
-            {visibleSections.map(section => (
-              <div key={section.title} className="mb-3 last:mb-1">
-                <div className="px-2 pb-1.5 pt-2 text-[9px] font-extrabold uppercase tracking-widest text-slate-500 select-none">
-                  {section.title}
+            {visibleSections.map(section => {
+              const open = isSectionOpen(section.title);
+              const hasActive = section.title === activeSection;
+              return (
+                <div key={section.title} className="mb-0.5">
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(section.title)}
+                    className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] font-extrabold transition-colors select-none ${
+                      hasActive ? 'text-white' : 'text-slate-300 hover:bg-white/[0.04] hover:text-white'
+                    }`}
+                  >
+                    <svg
+                      width="10" height="10" viewBox="0 0 24 24" fill="currentColor"
+                      className={`shrink-0 text-slate-500 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
+                    >
+                      <path d="M8 5l8 7-8 7V5z" />
+                    </svg>
+                    <span className="text-sm leading-none shrink-0 w-4 text-center">{section.icon}</span>
+                    <span className="truncate flex-1 text-left">{section.title}</span>
+                    <span className="text-[9px] font-bold text-slate-600">{section.items.length}</span>
+                  </button>
+                  {open && (
+                    <div className="ml-[13px] border-l border-white/[0.08] pl-1.5 py-0.5 space-y-0.5">
+                      {section.items.map(item => (
+                        <SidebarItem
+                          key={item.path}
+                          item={item}
+                          pathname={pathname}
+                          pinned={isPinned(item.path)}
+                          onTogglePin={() => togglePin(item.path)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="space-y-0.5">
-                  {section.items.map(item => (
-                    <SidebarItem
-                      key={item.path}
-                      item={item}
-                      pathname={pathname}
-                      pinned={isPinned(item.path)}
-                      onTogglePin={() => togglePin(item.path)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             {pinnedItems.length === 0 && (
               <div className="mx-2 mb-2 rounded-lg border border-dashed border-white/[0.08] px-3 py-2.5 text-[10px] leading-relaxed text-slate-500">
