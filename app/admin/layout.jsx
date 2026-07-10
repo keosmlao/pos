@@ -73,7 +73,7 @@ export default function AdminLayout({ children }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950">
-      <aside className={`hidden md:flex bg-slate-950 text-white shrink-0 transition-[width] duration-200 ${collapsed ? 'w-[60px]' : 'w-[230px]'}`}>
+      <aside className={`admin-sidebar hidden md:flex bg-slate-950 text-white shrink-0 transition-[width] duration-200 ${collapsed ? 'w-[60px]' : 'w-[230px]'}`}>
         <AdminSidebar {...sidebarProps} collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
       </aside>
 
@@ -86,7 +86,7 @@ export default function AdminLayout({ children }) {
           onClick={() => setMobileOpen(false)}
         />
         <aside
-          className={`absolute top-0 left-0 bottom-0 w-[230px] max-w-[90vw] bg-slate-950 text-white shadow-2xl transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          className={`admin-sidebar absolute top-0 left-0 bottom-0 w-[230px] max-w-[90vw] bg-slate-950 text-white shadow-2xl transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
           <AdminSidebar {...sidebarProps} />
         </aside>
