@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { handle, ok, readJson } from '@/lib/api';
 import { ensureCompanyProfileSchema } from '@/lib/migrations';
+import { VALID_COSTING } from '@/lib/costingMethods';
 
 export const GET = handle(async () => {
   await ensureCompanyProfileSchema();
@@ -10,7 +11,6 @@ export const GET = handle(async () => {
   return ok(result.rows[0] || null);
 });
 
-const VALID_COSTING = new Set(['FIFO', 'LIFO', 'AVG', 'LAST']);
 const VALID_VAT_MODES = new Set(['exclusive', 'inclusive']);
 const VALID_ROUNDING_MODES = new Set(['none', 'nearest', 'up', 'down']);
 

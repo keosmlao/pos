@@ -6,7 +6,7 @@ import { adminMenuSections, isMenuItemActive, normalizePermissions } from '@/uti
 import ThemeToggle from '@/components/admin/ThemeToggle';
 
 const PINS_KEY = 'admin_sidebar_pins_v1';
-const OPEN_KEY = 'admin_sidebar_open_v1';
+const OPEN_KEY = 'admin_sidebar_open_v2';
 const MAX_PINS = 12;
 
 function loadOpenSections() {
@@ -85,8 +85,9 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
     return item?.section || null;
   }, [allItems, pathname]);
 
+  // ຄ່າເລີ່ມຕົ້ນ: ປິດທຸກໝວດ — ເປີດສະເພາະໝວດຂອງໜ້າປັດຈຸບັນ ຫຼື ທີ່ຜູ້ໃຊ້ເປີດເອງ
   const isSectionOpen = (title) =>
-    title === activeSection || openSections[title] !== false;
+    title === activeSection || openSections[title] === true;
 
   const toggleSection = (title) =>
     setOpenSections(prev => ({ ...prev, [title]: !isSectionOpen(title) }));
@@ -285,8 +286,8 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
                   <button
                     type="button"
                     onClick={() => toggleSection(section.title)}
-                    className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] font-extrabold transition-colors select-none ${
-                      hasActive ? 'text-white' : 'text-slate-300 hover:bg-white/[0.04] hover:text-white'
+                    className={`w-full flex items-center gap-2 rounded-md px-2 py-2 text-[13px] font-extrabold transition-colors select-none ${
+                      hasActive ? 'text-white bg-white/[0.03]' : 'text-slate-300 hover:bg-white/[0.04] hover:text-white'
                     }`}
                   >
                     <svg

@@ -3,8 +3,8 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureProductsExtraSchema } from '@/lib/migrations';
+import { VALID_COSTING } from '@/lib/costingMethods';
 
-const VALID_COSTING = new Set(['FIFO', 'LIFO', 'AVG', 'LAST']);
 
 // ຮັບ 'YYYY-MM-DD' ຫຼື 'DD/MM/YYYY' → 'YYYY-MM-DD', ອື່ນໆ → null
 // ຖ້າຄ່າທຳອິດ ≤12 ແຕ່ຄ່າທີສອງ >12 ຖືວ່າເປັນຮູບແບບ M/D/YYYY (Excel ສະຫະລັດ) ແລ້ວສະຫຼັບໃຫ້

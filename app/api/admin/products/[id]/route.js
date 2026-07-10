@@ -4,8 +4,8 @@ import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureProductsExtraSchema } from '@/lib/migrations';
 import { findDuplicateProduct } from '@/lib/productChecks';
+import { VALID_COSTING } from '@/lib/costingMethods';
 
-const VALID_COSTING = new Set(['FIFO', 'LIFO', 'AVG', 'LAST']);
 
 export const PUT = handle(async (request, { params }) => {
   await ensureProductsExtraSchema();

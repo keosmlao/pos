@@ -40,6 +40,74 @@ body {
   --admin-surface:   #1e293b;   /* slate-800 */
   --admin-border:    #334155;   /* slate-700 */
 }
+
+/* === Dark mode ສຳລັບໜ້າ admin ທັງໝົດ ===
+ * ໜ້າ admin ຂຽນດ້ວຍ utility ໂໝດສະຫວ່າງ (bg-white, text-slate-900, ...).
+ * ຊັ້ນ override ນີ້ແປງ class ຫຼັກເຫຼົ່ານັ້ນເປັນສີມືດ ຈຸດດຽວກວມທຸກໜ້າ
+ * ໂດຍບໍ່ຕ້ອງໄລ່ຕື່ມ dark: ໃສ່ 60+ ໜ້າ. */
+.dark .admin-content .bg-white { background-color: #0f172a; }
+.dark .admin-content .bg-slate-50,
+.dark .admin-content .bg-slate-100,
+.dark .admin-content .bg-slate-200 { background-color: #1e293b; }
+.dark .admin-content [class*="bg-slate-50/"],
+.dark .admin-content [class*="bg-slate-100/"] { background-color: rgba(30, 41, 59, 0.6); }
+.dark .admin-content .hover\:bg-slate-50:hover,
+.dark .admin-content .hover\:bg-slate-100:hover,
+.dark .admin-content .hover\:bg-slate-200:hover,
+.dark .admin-content [class*="hover:bg-slate-50/"]:hover { background-color: #293548; }
+.dark .admin-content .hover\:bg-white:hover { background-color: #1e293b; }
+
+.dark .admin-content .text-slate-900,
+.dark .admin-content .text-slate-800 { color: #f1f5f9; }
+.dark .admin-content .text-slate-700,
+.dark .admin-content .text-slate-600 { color: #cbd5e1; }
+.dark .admin-content .text-slate-500 { color: #94a3b8; }
+.dark .admin-content .text-slate-400,
+.dark .admin-content .text-slate-300 { color: #64748b; }
+.dark .admin-content .hover\:text-slate-900:hover { color: #ffffff; }
+
+.dark .admin-content .border-slate-100,
+.dark .admin-content .border-slate-200,
+.dark .admin-content .border-slate-300 { border-color: #334155; }
+.dark .admin-content .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark .admin-content .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #293548; }
+
+/* ພື້ນສີອ່ອນ (badge/alert) → ສີໂປ່ງໃສເທິງພື້ນມືດ + ຕົວໜັງສືອ່ອນຂຶ້ນ */
+.dark .admin-content .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.12); }
+.dark .admin-content .bg-red-50 { background-color: rgba(239, 68, 68, 0.12); }
+.dark .admin-content .bg-rose-50 { background-color: rgba(244, 63, 94, 0.12); }
+.dark .admin-content .bg-amber-50 { background-color: rgba(245, 158, 11, 0.12); }
+.dark .admin-content .bg-violet-50 { background-color: rgba(139, 92, 246, 0.12); }
+.dark .admin-content .bg-cyan-50 { background-color: rgba(6, 182, 212, 0.12); }
+.dark .admin-content .bg-blue-50 { background-color: rgba(59, 130, 246, 0.12); }
+.dark .admin-content .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.2); }
+.dark .admin-content .bg-red-100 { background-color: rgba(239, 68, 68, 0.2); }
+.dark .admin-content .bg-amber-100 { background-color: rgba(245, 158, 11, 0.2); }
+.dark .admin-content .text-emerald-700 { color: #34d399; }
+.dark .admin-content .text-red-700, .dark .admin-content .text-red-600 { color: #f87171; }
+.dark .admin-content .text-rose-700, .dark .admin-content .text-rose-600 { color: #fb7185; }
+.dark .admin-content .text-amber-700 { color: #fbbf24; }
+.dark .admin-content .text-emerald-600 { color: #34d399; }
+.dark .admin-content .text-violet-600, .dark .admin-content .text-violet-700 { color: #a78bfa; }
+.dark .admin-content .border-emerald-200 { border-color: rgba(16, 185, 129, 0.35); }
+.dark .admin-content .border-red-200 { border-color: rgba(239, 68, 68, 0.35); }
+.dark .admin-content .border-amber-200 { border-color: rgba(245, 158, 11, 0.35); }
+
+/* ຟອມ: input/select/textarea ພື້ນຂາວ → ມືດ */
+.dark .admin-content input:not([type="checkbox"]):not([type="radio"]),
+.dark .admin-content select,
+.dark .admin-content textarea {
+  background-color: #1e293b;
+  color: #f1f5f9;
+  border-color: #334155;
+}
+.dark .admin-content input::placeholder,
+.dark .admin-content textarea::placeholder { color: #64748b; }
+
+/* ເງົາອ່ອນລົງໃນໂໝດມືດ */
+.dark .admin-content .shadow-sm,
+.dark .admin-content .shadow,
+.dark .admin-content .shadow-lg { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); }
 .admin-content h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01em; }
 .admin-content h2 { font-size: 1.05rem; font-weight: 700; }
 .admin-content h3 { font-size: 0.95rem; font-weight: 700; }
