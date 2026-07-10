@@ -7,13 +7,26 @@ import { ensureProductsExtraSchema } from '@/lib/migrations';
 const VALID_COSTING = new Set(['FIFO', 'LIFO', 'AVG', 'LAST']);
 
 // ຮັບ 'YYYY-MM-DD' ຫຼື 'DD/MM/YYYY' → 'YYYY-MM-DD', ອື່ນໆ → null
+// ຖ້າຄ່າທຳອິດ ≤12 ແຕ່ຄ່າທີສອງ >12 ຖືວ່າເປັນຮູບແບບ M/D/YYYY (Excel ສະຫະລັດ) ແລ້ວສະຫຼັບໃຫ້
 function normalizeDate(input) {
   const s = String(input || '').trim();
   if (!s) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  if (m) {
+    let day = Number(m[1]);
+    let month = Number(m[2]);
+    if (month > 12 && day <= 12) [day, month] = [month, day];
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return `${m[3]}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
   return null;
+}
+
+// ຮັບຕົວເລກທີ່ອາດມີຈຸດຂັ້ນຫຼັກພັນ ('2,000' ຫຼື '2 000') — ບໍ່ໃຫ້ກາຍເປັນ 0 ງຽບໆ
+function normalizeNumber(input, fallback = 0) {
+  const n = Number(String(input ?? '').replace(/[,\s]/g, ''));
+  return Number.isFinite(n) ? n : fallback;
 }
 
 // Bulk insert/update products from a parsed array. Each row should have:
@@ -61,10 +74,10 @@ export const POST = handle(async (request) => {
           category: String(r.category || '').trim() || null,
           brand: String(r.brand || '').trim() || null,
           unit: String(r.unit || '').trim() || null,
-          cost_price: Number(r.cost_price) || 0,
-          selling_price: Number(r.selling_price) || 0,
-          qty_on_hand: Number(r.qty_on_hand) || 0,
-          min_stock: Number(r.min_stock) || 5,
+          cost_price: normalizeNumber(r.cost_price),
+          selling_price: normalizeNumber(r.selling_price),
+          qty_on_hand: normalizeNumber(r.qty_on_hand),
+          min_stock: normalizeNumber(r.min_stock, 5) || 5,
           supplier_name: String(r.supplier_name || '').trim() || null,
           costing_method: VALID_COSTING.has(String(r.costing_method || '').trim().toUpperCase())
             ? String(r.costing_method).trim().toUpperCase() : null,

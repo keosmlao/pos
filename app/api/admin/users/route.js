@@ -4,18 +4,8 @@ import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureUsersSchema } from '@/lib/migrations';
 import { hashPassword } from '@/lib/passwords';
-import { createFullPermissions, normalizePermissions as normalizeFromMenu } from '@/lib/adminMenu';
+import { normalizeRolePermissions as normalizePermissions } from '@/lib/adminMenu';
 const validRoles = new Set(['admin', 'cashier']);
-
-// ໃຊ້ລາຍການ path ຈາກ lib/adminMenu.js (ແຫຼ່ງດຽວກັບ UI) — ບໍ່ໃຫ້ສິດຫາຍຕອນບັນທຶກ
-function normalizePermissions(input, role) {
-  if (role === 'admin') return createFullPermissions();
-  const normalized = normalizeFromMenu(input);
-  for (const p of Object.values(normalized)) {
-    if (!p.access) { p.edit = false; p.delete = false; }
-  }
-  return normalized;
-}
 
 export const GET = handle(async () => {
   await ensureUsersSchema();

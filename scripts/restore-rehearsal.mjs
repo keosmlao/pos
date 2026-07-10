@@ -50,19 +50,25 @@ try {
   for (const table of tables) {
     const rows = backup.tables[table];
     if (!Array.isArray(rows)) throw new Error(`${table}: backup rows are invalid`);
-    for (const row of rows) {
-      const columns = Object.keys(row);
-      if (columns.length === 0 || columns.some((name) => !/^[a-z][a-z0-9_]*$/.test(name))) continue;
-      const values = columns.map((name) => {
-        const value = row[name];
-        const type = columnTypes.get(`${table}.${name}`);
-        return (type === 'json' || type === 'jsonb') && value != null && typeof value === 'object'
-          ? JSON.stringify(value)
-          : value;
+    if (rows.length === 0) continue;
+    const columns = Object.keys(rows[0]);
+    if (columns.length === 0 || columns.some((name) => !/^[a-z][a-z0-9_]*$/.test(name))) continue;
+    for (let start = 0; start < rows.length; start += 100) {
+      const chunk = rows.slice(start, start + 100);
+      const values = [];
+      const tuples = chunk.map((row) => {
+        const placeholders = columns.map((name) => {
+          const value = row[name];
+          const type = columnTypes.get(`${table}.${name}`);
+          values.push((type === 'json' || type === 'jsonb') && value != null && typeof value === 'object'
+            ? JSON.stringify(value)
+            : value);
+          return `$${values.length}`;
+        });
+        return `(${placeholders.join(', ')})`;
       });
-      const placeholders = values.map((_, index) => `$${index + 1}`);
       await client.query(
-        `INSERT INTO ${quote(table)} (${columns.map(quote).join(', ')}) VALUES (${placeholders.join(', ')})`,
+        `INSERT INTO ${quote(table)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')}`,
         values
       );
     }
