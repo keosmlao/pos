@@ -10,6 +10,19 @@
 
 let installed = false;
 
+// session ໝົດອາຍຸ/ບໍ່ໄດ້ login → ລ້າງ user ແລ້ວກັບໄປໜ້າ login
+let redirecting = false;
+function handleUnauthorized(response, url) {
+  if (response?.status !== 401 || redirecting) return response;
+  if (!url.includes('/api/') || url.includes('/api/login') || url.includes('/api/company')) return response;
+  if (localStorage.getItem('pos_user')) {
+    redirecting = true;
+    localStorage.removeItem('pos_user');
+    window.location.href = '/';
+  }
+  return response;
+}
+
 export function installAuditFetch() {
   if (typeof window === 'undefined' || installed) return;
   installed = true;
@@ -30,7 +43,7 @@ export function installAuditFetch() {
       if (!headers.has('x-actor-username') && user.username) headers.set('x-actor-username', String(user.username));
       if (!headers.has('x-actor-role') && user.role) headers.set('x-actor-role', String(user.role));
       merged.headers = headers;
-      return orig(input, merged);
+      return orig(input, merged).then((res) => handleUnauthorized(res, url));
     } catch {
       return orig(input, init);
     }

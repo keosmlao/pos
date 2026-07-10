@@ -91,7 +91,6 @@ export default function QuotationBuilder({ quotationId }) {
         }
       })
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quotationId]);
 
   const subtotal = useMemo(() => form.items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.price) || 0), 0), [form.items]);

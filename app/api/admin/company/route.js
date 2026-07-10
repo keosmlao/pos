@@ -18,7 +18,7 @@ export const PUT = handle(async (request) => {
   await ensureCompanyProfileSchema();
   const body = await readJson(request);
   const {
-    name, slogan, tax_id, business_reg_no, address, phone, email, logo_url, bank_accounts, default_costing_method,
+    name, slogan, tax_id, business_reg_no, address, phone, email, logo_url, payment_qr_url, bank_accounts, default_costing_method,
     vat_enabled, vat_rate, vat_mode, vat_label,
     rounding_mode, rounding_step,
   } = body;
@@ -46,9 +46,9 @@ export const PUT = handle(async (request) => {
 
   const result = await pool.query(
     `INSERT INTO company_profile
-       (id, name, slogan, tax_id, business_reg_no, address, phone, email, logo_url, bank_accounts,
+       (id, name, slogan, tax_id, business_reg_no, address, phone, email, logo_url, payment_qr_url, bank_accounts,
         default_costing_method, vat_enabled, vat_rate, vat_mode, vat_label, rounding_mode, rounding_step, updated_at)
-     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, NOW())
+     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17, NOW())
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
        slogan = EXCLUDED.slogan,
@@ -58,6 +58,7 @@ export const PUT = handle(async (request) => {
        phone = EXCLUDED.phone,
        email = EXCLUDED.email,
        logo_url = EXCLUDED.logo_url,
+       payment_qr_url = EXCLUDED.payment_qr_url,
        bank_accounts = EXCLUDED.bank_accounts,
        default_costing_method = EXCLUDED.default_costing_method,
        vat_enabled = EXCLUDED.vat_enabled,
@@ -77,6 +78,7 @@ export const PUT = handle(async (request) => {
       phone || null,
       email || null,
       logo_url || null,
+      payment_qr_url || null,
       JSON.stringify(accounts),
       cm,
       vatEnabled,

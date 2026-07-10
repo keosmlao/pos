@@ -120,7 +120,6 @@ export default function CashTransactionsView({ txnType, title, subtitle, icon, c
   useEffect(() => {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterCurrency, filterAccount, filterCategory, search, txnType]);
 
   const openCreate = () => {

@@ -160,9 +160,14 @@ export const POST = handle(async (request, { params }) => {
     // Insert order items (from layby for item-locked; from POS for deposit-only)
     const itemsForOrder = isDepositOnly ? posItems : layItemsRes.rows;
     for (const it of itemsForOrder) {
+      // ບັນທຶກຕົ້ນທຶນ ณ ເວລາຂາຍ (snapshot) ຄືກັບບິນຂາຍ POS
       await client.query(
-        `INSERT INTO order_items (order_id, product_id, variant_id, quantity, price)
-         VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT INTO order_items (order_id, product_id, variant_id, quantity, price, cost_price)
+         VALUES ($1, $2, $3, $4, $5,
+           COALESCE(
+             (SELECT v.cost_price FROM product_variants v WHERE v.id = $3),
+             (SELECT p.cost_price FROM products p WHERE p.id = $2)
+           ))`,
         [order.id, it.product_id, it.variant_id || null, it.quantity, it.price]
       );
       // Deposit-only: decrement stock now (item-locked already decremented at creation)

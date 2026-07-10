@@ -2,6 +2,19 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
+import { ensureProductsExtraSchema } from '@/lib/migrations';
+
+const VALID_COSTING = new Set(['FIFO', 'LIFO', 'AVG', 'LAST']);
+
+// ຮັບ 'YYYY-MM-DD' ຫຼື 'DD/MM/YYYY' → 'YYYY-MM-DD', ອື່ນໆ → null
+function normalizeDate(input) {
+  const s = String(input || '').trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return null;
+}
 
 // Bulk insert/update products from a parsed array. Each row should have:
 //   product_code, product_name, barcode, category, brand, unit,
@@ -9,6 +22,7 @@ import { handle, ok, fail, readJson } from '@/lib/api';
 // Match key: product_code (preferred) or barcode.
 // Mode: 'create_only' | 'update_only' | 'upsert'
 export const POST = handle(async (request) => {
+  await ensureProductsExtraSchema();
   const body = await readJson(request);
   const rows = Array.isArray(body.rows) ? body.rows : [];
   const mode = body.mode === 'create_only' || body.mode === 'update_only' ? body.mode : 'upsert';
@@ -22,6 +36,7 @@ export const POST = handle(async (request) => {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       try {
+        await client.query('SAVEPOINT row_sp');
         const productCode = String(r.product_code || '').trim() || null;
         const productName = String(r.product_name || '').trim();
         const barcode = String(r.barcode || '').trim() || null;
@@ -51,6 +66,9 @@ export const POST = handle(async (request) => {
           qty_on_hand: Number(r.qty_on_hand) || 0,
           min_stock: Number(r.min_stock) || 5,
           supplier_name: String(r.supplier_name || '').trim() || null,
+          costing_method: VALID_COSTING.has(String(r.costing_method || '').trim().toUpperCase())
+            ? String(r.costing_method).trim().toUpperCase() : null,
+          expiry_date: normalizeDate(r.expiry_date),
         };
 
         if (existing) {
@@ -66,25 +84,29 @@ export const POST = handle(async (request) => {
                selling_price = $8,
                qty_on_hand = $9,
                min_stock = $10,
-               supplier_name = COALESCE($11, supplier_name)
-             WHERE id = $12`,
+               supplier_name = COALESCE($11, supplier_name),
+               costing_method = COALESCE($12, costing_method),
+               expiry_date = COALESCE($13, expiry_date)
+             WHERE id = $14`,
             [values.product_code, values.product_name, values.barcode, values.category, values.brand,
              values.unit, values.cost_price, values.selling_price, values.qty_on_hand, values.min_stock,
-             values.supplier_name, existing.id]
+             values.supplier_name, values.costing_method, values.expiry_date, existing.id]
           );
           result.updated++;
         } else {
           await client.query(
             `INSERT INTO products (product_code, product_name, barcode, category, brand, unit,
-                                   cost_price, selling_price, qty_on_hand, min_stock, supplier_name, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE)`,
+                                   cost_price, selling_price, qty_on_hand, min_stock, supplier_name,
+                                   costing_method, expiry_date, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, TRUE)`,
             [values.product_code, values.product_name, values.barcode, values.category, values.brand,
              values.unit, values.cost_price, values.selling_price, values.qty_on_hand, values.min_stock,
-             values.supplier_name]
+             values.supplier_name, values.costing_method, values.expiry_date]
           );
           result.created++;
         }
       } catch (e) {
+        await client.query('ROLLBACK TO SAVEPOINT row_sp').catch(() => {});
         result.errors.push(`ແຖວ ${i + 2}: ${e.message}`);
         result.skipped++;
       }

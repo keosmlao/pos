@@ -9,7 +9,7 @@ export default function Login({ onLogin }) {
   const company = useCompanyProfile();
   const saved = JSON.parse(localStorage.getItem('pos_remember') || '{}');
   const [username, setUsername] = useState(saved.username || '');
-  const [password, setPassword] = useState(saved.password || '');
+  const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(!!saved.username);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,7 +28,8 @@ export default function Login({ onLogin }) {
       const data = await res.json();
       if (res.ok) {
         if (remember) {
-          localStorage.setItem('pos_remember', JSON.stringify({ username, password }));
+          // Never persist a plaintext password in browser storage.
+          localStorage.setItem('pos_remember', JSON.stringify({ username }));
         } else {
           localStorage.removeItem('pos_remember');
         }

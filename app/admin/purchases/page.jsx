@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { generateAndPrintPurchaseA4, generateAndPrintPaymentReceipt } from '@/utils/receiptPdfGenerator'
+import { usePagePermission } from '@/utils/adminPermissions'
 
 const API = '/api'
 
 function formatPrice(p) {
-  return new Intl.NumberFormat('lo-LA').format(p) + ' ₭'
+  return new Intl.NumberFormat('lo-LA', { maximumFractionDigits: 2 }).format(Number(p) || 0) + ' ₭'
 }
 
 const curSymbol = { LAK: '₭', THB: '฿', USD: '$', CNY: '¥', VND: '₫' }
@@ -89,7 +90,7 @@ const fmtBill = (p) => {
   }
 }
 
-function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, openPay }) {
+function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, openPay, canEdit, canDelete }) {
   const effStatus = effectiveStatus(p)
   const st = statusMap[effStatus] || statusMap.pending
   const remaining = effectiveTotal(p) - effectivePaid(p)
@@ -106,6 +107,7 @@ function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, op
             <span className="text-[11px] font-mono font-bold text-red-600">#{p.id}</span>
             {p.ref_number && <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1 rounded">{p.ref_number}</span>}
             {p.sml_doc_no && <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">SML {p.sml_doc_no}</span>}
+            {p.invoice_file && <span className="text-[10px]" title="ມີເອກະສານແນບ">📎</span>}
           </div>
         </td>
         <td className="py-2 px-3 text-[11px] text-slate-500 font-mono whitespace-nowrap">
@@ -176,18 +178,20 @@ function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, op
                 <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
               </svg>
             </button>
-            {isDebt && effStatus !== 'paid' && (
+            {canEdit && isDebt && effStatus !== 'paid' && (
               <button onClick={() => openPay(p)} className="w-7 h-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition" title="ຊຳລະ">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mx-auto">
                   <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M12 8v8M8 12h8"/>
                 </svg>
               </button>
             )}
+            {canDelete && (
             <button onClick={() => handleDelete(p.id)} className="w-7 h-7 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition" title="ລຶບ">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mx-auto">
                 <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
               </svg>
             </button>
+            )}
           </div>
         </td>
     </tr>
@@ -195,6 +199,7 @@ function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, op
 }
 
 export default function Purchases() {
+  const perm = usePagePermission('/admin/purchases')
   const router = useRouter()
   const navigate = (path, opts = {}) => {
     if (opts.state) sessionStorage.setItem('navState', JSON.stringify(opts.state))
@@ -511,6 +516,7 @@ export default function Purchases() {
               <span className="bg-amber-600 text-white px-1.5 py-0.5 rounded text-[10px] font-bold">{pendingInvoices.length}</span>
             </button>
           )}
+          {perm.edit && (
           <button
             onClick={() => navigate('/admin/purchases/create')}
             className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5"
@@ -518,6 +524,7 @@ export default function Purchases() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
             ສ້າງໃບສັ່ງຊື້
           </button>
+          )}
         </div>
       </div>
 
@@ -602,6 +609,8 @@ export default function Purchases() {
                     handleDelete={handleDelete}
                     setViewDetail={setViewDetail}
                     openPay={openPay}
+                    canEdit={perm.edit}
+                    canDelete={perm.delete}
                   />
                 ))}
                 {filteredPurchases.length === 0 && (
@@ -610,7 +619,7 @@ export default function Purchases() {
                       <div className="flex flex-col items-center gap-2 text-slate-400">
                         <span className="text-3xl">📦</span>
                         <p className="text-[12px]">{filtersActive ? 'ບໍ່ພົບຂໍ້ມູນ' : 'ຍັງບໍ່ມີໃບສັ່ງຊື້'}</p>
-                        {!filtersActive && (
+                        {!filtersActive && perm.edit && (
                           <button onClick={() => navigate('/admin/purchases/create')} className="mt-1 px-3 py-1.5 bg-red-600 text-white rounded-md text-[12px] font-semibold">+ ສ້າງໃບສັ່ງຊື້ທຳອິດ</button>
                         )}
                       </div>
@@ -689,6 +698,7 @@ export default function Purchases() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                        {perm.edit && (
                         <button
                           onClick={() => { setShowPendingModal(false); navigate('/admin/purchases/create', { state: { pendingInvoice: inv } }) }}
                           className="px-3 py-1.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white rounded-lg text-[11px] font-semibold shadow-sm shadow-red-600/30 transition active:scale-95 flex items-center gap-1"
@@ -696,9 +706,12 @@ export default function Purchases() {
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
                           ສ້າງ
                         </button>
+                        )}
+                        {perm.delete && (
                         <button onClick={() => dismissPending(inv.id)} className="w-7 h-7 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg flex items-center justify-center transition" title="ລຶບ">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                         </button>
+                        )}
                         <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${isOpen ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6"/></svg>
                         </div>
@@ -808,7 +821,7 @@ export default function Purchases() {
                 <div className="text-[11px] text-slate-300 mt-0.5">🏭 {viewDetail.supplier_name || '—'} · 📅 {new Date(viewDetail.created_at).toLocaleDateString('lo-LA')}</div>
               </div>
               <div className="flex items-center gap-1">
-                {viewDetail.payment_type === 'debt' && effectiveStatus(viewDetail) !== 'paid' && (
+                {perm.edit && viewDetail.payment_type === 'debt' && effectiveStatus(viewDetail) !== 'paid' && (
                   <button onClick={() => { setViewDetail(null); openPay(viewDetail) }} className="w-7 h-7 bg-emerald-500 hover:bg-emerald-600 rounded text-white flex items-center justify-center" title="ຊຳລະ">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M12 8v8M8 12h8"/></svg>
                   </button>
@@ -816,9 +829,11 @@ export default function Purchases() {
                 <button onClick={() => handlePrint(viewDetail)} className="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded text-white flex items-center justify-center" title="ພິມ">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                 </button>
+                {perm.delete && (
                 <button onClick={() => handleDelete(viewDetail.id)} className="w-7 h-7 bg-slate-700 hover:bg-red-500 rounded text-white flex items-center justify-center" title="ລຶບ">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
                 </button>
+                )}
                 <button onClick={() => setViewDetail(null)} className="w-7 h-7 bg-slate-700 hover:bg-slate-600 rounded text-white flex items-center justify-center">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
@@ -889,6 +904,26 @@ export default function Purchases() {
                   </div>
                 )}
               </div>
+
+              {/* Attached invoice image / document */}
+              {viewDetail.invoice_file && (
+                <div>
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">📎 ເອກະສານແນບ</div>
+                  {/\.(png|jpe?g|gif|webp|bmp|heic)(\?|$)/i.test(viewDetail.invoice_file) ? (
+                    <a href={viewDetail.invoice_file} target="_blank" rel="noreferrer"
+                      className="block border border-slate-200 rounded-md overflow-hidden hover:border-red-300 transition"
+                      title="ກົດເພື່ອເບິ່ງເຕັມຈໍ">
+                      <img src={viewDetail.invoice_file} alt="ເອກະສານແນບ" className="w-full max-h-56 object-contain bg-slate-50" />
+                    </a>
+                  ) : (
+                    <a href={viewDetail.invoice_file} target="_blank" rel="noreferrer"
+                      className="flex items-center gap-2 p-2.5 border border-slate-200 rounded-md text-[12px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-red-300 transition">
+                      📄 ເປີດເອກະສານແນບ
+                      <span className="text-[10px] text-slate-400 font-mono truncate">{viewDetail.invoice_file.split('/').pop()}</span>
+                    </a>
+                  )}
+                </div>
+              )}
 
               {/* Payment history */}
               {detailPayments.length > 0 && (
@@ -961,14 +996,16 @@ export default function Purchases() {
             </div>
 
             <div className="p-3 border-t border-slate-200 space-y-2 shrink-0">
-              {viewDetail.payment_type === 'debt' && effectiveStatus(viewDetail) !== 'paid' && (
+              {perm.edit && viewDetail.payment_type === 'debt' && effectiveStatus(viewDetail) !== 'paid' && (
                 <button onClick={() => { setViewDetail(null); openPay(viewDetail) }} className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[12px] font-semibold transition">
                   💰 ຊຳລະໜີ້
                 </button>
               )}
+              {perm.delete && (
               <button onClick={() => handleDelete(viewDetail.id)} className="w-full py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-md text-[12px] font-semibold transition">
                 🗑 ລຶບໃບສັ່ງຊື້
               </button>
+              )}
             </div>
           </div>
         </div>
@@ -1039,9 +1076,11 @@ export default function Purchases() {
                           <button onClick={() => generateAndPrintPaymentReceipt(pay, showPay)} className="w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded flex items-center justify-center" title="ພິມໃບຊຳລະ">
                             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                           </button>
+                          {perm.delete && (
                           <button onClick={() => handleDeletePayment(pay.id)} className="w-4 h-4 bg-red-100 hover:bg-red-200 text-red-500 rounded flex items-center justify-center" title="ລຶບ">
                             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6L6 18M6 6l12 12"/></svg>
                           </button>
+                          )}
                         </div>
                       </div>
                       )

@@ -59,7 +59,6 @@ export default function DebtPaymentsView({ debtType, title, subtitle, icon, name
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debtType]);
 
   const handleDelete = async (p) => {

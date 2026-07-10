@@ -1,11 +1,28 @@
 export const dynamic = 'force-dynamic';
 
-import crypto from 'crypto';
 import pool from '@/lib/db';
-import { handle, ok } from '@/lib/api';
+import { handle, ok, fail } from '@/lib/api';
+import { hashPassword } from '@/lib/passwords';
+import { getSessionUser } from '@/lib/auth';
 import defaultLocations from '@/data/laoLocations';
 
-export const GET = handle(async () => {
+export const GET = handle(async (request) => {
+  // ຕິດຕັ້ງໃໝ່ (ຍັງບໍ່ມີຜູ້ໃຊ້ໃນລະບົບ) → init ໄດ້ເລີຍ ເພື່ອ seed admin ຄົນທຳອິດ
+  // ຖ້າມີຜູ້ໃຊ້ແລ້ວ → ຕ້ອງເປັນ admin ທີ່ login ຢູ່ + ເປີດ POS_ALLOW_INIT=true
+  let freshInstall = false;
+  try {
+    const usersCount = await pool.query('SELECT COUNT(*)::int AS c FROM users');
+    freshInstall = usersCount.rows[0].c === 0;
+  } catch {
+    freshInstall = true; // ຕາຕະລາງ users ຍັງບໍ່ມີ = ຖານຂໍ້ມູນຫວ່າງ
+  }
+  if (!freshInstall) {
+    // /api/init ເປັນ public path — ຕ້ອງກວດ session ເອງ
+    const sessionUser = request.sessionUser || await getSessionUser(request);
+    if (process.env.POS_ALLOW_INIT !== 'true' || sessionUser?.role !== 'admin') {
+      return fail(404, 'Not found');
+    }
+  }
   await pool.query(`
     CREATE TABLE IF NOT EXISTS products (
       id SERIAL PRIMARY KEY,
@@ -364,16 +381,16 @@ export const GET = handle(async () => {
     await pool.query('INSERT INTO units (name) VALUES ($1) ON CONFLICT DO NOTHING', [unit]);
   }
 
-  const adminPass = crypto.createHash('sha256').update('admin123').digest('hex');
-  const cashierPass = crypto.createHash('sha256').update('1234').digest('hex');
-  await pool.query(
-    `INSERT INTO users (username, password, display_name, role) VALUES ($1, $2, $3, $4) ON CONFLICT (username) DO NOTHING`,
-    ['admin', adminPass, 'ຜູ້ດູແລລະບົບ', 'admin']
-  );
-  await pool.query(
-    `INSERT INTO users (username, password, display_name, role) VALUES ($1, $2, $3, $4) ON CONFLICT (username) DO NOTHING`,
-    ['cashier', cashierPass, 'ພະນັກງານຂາຍ', 'cashier']
-  );
+  // Bootstrap users only when strong credentials are explicitly supplied.
+  // Production must never silently recreate known default accounts.
+  const adminPassword = process.env.POS_BOOTSTRAP_ADMIN_PASSWORD;
+  if (adminPassword && adminPassword.length >= 12) {
+    const adminPass = await hashPassword(adminPassword);
+    await pool.query(
+      `INSERT INTO users (username, password, display_name, role) VALUES ($1, $2, $3, $4) ON CONFLICT (username) DO NOTHING`,
+      [process.env.POS_BOOTSTRAP_ADMIN_USER || 'admin', adminPass, 'ຜູ້ດູແລລະບົບ', 'admin']
+    );
+  }
 
   return ok({ message: 'Database initialized successfully' });
 });

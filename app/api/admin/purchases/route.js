@@ -20,7 +20,7 @@ export const GET = handle(async () => {
         'product_name', pr.product_name,
         'product_code', pr.product_code,
         'unit', pr.unit
-      )) FILTER (WHERE pi.id IS NOT NULL) as items
+      ) ORDER BY pi.id) FILTER (WHERE pi.id IS NOT NULL) as items
     FROM purchases p
     LEFT JOIN suppliers s ON p.supplier_id = s.id
     LEFT JOIN purchase_items pi ON p.id = pi.purchase_id

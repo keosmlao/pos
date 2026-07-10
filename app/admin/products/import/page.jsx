@@ -2,21 +2,24 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { readFirstWorksheet } from '@/utils/excelClient';
 
 const API = '/api';
 
 const COLUMNS = [
-  { key: 'product_code', label: 'ລະຫັດສິນຄ້າ', required: false },
-  { key: 'product_name', label: 'ຊື່ສິນຄ້າ', required: true },
-  { key: 'barcode', label: 'Barcode', required: false },
-  { key: 'category', label: 'ໝວດໝູ່', required: false },
-  { key: 'brand', label: 'ຍີ່ຫໍ້', required: false },
-  { key: 'unit', label: 'ຫົວໜ່ວຍ', required: false },
-  { key: 'cost_price', label: 'ຕົ້ນທຶນ', required: false },
-  { key: 'selling_price', label: 'ລາຄາຂາຍ', required: false },
-  { key: 'qty_on_hand', label: 'ຈຳນວນ', required: false },
-  { key: 'min_stock', label: 'ສະຕັອກຂັ້ນຕ່ຳ', required: false },
-  { key: 'supplier_name', label: 'ຜູ້ສະໜອງ', required: false },
+  { key: 'product_code', label: 'ລະຫັດສິນຄ້າ', required: false, aliases: ['code', 'ລະຫັດ'] },
+  { key: 'product_name', label: 'ຊື່ສິນຄ້າ', required: true, aliases: ['name', 'ຊື່'] },
+  { key: 'barcode', label: 'Barcode', required: false, aliases: ['ບາໂຄດ'] },
+  { key: 'category', label: 'ໝວດໝູ່', required: false, aliases: ['ໝວດ'] },
+  { key: 'brand', label: 'ຍີ່ຫໍ້', required: false, aliases: [] },
+  { key: 'unit', label: 'ຫົວໜ່ວຍ', required: false, aliases: ['ຫນ່ວຍ'] },
+  { key: 'cost_price', label: 'ຕົ້ນທຶນ', required: false, aliases: ['cost', 'ລາຄາຊື້'] },
+  { key: 'selling_price', label: 'ລາຄາຂາຍ', required: false, aliases: ['price', 'ລາຄາ'] },
+  { key: 'qty_on_hand', label: 'ຈຳນວນ', required: false, aliases: ['qty', 'stock', 'ສະຕັອກ'] },
+  { key: 'min_stock', label: 'ສະຕັອກຂັ້ນຕ່ຳ', required: false, aliases: ['ຂັ້ນຕ່ຳ', 'ສະຕ໊ອກຕ່ຳສຸດ'] },
+  { key: 'supplier_name', label: 'ຜູ້ສະໜອງ', required: false, aliases: ['supplier'] },
+  { key: 'costing_method', label: 'ວິທີຄຳນວນຕົ້ນທຶນ', required: false, aliases: ['costing', 'fifo'] },
+  { key: 'expiry_date', label: 'ວັນໝົດອາຍຸ', required: false, aliases: ['expiry', 'ໝົດອາຍຸ'] },
 ];
 
 // Simple CSV parser — handles quoted fields with commas and CRLF.
@@ -44,9 +47,9 @@ function parseCSV(text) {
   return rows;
 }
 
-const sampleCSV = `product_code,product_name,barcode,category,brand,unit,cost_price,selling_price,qty_on_hand,min_stock,supplier_name
-P001,ນ້ຳດື່ມ 500ml,8851234567890,ເຄື່ອງດື່ມ,Tigerhead,ຂວດ,2000,3000,100,10,ABC Co.
-P002,ກາເຟ 3in1,,ເຄື່ອງດື່ມ,Nescafe,ຫໍ່,1500,2500,200,20,
+const sampleCSV = `product_code,product_name,barcode,category,brand,unit,cost_price,selling_price,qty_on_hand,min_stock,supplier_name,costing_method,expiry_date
+P001,ນ້ຳດື່ມ 500ml,8851234567890,ເຄື່ອງດື່ມ,Tigerhead,ຂວດ,2000,3000,100,10,ABC Co.,FIFO,2027-12-31
+P002,ກາເຟ 3in1,,ເຄື່ອງດື່ມ,Nescafe,ຫໍ່,1500,2500,200,20,,AVG,
 `;
 
 export default function ProductImportPage() {
@@ -65,15 +68,23 @@ export default function ProductImportPage() {
   const onFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const text = await file.text();
-    const parsed = parseCSV(text);
-    if (parsed.length === 0) { showToast('ໄຟລ໌ວ່າງ', 'error'); return; }
+    let parsed;
+    if (/\.(xlsx|xls)$/i.test(file.name)) {
+      // Excel: ອ່ານ sheet ທຳອິດເປັນ array ຂອງແຖວ
+      parsed = (await readFirstWorksheet(file))
+        .map(r => r.map(c => String(c ?? '').trim()))
+        .filter(r => r.some(c => c !== ''));
+    } else {
+      parsed = parseCSV(await file.text());
+    }
+    if (!parsed || parsed.length === 0) { showToast('ໄຟລ໌ວ່າງ', 'error'); return; }
     setRows(parsed);
-    // Auto-map headers
+    // Auto-map headers (ຮອງຮັບທັງຊື່ key, ຊື່ພາສາລາວ ແລະ ຊື່ຫຍໍ້)
     const header = parsed[0].map(s => String(s).toLowerCase().trim());
     const auto = {};
     for (const col of COLUMNS) {
-      const idx = header.findIndex(h => h === col.key || h === col.label.toLowerCase());
+      const names = [col.key, col.label.toLowerCase(), ...(col.aliases || []).map(a => a.toLowerCase())];
+      const idx = header.findIndex(h => names.includes(h));
       auto[col.key] = idx >= 0 ? idx : null;
     }
     setMapping(auto);
@@ -139,15 +150,15 @@ export default function ProductImportPage() {
         <Link href="/admin/products" className="text-slate-500 hover:text-slate-900">← ກັບສິນຄ້າ</Link>
       </div>
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">📤 ນຳເຂົ້າສິນຄ້າ (CSV)</h1>
-        <p className="text-sm text-slate-500 mt-1">ນຳເຂົ້າສິນຄ້າຫຼາຍລາຍການພ້ອມກັນຈາກໄຟລ໌ CSV / Excel</p>
+        <h1 className="text-2xl font-bold text-slate-900">📤 ນຳເຂົ້າສິນຄ້າ (Excel / CSV)</h1>
+        <p className="text-sm text-slate-500 mt-1">ນຳເຂົ້າສິນຄ້າຫຼາຍລາຍການພ້ອມກັນຈາກໄຟລ໌ Excel (.xlsx) ຫຼື CSV — ຮອງຮັບ ລະຫັດ, ຊື່, ຫົວໜ່ວຍ, ບາໂຄດ, ໝວດໝູ່, ຍີ່ຫໍ້, ຜູ້ສະໜອງ, ວິທີຄຳນວນຕົ້ນທຶນ, ວັນໝົດອາຍຸ, ສະຕັອກຂັ້ນຕ່ຳ</p>
       </div>
 
       {/* Step 1 */}
       <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
         <h2 className="font-bold text-slate-900 mb-3">1. ເລືອກໄຟລ໌</h2>
         <div className="flex flex-wrap items-center gap-3">
-          <input type="file" accept=".csv,text/csv" onChange={onFile}
+          <input type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={onFile}
             className="text-sm" />
           <button onClick={downloadSample}
             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">

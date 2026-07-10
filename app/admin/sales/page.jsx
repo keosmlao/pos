@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
+import { usePagePermission } from '@/utils/adminPermissions'
 
 const API = '/api'
 const fmtPrice = n => new Intl.NumberFormat('lo-LA').format(Math.round(n || 0)) + ' ກີບ'
@@ -28,6 +29,7 @@ const methodMeta = {
 }
 
 export default function Sales() {
+  const perm = usePagePermission('/admin/sales')
   const [orders, setOrders] = useState([])
   const [branches, setBranches] = useState([])
   const [branchFilter, setBranchFilter] = useState('')
@@ -405,6 +407,7 @@ export default function Sales() {
                   return (
                     <Row key={o.id} o={o} m={m} itemsCount={itemsCount} isExpanded={isExpanded}
                       deleting={deletingId === o.id}
+                      canDelete={perm.delete}
                       onToggle={() => setExpandedId(isExpanded ? null : o.id)}
                       onDelete={() => handleDelete(o)} />
                   )
@@ -458,7 +461,7 @@ export default function Sales() {
   )
 }
 
-function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
+function Row({ o, m, itemsCount, isExpanded, deleting, canDelete, onToggle, onDelete }) {
   const refundTotal = Number(o.refund_total) || 0
   const grossTotal = Number(o.total) || 0
   const netTotal = Math.max(0, grossTotal - refundTotal)
@@ -505,6 +508,7 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
           {o.payment_method === 'credit' ? fmtNum(Math.max(0, grossTotal - (Number(o.amount_paid) || 0) - refundTotal)) : fmtNum(o.change_amount)}
         </td>
         <td className="py-1.5 px-3 text-right">
+          {canDelete && (
           <button
             onClick={(e) => { e.stopPropagation(); onDelete() }}
             disabled={deleting}
@@ -515,6 +519,7 @@ function Row({ o, m, itemsCount, isExpanded, deleting, onToggle, onDelete }) {
               ? <span className="h-3 w-3 rounded-full border-2 border-rose-200 border-t-rose-600 animate-spin"></span>
               : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>}
           </button>
+          )}
         </td>
       </tr>
       {isExpanded && (

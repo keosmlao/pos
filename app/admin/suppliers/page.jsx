@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useLocations } from '@/utils/useLocations'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
 import SearchSelect from '@/components/SearchSelect'
+import { usePagePermission } from '@/utils/adminPermissions'
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n)
@@ -17,6 +18,7 @@ const emptyForm = {
 }
 
 export default function Suppliers() {
+  const perm = usePagePermission('/admin/suppliers')
   const laoLocations = useLocations()
   const [suppliers, setSuppliers] = useState([])
   const [showForm, setShowForm] = useState(false)
@@ -267,10 +269,12 @@ export default function Suppliers() {
               className="rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 px-4 py-3 text-sm font-extrabold text-white">
               🖨 ພິມ
             </button>
+            {perm.edit && (
             <button onClick={() => { resetForm(); setShowForm(true) }}
               className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20">
               + ເພີ່ມຜູ້ສະໜອງ
             </button>
+            )}
           </div>
         }
       />
@@ -368,12 +372,16 @@ export default function Suppliers() {
                     </td>
                     <td className="py-1.5 px-3 text-right" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {perm.edit && (
                         <button onClick={() => openEdit(s)} className="w-6 h-6 bg-red-50 hover:bg-red-100 text-red-600 rounded flex items-center justify-center">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
+                        )}
+                        {perm.delete && (
                         <button onClick={() => handleDelete(s.id, s.name)} className="w-6 h-6 bg-red-50 hover:bg-red-100 text-red-500 rounded flex items-center justify-center">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
                         </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -406,8 +414,10 @@ export default function Suppliers() {
                   {viewDetail.phone && <><span className="text-slate-300">·</span><span className="text-slate-500 font-mono">{viewDetail.phone}</span></>}
                 </div>
               </div>
+              {perm.edit && (
               <button onClick={() => { setViewDetail(null); openEdit(viewDetail) }}
                 className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded text-xs font-bold">ແກ້ໄຂ</button>
+              )}
               <button onClick={() => printSupplierDetail(viewDetail)}
                 className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded flex items-center justify-center text-slate-600" title="ພິມ">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>

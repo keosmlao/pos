@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureProductsExtraSchema } from '@/lib/migrations';
+import { findDuplicateProduct } from '@/lib/productChecks';
 
 const VALID_COSTING = new Set(['FIFO', 'LIFO', 'AVG', 'LAST']);
 
@@ -14,6 +15,8 @@ export const PUT = handle(async (request, { params }) => {
   const cm = costing_method == null || costing_method === ''
     ? null
     : (VALID_COSTING.has(String(costing_method).toUpperCase()) ? String(costing_method).toUpperCase() : null);
+  const dup = await findDuplicateProduct({ product_code, barcode, excludeId: id });
+  if (dup) return fail(400, dup.message);
   const result = await pool.query(
     `UPDATE products SET product_code=$1, product_name=$2, barcode=$3, category=$4, brand=$5, cost_price=$6, selling_price=$7, qty_on_hand=$8, min_stock=$9, unit=$10, expiry_date=$11, supplier_name=$12, status=$13, image_url=$14, costing_method=$15
      WHERE id=$16 RETURNING *`,
@@ -29,6 +32,13 @@ export const DELETE = handle(async (_request, { params }) => {
   if (parseInt(sales.rows[0].count) > 0) {
     return fail(400, 'ບໍ່ສາມາດລຶບສິນຄ້າທີ່ມີການຂາຍແລ້ວ');
   }
-  await pool.query('DELETE FROM products WHERE id = $1', [id]);
+  try {
+    await pool.query('DELETE FROM products WHERE id = $1', [id]);
+  } catch (e) {
+    if (e.code === '23503') {
+      return fail(400, 'ບໍ່ສາມາດລຶບໄດ້: ສິນຄ້ານີ້ຍັງຖືກອ້າງອີງໃນ layby ຫຼື ໃບສັ່ງຊື້');
+    }
+    throw e;
+  }
   return ok({ message: 'Product deleted' });
 });

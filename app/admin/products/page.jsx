@@ -2,9 +2,10 @@
 
 
 import { useState, useEffect } from 'react'
-import * as XLSX from 'xlsx'
+import { downloadWorkbook } from '@/utils/excelClient'
 import SearchSelect from '@/components/SearchSelect'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
+import { usePagePermission } from '@/utils/adminPermissions'
 import { COSTING_METHODS, COSTING_METHOD_LABELS } from '@/lib/costingMethods'
 
 const API = '/api'
@@ -26,6 +27,7 @@ const emptyForm = {
 }
 
 export default function Products() {
+  const perm = usePagePermission('/admin/products')
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [brands, setBrands] = useState([])
@@ -186,7 +188,7 @@ export default function Products() {
   const totalStockValue = products.reduce((s, p) => s + (parseFloat(p.cost_price) || 0) * (parseFloat(p.qty_on_hand) || 0), 0)
   const totalRetailValue = products.reduce((s, p) => s + (parseFloat(p.selling_price) || 0) * (parseFloat(p.qty_on_hand) || 0), 0)
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (filtered.length === 0) { alert('ບໍ່ມີຂໍ້ມູນສຳລັບ export'); return }
     const rows = filtered.map((p, idx) => {
       const qty = Number(p.qty_on_hand) || 0
@@ -216,15 +218,14 @@ export default function Products() {
         'ສະຖານະ': p.status ? 'ເປີດ' : 'ປິດ',
       }
     })
-    const ws = XLSX.utils.json_to_sheet(rows)
-    ws['!cols'] = [
-      { wch: 6 }, { wch: 18 }, { wch: 34 }, { wch: 18 }, { wch: 18 }, { wch: 18 },
-      { wch: 22 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 14 },
-      { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 24 }, { wch: 16 }, { wch: 10 },
-    ]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Products')
-    XLSX.writeFile(wb, `products_${new Date().toISOString().split('T')[0]}.xlsx`)
+    const headers = Object.keys(rows[0])
+    const widths = [6, 18, 34, 18, 18, 18, 22, 12, 16, 16, 18, 14, 14, 18, 18, 24, 16, 10]
+    await downloadWorkbook({
+      sheetName: 'Products',
+      fileName: `products_${new Date().toISOString().split('T')[0]}.xlsx`,
+      columns: headers.map((header, index) => ({ header, key: header, width: widths[index] })),
+      rows,
+    })
   }
 
   const kpis = [
@@ -313,16 +314,20 @@ export default function Products() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg>
             Excel
           </button>
+          {perm.delete && (
           <button onClick={handleClearAll} disabled={products.length === 0}
             className="px-3 py-1.5 bg-white hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
             ລ້າງທັງໝົດ
           </button>
+          )}
+          {perm.edit && (
           <button onClick={() => { resetForm(); setShowForm(true) }}
             className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
             ເພີ່ມສິນຄ້າ
           </button>
+          )}
         </div>
         }
       />
@@ -458,12 +463,16 @@ export default function Products() {
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <a href={`/admin/products/${p.id}/variants`} title="Variants"
                              className="w-6 h-6 bg-violet-50 hover:bg-violet-100 text-violet-600 rounded flex items-center justify-center text-[11px]">🎨</a>
+                          {perm.edit && (
                           <button onClick={() => openEdit(p)} className="w-6 h-6 bg-red-50 hover:bg-red-100 text-red-600 rounded flex items-center justify-center">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                           </button>
+                          )}
+                          {perm.delete && (
                           <button onClick={() => handleDelete(p.id, p.product_name)} className="w-6 h-6 bg-red-50 hover:bg-red-100 text-red-500 rounded flex items-center justify-center">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -179,6 +179,23 @@ export default function CustomerDisplay() {
             <div className="text-6xl font-extrabold text-red-400 font-mono-t tracking-tight leading-none break-words">{fmt(state.finalTotal)}</div>
           </div>
 
+          {/* Payment QR — ໃຫ້ລູກຄ້າສະແກນຈ່າຍໄດ້ເລີຍ */}
+          {company.payment_qr_url && state.cartCount > 0 && (
+            <div className="mt-5 rounded-2xl bg-white p-4 flex items-center gap-4">
+              <img src={company.payment_qr_url} alt="Payment QR"
+                className="w-32 h-32 lg:w-40 lg:h-40 object-contain shrink-0" />
+              <div className="min-w-0">
+                <div className="text-sm font-extrabold text-slate-900">📱 ສະແກນຈ່າຍ</div>
+                <div className="text-xs text-slate-500 mt-1 leading-snug">ສະແກນ QR ນີ້ດ້ວຍແອັບທະນາຄານ ເພື່ອຊຳລະເງິນ</div>
+                {(company.bank_accounts || []).slice(0, 2).map((a, i) => (
+                  <div key={i} className="text-[11px] font-mono font-bold text-slate-700 mt-1 truncate">
+                    {a.bank_name} {a.account_number}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 text-center text-xs text-slate-500 font-semibold">
             ຂໍ້ມູນແບບ real-time · sync ຈາກ cashier
           </div>

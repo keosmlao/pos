@@ -4,9 +4,8 @@ import pool from '@/lib/db';
 import { handle, ok, getQuery } from '@/lib/api';
 import { ensureOrdersSchema } from '@/lib/migrations';
 
-// Per-line cost source: use the product's current cost_price as a snapshot.
-// (A historical cost layer would require per-purchase FIFO/LIFO walks; we use
-// the simpler current-cost approach consistent with the rest of the app.)
+// Per-line cost source: oi.cost_price (snapshot ณ ເວລາຂາຍ, ເລີ່ມເກັບ v1.7.0);
+// ບິນເກົ່າກ່ອນມີ snapshot ຈະ fallback ໃສ່ products.cost_price ປັດຈຸບັນ.
 //
 // Per-line revenue = (oi.price * oi.quantity), allocating order-level discount
 // proportionally so margin is reported on net revenue.
@@ -39,10 +38,9 @@ export const GET = handle(async (request) => {
              oi.price,
              p.product_name,
              p.cost_price,
-             p.category_id,
-             c.name AS category_name,
+             p.category AS category_name,
              (oi.quantity * oi.price) AS line_gross,
-             (oi.quantity * COALESCE(p.cost_price, 0)) AS line_cost,
+             (oi.quantity * COALESCE(oi.cost_price, p.cost_price, 0)) AS line_cost,
              ot.gross AS order_gross,
              ot.discount AS order_discount,
              ot.vat_amount AS order_vat,
@@ -55,7 +53,6 @@ export const GET = handle(async (request) => {
       FROM order_items oi
       JOIN order_totals ot ON ot.id = oi.order_id
       LEFT JOIN products p ON p.id = oi.product_id
-      LEFT JOIN categories c ON c.id = p.category_id
     ),
     line_net AS (
       SELECT *,

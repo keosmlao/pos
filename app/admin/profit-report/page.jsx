@@ -85,6 +85,18 @@ export default function ProfitReportPage() {
           <input type="date" value={to} onChange={e => setTo(e.target.value)}
             className="px-3 py-2 border border-slate-200 rounded-lg text-sm" />
         </div>
+        <div>
+          <label className="block text-xs font-bold text-slate-600 mb-1">ເລືອກເດືອນ</label>
+          <input type="month" value={from && from.slice(0, 7) === to?.slice(0, 7) ? from.slice(0, 7) : ''}
+            onChange={e => {
+              const [y, m] = e.target.value.split('-').map(Number);
+              if (!y || !m) return;
+              const last = new Date(y, m, 0).getDate();
+              setFrom(`${e.target.value}-01`);
+              setTo(`${e.target.value}-${String(last).padStart(2, '0')}`);
+            }}
+            className="px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {QUICK_RANGES.map(r => (
             <button key={r.key} onClick={() => { const { from: f, to: t } = getRange(r.key); setFrom(f); setTo(t); }}

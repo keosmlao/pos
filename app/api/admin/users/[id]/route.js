@@ -1,32 +1,21 @@
 export const dynamic = 'force-dynamic';
 
-import crypto from 'crypto';
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureUsersSchema } from '@/lib/migrations';
-
-const hashPassword = (password) => crypto.createHash('sha256').update(String(password || '')).digest('hex');
+import { hashPassword } from '@/lib/passwords';
+import { createFullPermissions, normalizePermissions as normalizeFromMenu } from '@/lib/adminMenu';
 const validRoles = new Set(['admin', 'cashier']);
-const menuPaths = [
-  '/admin', '/admin/products', '/admin/categories-brands', '/admin/suppliers',
-  '/admin/purchases', '/admin/debts', '/admin/debt-payments/supplier',
-  '/admin/quotations', '/admin/sales', '/admin/returns', '/admin/cash-handovers',
-  '/admin/cash-transactions/income', '/admin/cash-transactions/expense', '/admin/cash-flow',
-  '/admin/members', '/admin/customer-debts', '/admin/debt-payments/customer',
-  '/admin/users', '/admin/pricing', '/admin/promotions', '/admin/loyalty',
-  '/admin/currencies', '/admin/locations', '/admin/company', '/admin/bill-format',
-];
 
+// ໃຊ້ລາຍການ path ຈາກ lib/adminMenu.js (ແຫຼ່ງດຽວກັບ UI) — ເມື່ອກ່ອນລາຍການນີ້ຂາດ 16 ໜ້າ
+// ເຮັດໃຫ້ສິດທີ່ຕັ້ງໄວ້ຫາຍທຸກຄັ້ງທີ່ບັນທຶກຜູ້ໃຊ້
 function normalizePermissions(input, role) {
-  if (role === 'admin') {
-    return Object.fromEntries(menuPaths.map(path => [path, { access: true, edit: true, delete: true }]));
+  if (role === 'admin') return createFullPermissions();
+  const normalized = normalizeFromMenu(input);
+  for (const p of Object.values(normalized)) {
+    if (!p.access) { p.edit = false; p.delete = false; }
   }
-  const src = input && typeof input === 'object' ? input : {};
-  return Object.fromEntries(menuPaths.map(path => {
-    const p = src[path] || {};
-    const access = !!p.access;
-    return [path, { access, edit: access && !!p.edit, delete: access && !!p.delete }];
-  }));
+  return normalized;
 }
 
 async function adminCount(client = pool) {
@@ -74,7 +63,7 @@ export const PUT = handle(async (request, { params }) => {
       RETURNING id, username, display_name, role, permissions, commission_rate, sales_target, branch_id, created_at
     `;
     if (password) {
-      values.splice(7, 0, hashPassword(password));
+      values.splice(7, 0, await hashPassword(password));
       query = `
         UPDATE users
         SET username = $1, display_name = $2, role = $3, permissions = $4::jsonb,

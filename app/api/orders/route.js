@@ -8,6 +8,7 @@ import { normalizeVatSettings, applyVat } from '@/lib/vat';
 import { applyRounding } from '@/lib/rounding';
 import { extractActor, logAudit } from '@/lib/audit';
 import { publishEvent } from '@/lib/appEvents';
+import { runSchemaMigrations } from '@/lib/schemaMigrations';
 
 export const GET = handle(async () => {
   await ensureOrdersSchema();
@@ -37,6 +38,7 @@ export const POST = handle(async (request) => {
   await ensureCompanyProfileSchema();
   await ensureProductVariantsSchema();
   await ensureBranchesSchema();
+  await runSchemaMigrations();
   const client = await pool.connect();
   try {
     let {
@@ -58,6 +60,21 @@ export const POST = handle(async (request) => {
     } = await readJson(request);
     if (!Array.isArray(items) || items.length === 0) {
       return fail(400, 'items is required');
+    }
+    items = items.map((item) => ({
+      ...item,
+      product_id: Number(item.product_id),
+      variant_id: item.variant_id ? Number(item.variant_id) : null,
+      quantity: Number(item.quantity),
+      price: Number(item.price),
+    }));
+    if (items.some((item) =>
+      !Number.isInteger(item.product_id) || item.product_id <= 0 ||
+      !Number.isFinite(item.quantity) || item.quantity <= 0 ||
+      !Number.isFinite(item.price) || item.price < 0 ||
+      (item.variant_id !== null && (!Number.isInteger(item.variant_id) || item.variant_id <= 0))
+    )) {
+      return fail(400, 'Invalid product, quantity, variant, or price');
     }
     const subtotal = items.reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0);
     const disc = Math.max(0, Number(discount) || 0);
@@ -109,6 +126,14 @@ export const POST = handle(async (request) => {
     const isCredit = payment_method === 'credit';
     const paidNum = isCredit ? 0 : (paymentsSumLAK > 0 ? paymentsSumLAK : Math.max(0, Number(amount_paid) || totalNum));
     const changeNum = isCredit ? 0 : (change_amount != null ? Math.max(0, Number(change_amount) || 0) : Math.max(0, paidNum - totalNum));
+    if (!isCredit && paidNum + 0.01 < totalNum) {
+      await client.query('ROLLBACK');
+      return fail(400, 'ຈຳນວນເງິນຮັບບໍ່ຄົບຍອດບິນ');
+    }
+    if (changeNum > Math.max(0, paidNum - totalNum) + 0.01) {
+      await client.query('ROLLBACK');
+      return fail(400, 'ຈຳນວນເງິນທອນບໍ່ຖືກຕ້ອງ');
+    }
     const methodFinal =
       isCredit ? 'credit' :
       payment_method ||
@@ -232,20 +257,36 @@ export const POST = handle(async (request) => {
 
     for (const item of items) {
       const variantId = item.variant_id ? Number(item.variant_id) : null;
+      // ບັນທຶກຕົ້ນທຶນ ณ ເວລາຂາຍ (snapshot) — ລາຄາທຶນປ່ຽນພາຍຫຼັງ ກຳໄລບິນເກົ່າບໍ່ປ່ຽນຕາມ
       await client.query(
-        'INSERT INTO order_items (order_id, product_id, variant_id, quantity, price) VALUES ($1, $2, $3, $4, $5)',
+        `INSERT INTO order_items (order_id, product_id, variant_id, quantity, price, cost_price)
+         VALUES ($1, $2, $3, $4, $5,
+           COALESCE(
+             (SELECT v.cost_price FROM product_variants v WHERE v.id = $3),
+             (SELECT p.cost_price FROM products p WHERE p.id = $2)
+           ))`,
         [order.id, item.product_id, variantId, item.quantity, item.price]
       );
       if (variantId) {
-        await client.query(
-          'UPDATE product_variants SET qty_on_hand = qty_on_hand - $1 WHERE id = $2',
-          [item.quantity, variantId]
+        const stock = await client.query(
+          `UPDATE product_variants SET qty_on_hand = qty_on_hand - $1
+           WHERE id = $2 AND product_id = $3 AND qty_on_hand >= $1 RETURNING id`,
+          [item.quantity, variantId, item.product_id]
         );
+        if (stock.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return fail(409, 'ສະຕັອກ variant ບໍ່ພຽງພໍ ຫຼື ຂໍ້ມູນບໍ່ຖືກຕ້ອງ');
+        }
       } else {
-        await client.query(
-          'UPDATE products SET qty_on_hand = qty_on_hand - $1 WHERE id = $2',
+        const stock = await client.query(
+          `UPDATE products SET qty_on_hand = qty_on_hand - $1
+           WHERE id = $2 AND status IS NOT FALSE AND qty_on_hand >= $1 RETURNING id`,
           [item.quantity, item.product_id]
         );
+        if (stock.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return fail(409, 'ສະຕັອກສິນຄ້າບໍ່ພຽງພໍ ຫຼື ສິນຄ້າຖືກປິດໃຊ້ງານ');
+        }
       }
     }
 

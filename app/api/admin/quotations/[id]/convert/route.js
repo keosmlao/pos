@@ -132,8 +132,10 @@ export const POST = handle(async (request, { params }) => {
 
     // Create order items + decrement stock
     for (const it of items) {
+      // ບັນທຶກຕົ້ນທຶນ ณ ເວລາຂາຍ (snapshot) ຄືກັບບິນຂາຍ POS
       await client.query(
-        'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)',
+        `INSERT INTO order_items (order_id, product_id, quantity, price, cost_price)
+         VALUES ($1, $2, $3, $4, (SELECT p.cost_price FROM products p WHERE p.id = $2))`,
         [order.id, it.product_id, it.quantity, it.price]
       );
       await client.query(

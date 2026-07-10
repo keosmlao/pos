@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
+import { usePagePermission } from '@/utils/adminPermissions'
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n)
@@ -37,6 +38,7 @@ const countBadge = {
 }
 
 export default function CategoriesBrands() {
+  const perm = usePagePermission('/admin/categories-brands')
   const [tab, setTab] = useState('categories')
   const [data, setData] = useState({ categories: [], brands: [], units: [], products: [] })
   const [search, setSearch] = useState('')
@@ -176,10 +178,12 @@ export default function CategoriesBrands() {
         title="🏷 ໝວດໝູ່ / ຍີ່ຫໍ້ / ຫົວໜ່ວຍ"
         subtitle="ຂໍ້ມູນພື້ນຖານສຳລັບການຈັດການສິນຄ້າ"
         action={
+          perm.edit && (
           <button onClick={() => { setIsAdding(true); setAddValue(''); setEditingId(null) }}
             className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20">
             + ເພີ່ມ {activeInfo.label}
           </button>
+          )
         }
       />
 
@@ -322,24 +326,36 @@ export default function CategoriesBrands() {
                       </td>
                       {tab === 'categories' && (
                         <td className="py-1.5 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => togglePosVisible(item.id, item.pos_visible !== false)}
-                            className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${item.pos_visible !== false ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                            title={item.pos_visible !== false ? 'ສະແດງໃນ POS' : 'ເຊື່ອງຈາກ POS'}
-                          >
-                            <span className={`w-4 h-4 bg-white rounded-full shadow transition-transform ${item.pos_visible !== false ? 'translate-x-4' : 'translate-x-0'}`}></span>
-                          </button>
+                          {perm.edit ? (
+                            <button
+                              type="button"
+                              onClick={() => togglePosVisible(item.id, item.pos_visible !== false)}
+                              className={`w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${item.pos_visible !== false ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                              title={item.pos_visible !== false ? 'ສະແດງໃນ POS' : 'ເຊື່ອງຈາກ POS'}
+                            >
+                              <span className={`w-4 h-4 bg-white rounded-full shadow transition-transform ${item.pos_visible !== false ? 'translate-x-4' : 'translate-x-0'}`}></span>
+                            </button>
+                          ) : (
+                            <span
+                              className={`inline-flex w-9 h-5 rounded-full items-center px-0.5 ${item.pos_visible !== false ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                              title={item.pos_visible !== false ? 'ສະແດງໃນ POS' : 'ເຊື່ອງຈາກ POS'}
+                            >
+                              <span className={`w-4 h-4 bg-white rounded-full shadow ${item.pos_visible !== false ? 'translate-x-4' : 'translate-x-0'}`}></span>
+                            </span>
+                          )}
                         </td>
                       )}
                       <td className="py-1.5 px-3 text-right">
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           {!isEditing && (
                             <>
+                              {perm.edit && (
                               <button onClick={() => { setEditingId(item.id); setEditValue(item.name) }}
                                 className="w-6 h-6 bg-red-50 hover:bg-red-100 text-red-600 rounded flex items-center justify-center" title="ແກ້ໄຂ">
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                               </button>
+                              )}
+                              {perm.delete && (
                               <button onClick={() => remove(item.id, item.name)} disabled={isDeleting}
                                 className="w-6 h-6 bg-red-50 hover:bg-red-100 text-red-500 rounded flex items-center justify-center disabled:opacity-50" title="ລຶບ">
                                 {isDeleting ? (
@@ -348,6 +364,7 @@ export default function CategoriesBrands() {
                                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
                                 )}
                               </button>
+                              )}
                             </>
                           )}
                         </div>

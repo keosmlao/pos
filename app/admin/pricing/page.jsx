@@ -2,7 +2,7 @@
 
 
 import { useState, useEffect, useMemo } from 'react'
-import * as XLSX from 'xlsx'
+import { downloadWorkbook, readFirstWorksheet, rowsToObjects } from '@/utils/excelClient'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
 import { COSTING_METHOD_LABELS } from '@/lib/costingMethods'
 
@@ -74,7 +74,7 @@ export default function Pricing() {
     finally { setHistoryLoading(false) }
   }
 
-  const downloadTemplate = () => {
+  const downloadTemplate = async () => {
     const rows = products.map(p => ({
       id: p.id,
       product_code: p.product_code || '',
@@ -85,27 +85,22 @@ export default function Pricing() {
       cost_price: productCostValue(p),
       selling_price: Number(p.selling_price) || 0,
     }))
-    const ws = XLSX.utils.json_to_sheet(rows, {
-      header: ['id', 'product_code', 'barcode', 'product_name', 'category', 'unit', 'cost_price', 'selling_price']
+    const keys = ['id', 'product_code', 'barcode', 'product_name', 'category', 'unit', 'cost_price', 'selling_price']
+    await downloadWorkbook({
+      sheetName: 'Pricing',
+      fileName: `pricing_template_${new Date().toISOString().split('T')[0]}.xlsx`,
+      columns: keys.map((key, i) => ({ header: key, key, width: [6, 14, 18, 38, 16, 10, 14, 14][i] })),
+      rows,
     })
-    ws['!cols'] = [
-      { wch: 6 }, { wch: 14 }, { wch: 18 }, { wch: 38 }, { wch: 16 },
-      { wch: 10 }, { wch: 14 }, { wch: 14 },
-    ]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Pricing')
-    XLSX.writeFile(wb, `pricing_template_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
   const handleUpload = async (file) => {
     if (!file) return
     setUploading(true)
     try {
-      const buf = await file.arrayBuffer()
-      const wb = XLSX.read(buf, { type: 'array' })
-      const sheet = wb.Sheets[wb.SheetNames[0]]
-      if (!sheet) { alert('ບໍ່ພົບ sheet ໃນໄຟລ໌'); return }
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true })
+      const rawRows = await readFirstWorksheet(file)
+      if (rawRows.length === 0) { alert('ບໍ່ພົບ sheet ໃນໄຟລ໌'); return }
+      const rows = rowsToObjects(rawRows)
       if (rows.length === 0) { alert('ໄຟລ໌ບໍ່ມີຂໍ້ມູນ'); return }
       const norm = (k) => String(k || '').trim().toLowerCase().replace(/\s+/g, '_')
       const updates = []

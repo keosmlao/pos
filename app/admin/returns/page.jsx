@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { usePagePermission } from '@/utils/adminPermissions';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Number(n) || 0);
@@ -16,6 +17,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({
 }[ch]));
 
 export default function ReturnsPage() {
+  const perm = usePagePermission('/admin/returns');
   const [returns, setReturns] = useState([]);
   const [lookup, setLookup] = useState(null);
   const [qty, setQty] = useState({});
@@ -239,6 +241,7 @@ export default function ReturnsPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         {!lookup ? (
+          perm.edit && (
           <button onClick={openPicker} disabled={loading}
             className="w-full rounded-xl border-2 border-dashed border-red-300 bg-blue-50/40 hover:bg-blue-50 hover:border-red-400 px-4 py-6 text-center transition disabled:opacity-50">
             <div className="text-3xl mb-1">🧾</div>
@@ -247,11 +250,14 @@ export default function ReturnsPage() {
             </div>
             <div className="text-[11px] text-red-500 mt-0.5">ກົດເພື່ອເປີດລາຍການບິນທີ່ສາມາດຮັບຄືນ</div>
           </button>
+          )
         ) : (
+          perm.edit && (
           <button onClick={openPicker} disabled={loading}
             className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
             🧾 ເລືອກບິນອື່ນ
           </button>
+          )
         )}
 
         {lookup && (() => {
@@ -379,6 +385,7 @@ export default function ReturnsPage() {
                     {totalItemsCount > 0 ? `${fmtNum(totalItemsCount)} ຊິ້ນ · ${selectedItems.length} ລາຍການ` : 'ຍັງບໍ່ໄດ້ເລືອກສິນຄ້າ'}
                   </div>
                 </div>
+                {perm.edit && (
                 <button onClick={submitReturn} disabled={saving || refundTotal <= 0}
                   className="rounded-xl bg-white px-6 py-3 text-sm font-extrabold text-red-700 shadow-lg hover:bg-blue-50 disabled:bg-red-500 disabled:text-blue-200 disabled:cursor-not-allowed transition flex items-center gap-2">
                   {saving ? (
@@ -393,6 +400,7 @@ export default function ReturnsPage() {
                     </>
                   )}
                 </button>
+                )}
               </div>
             </div>
           </div>
@@ -434,11 +442,13 @@ export default function ReturnsPage() {
                     </button>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-center">
+                    {perm.delete && (
                     <button onClick={() => deleteReturn(r)}
                       title="ຍົກເລີກການຮັບຄືນ (ລົບສະຕັອກກັບ)"
                       className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-extrabold text-rose-700 hover:bg-rose-50">
                       🗑 ລົບ
                     </button>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -139,7 +139,7 @@ export const GET = handle(async () => {
   const profitRes = await pool.query(`
     SELECT
       COALESCE(SUM(oi.quantity * oi.price), 0)::float AS revenue,
-      COALESCE(SUM(oi.quantity * COALESCE(p.cost_price, 0)), 0)::float AS cogs
+      COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, p.cost_price, 0)), 0)::float AS cogs
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id
     LEFT JOIN products p ON p.id = oi.product_id

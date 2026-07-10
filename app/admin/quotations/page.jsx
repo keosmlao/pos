@@ -56,7 +56,6 @@ export default function QuotationsPage() {
   useEffect(() => {
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, search]);
 
   useEffect(() => {
@@ -262,4 +261,3 @@ export default function QuotationsPage() {
     </div>
   );
 }
-

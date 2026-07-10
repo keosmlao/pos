@@ -86,7 +86,6 @@ export default function CashierReceiptsPage() {
   useEffect(() => {
     const t = setTimeout(load, 150);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to, cashier]);
 
   const rows = data?.rows || [];

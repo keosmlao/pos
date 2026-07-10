@@ -21,18 +21,22 @@ export default function AdminLayout({ children }) {
 
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('pos_user') : null;
-    const savedUser = saved ? JSON.parse(saved) : null;
-    if (!savedUser || !canAccessAdmin(savedUser, pathname)) {
-      const firstPath = firstAccessibleAdminPath(savedUser);
-      if (firstPath && firstPath !== pathname) {
-        router.replace(firstPath);
+    if (!saved) { router.replace('/'); return; }
+    fetch('/api/session').then(async (res) => {
+      if (!res.ok) throw new Error('unauthorized');
+      const savedUser = await res.json();
+      localStorage.setItem('pos_user', JSON.stringify(savedUser));
+      if (!canAccessAdmin(savedUser, pathname)) {
+        const firstPath = firstAccessibleAdminPath(savedUser);
+        router.replace(firstPath || '/');
         return;
       }
-      router.replace('/');
-    } else {
       setUser(savedUser);
       setAuthorized(true);
-    }
+    }).catch(() => {
+      localStorage.removeItem('pos_user');
+      router.replace('/');
+    });
   }, [router, pathname]);
 
   if (!authorized) return null;

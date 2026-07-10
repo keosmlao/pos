@@ -7,7 +7,7 @@ import { useCompanyProfile } from '../utils/useCompanyProfile'
 import { connectCashDrawer, isCashDrawerSupported, openCashDrawer } from '../utils/cashDrawer'
 import { useLocations } from '../utils/useLocations'
 import { useBranches } from '../utils/useBranches'
-import { firstAccessibleAdminPath } from '../utils/adminPermissions'
+import { firstAccessibleAdminPath, getPagePermission } from '../utils/adminPermissions'
 import { normalizeVatSettings, applyVat } from '../lib/vat'
 import { applyRounding } from '../lib/rounding'
 import SearchSelect from './SearchSelect'
@@ -409,6 +409,12 @@ const DEFAULT_MEMBER = {
 export default function POS({ user, onLogout }) {
   const router = useRouter()
   const company = useCompanyProfile()
+  // ສິດໜ້າຂາຍ: ອີງໃສ່ສິດ ຮັບຄືນ/ຄືນເງິນ ແລະ ປະຫວັດການຂາຍ ທີ່ຕັ້ງໃນໜ້າ User ແລະ ສິດ
+  const returnsPerm = getPagePermission(user, '/admin/returns')
+  const salesPerm = getPagePermission(user, '/admin/sales')
+  const canMakeReturn = returnsPerm.edit
+  const canVoidReturn = returnsPerm.delete
+  const canVoidOrder = salesPerm.delete
   const laoLocations = useLocations()
   const { branches, activeBranch, activeBranchId, setActiveBranchId } = useBranches()
   const initialDraftRef = useRef(null)
@@ -546,7 +552,7 @@ export default function POS({ user, onLogout }) {
     return () => clearTimeout(t)
   }, [loadMembers, memberSearch])
   const reloadPromotions = useCallback(() => {
-    fetch(`${API}/admin/promotions`).then(r => r.json()).then(list => {
+    fetch(`${API}/promotions/active`).then(r => r.json()).then(list => {
       const active = Array.isArray(list) ? list.filter(p => p.active !== false) : []
       setPromotions(active)
       console.log(`[POS] Loaded ${active.length} active promotions:`, active.map(p => `${p.name} (${p.type})`))
@@ -1475,7 +1481,6 @@ export default function POS({ user, onLogout }) {
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showCheckout])
 
   const loadOrders = async () => {
@@ -1780,6 +1785,12 @@ export default function POS({ user, onLogout }) {
       <div class="xs bold center">ບັນຊີຊຳລະ</div>
       ${company.bank_accounts.map(a => `<div class="xs">• ${[a.bank_name, a.account_name].filter(Boolean).join(' — ')}${a.account_number ? `: ${a.account_number}` : ''}</div>`).join('')}
       ` : ''}
+      ${company.payment_qr_url ? `
+      <div class="center" style="margin-top:2mm;">
+        <img src="${location.origin}${company.payment_qr_url}" style="max-width:32mm;" alt="QR" />
+        <div class="xs bold">ສະແກນຈ່າຍ</div>
+      </div>
+      ` : ''}
 
       <div class="divider"></div>
       <div class="center sm bold">★ ຂໍຂອບໃຈ ★</div>
@@ -1916,6 +1927,12 @@ export default function POS({ user, onLogout }) {
               <div class="bank" style="margin-top:8px">
                 <b>ບັນຊີຊຳລະ:</b>
                 ${company.bank_accounts.map(a => `<div>• ${[a.bank_name, a.account_name].filter(Boolean).join(' — ')}${a.account_number ? `: ${a.account_number}` : ''}</div>`).join('')}
+              </div>
+            ` : ''}
+            ${company.payment_qr_url ? `
+              <div style="margin-top:8px">
+                <img src="${location.origin}${company.payment_qr_url}" style="width:88px;height:88px;object-fit:contain;" alt="QR" />
+                <div style="font-size:10px;font-weight:bold;">📱 ສະແກນຈ່າຍ</div>
               </div>
             ` : ''}
           </div>
@@ -2084,7 +2101,7 @@ export default function POS({ user, onLogout }) {
               </button>
             )
           })()}
-          {user.role === 'admin' && (
+          {canMakeReturn && (
             <button onClick={() => openReturnModal()}
               className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="ຮັບຄືນສິນຄ້າ / ຄືນເງິນ">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
@@ -2198,14 +2215,14 @@ export default function POS({ user, onLogout }) {
                   <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-slate-600"><rect x="2" y="7" width="2" height="10"/><rect x="6" y="7" width="1" height="10"/><rect x="9" y="7" width="3" height="10"/><rect x="14" y="7" width="1" height="10"/><rect x="17" y="7" width="2" height="10"/><rect x="21" y="7" width="1" height="10"/></svg>
                 </div>
               </div>
-              <div className="text-base font-bold text-slate-400 mb-1">ລໍຖ້າການສະແກນ</div>
-              <div className="text-xs text-slate-500 leading-relaxed">ສະແກນ barcode ສິນຄ້າເພື່ອເລີ່ມຕົ້ນ<br/>ຫຼື ກົດ <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] font-mono">Catalog</kbd> ເພື່ອເພີ່ມດ້ວຍມື</div>
+              <div className="text-base font-bold text-slate-200 mb-1">ລໍຖ້າການສະແກນ</div>
+              <div className="text-xs text-slate-400 leading-relaxed">ສະແກນ barcode ສິນຄ້າເພື່ອເລີ່ມຕົ້ນ<br/>ຫຼື ກົດ <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px] font-mono">Catalog</kbd> ເພື່ອເພີ່ມດ້ວຍມື</div>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
               <table className="pos-cart-table w-full text-[13px] font-mono-t">
                 <thead>
-                  <tr className="sticky top-0 bg-slate-950/95 backdrop-blur border-b border-slate-800 text-[10px] text-slate-500 uppercase tracking-wider">
+                  <tr className="sticky top-0 bg-slate-950/95 backdrop-blur border-b border-slate-800 text-[10px] text-slate-300 uppercase tracking-wider">
                     <th className="text-left py-2 px-3 w-10">#</th>
                     <th className="text-left py-2 px-2">ສິນຄ້າ</th>
                     <th className="text-right py-2 px-2 w-28">ຈຳນວນ</th>
@@ -2231,13 +2248,13 @@ export default function POS({ user, onLogout }) {
                       const rows = [
                         <tr key={`paid-${item.product_id}`}
                           className={`border-b border-slate-800/60 transition-colors ${isLast ? 'bg-red-500/10' : hasPromo ? 'bg-violet-500/5' : 'hover:bg-slate-900/80'}`}>
-                          <td className="py-2 px-3 text-slate-600 font-bold">{String(paidIdx).padStart(2, '0')}</td>
+                          <td className="py-2 px-3 text-slate-400 font-bold">{String(paidIdx).padStart(2, '0')}</td>
                           <td className="py-2 px-2">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-slate-100 font-bold leading-tight">{item.name}</span>
+                              <span className="text-white font-bold leading-tight">{item.name}</span>
                               {hasPromo && <span className="text-[8px] font-extrabold px-1 py-0.5 bg-violet-500 text-white rounded">🎁 PROMO</span>}
                             </div>
-                            {item.code && <div className="text-[10px] text-slate-500 font-normal">{item.code}</div>}
+                            {item.code && <div className="text-[10px] text-slate-300 font-normal">{item.code}</div>}
                           </td>
                           <td className="py-2 px-2 text-right">
                             <div className="inline-flex items-center bg-slate-800 rounded border border-slate-700 overflow-hidden">
@@ -2259,7 +2276,7 @@ export default function POS({ user, onLogout }) {
                                 <div className="text-violet-400 font-bold">{formatNumber(effectivePrice)}</div>
                               </div>
                             ) : (
-                              <span className="text-slate-400">{formatNumber(item.price)}</span>
+                              <span className="text-slate-100 font-bold">{formatNumber(item.price)}</span>
                             )}
                           </td>
                           <td className="py-2 px-3 text-right">
@@ -2361,7 +2378,7 @@ export default function POS({ user, onLogout }) {
               {loadedLayby ? 'ຄ້າງຊຳລະ (Layby)' : 'ມູນຄ່າລວມ'}
             </div>
             <div className="text-5xl font-extrabold text-red-400 font-mono-t tracking-tight leading-none">{formatPrice(amountDue)}</div>
-            <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 font-bold">
+            <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-300 font-bold">
               {discountAmount > 0 && <span className="text-rose-300">−{formatPrice(discountAmount)}</span>}
             </div>
             {loadedLayby && (
@@ -2420,7 +2437,7 @@ export default function POS({ user, onLogout }) {
           <section className="pos-summary-card m-2 mb-0 rounded-lg border border-slate-800 bg-slate-900/70 p-2.5">
             <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-2">Section 03 · ສະຫຼຸບຍອດ</div>
             <div className="space-y-1.5 text-[13px] font-mono-t">
-              <div className="flex justify-between text-slate-400">
+              <div className="flex justify-between text-slate-200 font-bold">
                 <span>ລວມຍ່ອຍ</span>
                 <span>{formatPrice(cartTotal)}</span>
               </div>
@@ -2931,7 +2948,7 @@ export default function POS({ user, onLogout }) {
                           {low && <div className="absolute top-1 right-1 bg-amber-500 text-white text-[8px] font-bold px-1 rounded">LOW</div>}
                           {inCart && <div className="absolute top-1 left-1 bg-red-500 text-white text-[9px] font-extrabold px-1.5 rounded">× {cart.find(i => i.product_id === p.id)?.quantity}</div>}
                         </div>
-                        {p.product_code && <div className="text-[9px] font-mono text-slate-400 truncate">{p.product_code}</div>}
+                        {p.product_code && <div className="text-[9px] font-mono text-slate-600 truncate">{p.product_code}</div>}
                         <div className="text-[12px] font-bold text-slate-900 leading-tight line-clamp-2 min-h-[30px]">{p.product_name}</div>
                         <div className="flex items-end justify-between mt-1 pt-1 border-t border-slate-100">
                           <div className="font-extrabold text-[12px] text-red-700 font-mono-t">{formatNumber(p.selling_price)}</div>
@@ -3089,7 +3106,7 @@ export default function POS({ user, onLogout }) {
                 fullyPaid ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200 bg-slate-50'
               }`}>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider">ຕ້ອງຊຳລະ</span>
+                  <span className="text-[9px] text-slate-700 font-extrabold uppercase tracking-wider">ຕ້ອງຊຳລະ</span>
                   <span className="text-2xl font-extrabold font-mono-t text-slate-900 tracking-tight">{formatPrice(targetTotal)}</span>
                 </div>
                 {loadedLayby && laybyTender > 0 && (
@@ -3107,16 +3124,16 @@ export default function POS({ user, onLogout }) {
                 </div>
                 <div className="grid grid-cols-3 gap-1 mt-1.5 text-center">
                   <div>
-                    <div className="text-[8px] text-slate-400 font-extrabold uppercase leading-none">ຮັບແລ້ວ</div>
+                    <div className="text-[8px] text-slate-600 font-extrabold uppercase leading-none">ຮັບແລ້ວ</div>
                     <div className="text-[11px] font-extrabold font-mono-t text-slate-800 mt-0.5">{formatPrice(paidNow)}</div>
                   </div>
                   <div>
-                    <div className="text-[8px] text-slate-400 font-extrabold uppercase leading-none">{isCredit ? 'ຄ້າງຮັບ' : 'ຍັງຂາດ'}</div>
-                    <div className={`text-[11px] font-extrabold font-mono-t mt-0.5 ${!fullyPaid ? 'text-amber-600' : 'text-slate-400'}`}>{formatPrice(!fullyPaid || isCredit ? remaining || targetTotal : 0)}</div>
+                    <div className="text-[8px] text-slate-600 font-extrabold uppercase leading-none">{isCredit ? 'ຄ້າງຮັບ' : 'ຍັງຂາດ'}</div>
+                    <div className={`text-[11px] font-extrabold font-mono-t mt-0.5 ${!fullyPaid ? 'text-amber-600' : 'text-slate-600'}`}>{formatPrice(!fullyPaid || isCredit ? remaining || targetTotal : 0)}</div>
                   </div>
                   <div>
-                    <div className={`text-[8px] font-extrabold uppercase leading-none ${change > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{change > 0 ? '💰 ທອນ' : 'ເງິນທອນ'}</div>
-                    <div className={`text-[11px] font-extrabold font-mono-t mt-0.5 ${change > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{formatPrice(change)}</div>
+                    <div className={`text-[8px] font-extrabold uppercase leading-none ${change > 0 ? 'text-emerald-600' : 'text-slate-600'}`}>{change > 0 ? '💰 ທອນ' : 'ເງິນທອນ'}</div>
+                    <div className={`text-[11px] font-extrabold font-mono-t mt-0.5 ${change > 0 ? 'text-emerald-600' : 'text-slate-600'}`}>{formatPrice(change)}</div>
                   </div>
                 </div>
               </div>
@@ -4012,7 +4029,7 @@ export default function POS({ user, onLogout }) {
                         <div className="text-[9px] text-slate-500 uppercase tracking-wider">ຍອດຄືນ</div>
                         <div className="text-lg font-extrabold text-rose-700 font-mono-t">{formatPrice(r.refund_amount)}</div>
                       </div>
-                      {user.role === 'admin' && (
+                      {canVoidReturn && (
                         <button onClick={() => deleteReturn(r)}
                           className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded flex items-center justify-center" title="ຍົກເລີກການຮັບຄືນ (ສະຕັອກກັບ)">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
@@ -4068,13 +4085,13 @@ export default function POS({ user, onLogout }) {
                           </button>
                         ))}
                       </div>
-                      {user.role === 'admin' && (
+                      {canMakeReturn && (
                         <button onClick={() => openReturnModal(order)}
                           className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded flex items-center justify-center" title="ຮັບຄືນ / ຄືນເງິນ">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
                         </button>
                       )}
-                      {user.role === 'admin' && (
+                      {canVoidOrder && (
                         <button onClick={() => cancelOrder(order.id)}
                           className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded flex items-center justify-center" title="ຍົກເລີກບິນ">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>

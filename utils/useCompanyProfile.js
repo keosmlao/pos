@@ -11,6 +11,7 @@ const DEFAULT = {
   phone: '',
   email: '',
   logo_url: '',
+  payment_qr_url: '',
   bank_accounts: [],
   vat_enabled: false,
   vat_rate: 0,

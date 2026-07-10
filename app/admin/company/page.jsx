@@ -9,6 +9,7 @@ const API = '/api';
 const blank = {
   name: '', slogan: '', tax_id: '', business_reg_no: '',
   address: '', phone: '', email: '', logo_url: '',
+  payment_qr_url: '',
   bank_accounts: [],
   default_costing_method: DEFAULT_COSTING_METHOD,
   vat_enabled: false,
@@ -72,6 +73,26 @@ export default function CompanyProfilePage() {
       if (res.ok) {
         upd('logo_url', data.path);
         showToast('ອັບໂຫຼດ logo ສຳເລັດ');
+      } else {
+        showToast(data.error || 'ອັບໂຫຼດບໍ່ສຳເລັດ', 'error');
+      }
+    } catch {
+      showToast('ອັບໂຫຼດບໍ່ສຳເລັດ', 'error');
+    }
+    e.target.value = '';
+  };
+
+  const onQrSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch(`${API}/admin/uploads/logo`, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (res.ok) {
+        upd('payment_qr_url', data.path);
+        showToast('ອັບໂຫຼດ QR ສຳເລັດ — ຢ່າລືມກົດບັນທຶກ');
       } else {
         showToast(data.error || 'ອັບໂຫຼດບໍ່ສຳເລັດ', 'error');
       }
@@ -243,6 +264,32 @@ export default function CompanyProfilePage() {
                 ))}
               </div>
             )}
+          </Panel>
+
+          <Panel
+            title="QR ຮັບເງິນ"
+            subtitle="ຮູບ QR ຈະສະແດງໃນຈໍລູກຄ້າ ແລະ ໃບບິນຂາຍ ເພື່ອໃຫ້ລູກຄ້າສະແກນຈ່າຍ"
+          >
+            <div className="flex flex-wrap items-center gap-4">
+              {form.payment_qr_url ? (
+                <img src={form.payment_qr_url} alt="Payment QR" className="w-36 h-36 object-contain rounded-xl border border-slate-200 bg-white" />
+              ) : (
+                <div className="w-36 h-36 rounded-xl border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-3xl text-slate-300">📱</div>
+              )}
+              <div className="space-y-2">
+                <label className="inline-block rounded-xl bg-slate-900 px-4 py-2 text-xs font-extrabold text-white cursor-pointer transition hover:bg-slate-700">
+                  ⬆ ອັບໂຫຼດຮູບ QR
+                  <input type="file" accept="image/*" className="hidden" onChange={onQrSelect} />
+                </label>
+                {form.payment_qr_url && (
+                  <button onClick={() => upd('payment_qr_url', '')}
+                    className="block rounded-xl px-4 py-2 text-xs font-bold text-rose-600 transition hover:bg-rose-50">
+                    ✕ ເອົາ QR ອອກ
+                  </button>
+                )}
+                <div className="text-[11px] text-slate-400">ໃຊ້ຮູບ QR ຈາກແອັບທະນາຄານ (BCEL OnePay ຯລຯ) — ຫຼັງອັບໂຫຼດແລ້ວກົດ "ບັນທຶກ"</div>
+              </div>
+            </div>
           </Panel>
 
           <Panel title="ວິທີຄຳນວນຕົ້ນທຶນສິນຄ້າ" subtitle="ຄ່າມາດຕະຖານສຳລັບສິນຄ້າທີ່ບໍ່ໄດ້ກຳນົດສະເພາະ">

@@ -243,7 +243,7 @@ export default function PurchaseCreate() {
   const discountAmount = discount.type === 'percent' ? round2(subtotal * (Number(discount.value) || 0) / 100) :
     discount.type === 'fixed' ? round2(discount.value) : 0
   const itemsTotal = Math.max(0, round2(subtotal - discountAmount))
-  const totalAmountLAK = Math.max(0, Math.round(itemsTotal * exchangeRate))
+  const totalAmountLAK = Math.max(0, round2(itemsTotal * exchangeRate))
   const paidAmountLAK = form.payment_type === 'debt' ? 0 : totalAmountLAK
   const remainingAmountLAK = Math.max(0, totalAmountLAK - paidAmountLAK)
   const paidAmountOriginal = form.payment_type === 'debt' ? 0 : itemsTotal
@@ -283,7 +283,7 @@ export default function PurchaseCreate() {
         subtotal: subtotal,
         items: validItems.map(i => {
           const netUnit = calcNetUnitPrice(i)
-          return { product_id: Number(i.product_id), quantity: Number(i.quantity), cost_price: Math.round(netUnit * exchangeRate) }
+          return { product_id: Number(i.product_id), quantity: Number(i.quantity), cost_price: round2(netUnit * exchangeRate) }
         })
       })
     })
@@ -460,7 +460,7 @@ export default function PurchaseCreate() {
                       const price = Number(item.cost_price) || 0
                       if (price <= 0) return item
                       const lakPrice = price * oldRate
-                      const newPrice = newRate > 0 ? Math.round(lakPrice / newRate) : lakPrice
+                      const newPrice = newRate > 0 ? round2(lakPrice / newRate) : lakPrice
                       return { ...item, cost_price: newPrice }
                     }))
                   }}
@@ -572,7 +572,7 @@ export default function PurchaseCreate() {
                         </td>
                         {form.currency !== 'LAK' && (
                           <td className="py-0 px-2 text-right font-semibold text-emerald-600 whitespace-nowrap font-mono">
-                            {lineNet > 0 ? `${new Intl.NumberFormat('lo-LA').format(Math.round(lineNet * exchangeRate))} ₭` : '—'}
+                            {lineNet > 0 ? `${new Intl.NumberFormat('lo-LA', { maximumFractionDigits: 2 }).format(round2(lineNet * exchangeRate))} ₭` : '—'}
                           </td>
                         )}
                         <td className="py-2 px-1">

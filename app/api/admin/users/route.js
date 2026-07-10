@@ -1,33 +1,20 @@
 export const dynamic = 'force-dynamic';
 
-import crypto from 'crypto';
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureUsersSchema } from '@/lib/migrations';
-
-const hashPassword = (password) => crypto.createHash('sha256').update(String(password || '')).digest('hex');
+import { hashPassword } from '@/lib/passwords';
+import { createFullPermissions, normalizePermissions as normalizeFromMenu } from '@/lib/adminMenu';
 const validRoles = new Set(['admin', 'cashier']);
-const menuPaths = [
-  '/admin', '/admin/products', '/admin/categories-brands', '/admin/suppliers', '/admin/reorder-alerts',
-  '/admin/stock-adjustments', '/admin/stock-take', '/admin/stock-transfers', '/admin/price-labels',
-  '/admin/purchase-requests', '/admin/purchases', '/admin/debts', '/admin/debt-payments/supplier',
-  '/admin/quotations', '/admin/laybys', '/admin/sales', '/admin/returns', '/admin/cash-handovers',
-  '/admin/cash-transactions/income', '/admin/cash-transactions/expense', '/admin/cash-flow', '/admin/tax-report', '/admin/profit-report', '/admin/cashier-kpi',
-  '/admin/members', '/admin/customer-debts', '/admin/debt-payments/customer',
-  '/admin/users', '/admin/audit-log', '/admin/backup', '/admin/pricing', '/admin/promotions', '/admin/loyalty',
-  '/admin/currencies', '/admin/branches', '/admin/locations', '/admin/company', '/admin/bill-format',
-];
 
+// ໃຊ້ລາຍການ path ຈາກ lib/adminMenu.js (ແຫຼ່ງດຽວກັບ UI) — ບໍ່ໃຫ້ສິດຫາຍຕອນບັນທຶກ
 function normalizePermissions(input, role) {
-  if (role === 'admin') {
-    return Object.fromEntries(menuPaths.map(path => [path, { access: true, edit: true, delete: true }]));
+  if (role === 'admin') return createFullPermissions();
+  const normalized = normalizeFromMenu(input);
+  for (const p of Object.values(normalized)) {
+    if (!p.access) { p.edit = false; p.delete = false; }
   }
-  const src = input && typeof input === 'object' ? input : {};
-  return Object.fromEntries(menuPaths.map(path => {
-    const p = src[path] || {};
-    const access = !!p.access;
-    return [path, { access, edit: access && !!p.edit, delete: access && !!p.delete }];
-  }));
+  return normalized;
 }
 
 export const GET = handle(async () => {
@@ -63,7 +50,7 @@ export const POST = handle(async (request) => {
       `INSERT INTO users (username, password, display_name, role, permissions, commission_rate, sales_target, branch_id)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
        RETURNING id, username, display_name, role, permissions, commission_rate, sales_target, branch_id, created_at`,
-      [cleanUsername, hashPassword(password), cleanDisplayName, cleanRole, JSON.stringify(cleanPermissions), commission, target, branch]
+      [cleanUsername, await hashPassword(password), cleanDisplayName, cleanRole, JSON.stringify(cleanPermissions), commission, target, branch]
     );
     return ok(result.rows[0]);
   } catch (e) {

@@ -98,6 +98,8 @@ export default function PriceLabelsPage() {
 
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('');
+  const [brand, setBrand] = useState('');
   const [selected, setSelected] = useState({});
   const [layoutKey, setLayoutKey] = useState('100x35.5');
   const [orientation, setOrientation] = useState('portrait');
@@ -120,20 +122,32 @@ export default function PriceLabelsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = useMemo(() => {
+  const categories = useMemo(
+    () => [...new Set(products.map(p => p.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'lo')),
+    [products]
+  );
+  const brands = useMemo(
+    () => [...new Set(products.map(p => p.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'lo')),
+    [products]
+  );
+
+  // matched = ທຸກຕົວທີ່ກົງເງື່ອນໄຂ (ໃຊ້ກັບປຸ່ມເລືອກທັງໝົດ), filtered = ສະແດງສູງສຸດ 200
+  const matched = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    if (!q) return products.slice(0, 200);
+    return products.filter(p => {
+      if (category && p.category !== category) return false;
+      if (brand && p.brand !== brand) return false;
+      if (!q) return true;
+      return (
+        (p.product_name || '').toLowerCase().includes(q) ||
+        (p.product_code || '').toLowerCase().includes(q) ||
+        (p.barcode || '').toLowerCase().includes(q)
+      );
+    });
+  }, [products, search, category, brand]);
 
-    return products
-      .filter(
-        p =>
-          (p.product_name || '').toLowerCase().includes(q) ||
-          (p.product_code || '').toLowerCase().includes(q) ||
-          (p.barcode || '').toLowerCase().includes(q)
-      )
-      .slice(0, 200);
-  }, [products, search]);
+  const filtered = useMemo(() => matched.slice(0, 200), [matched]);
 
   const updateQty = (pid, val) => {
     const n = Math.max(0, Number(val) || 0);
@@ -159,11 +173,12 @@ export default function PriceLabelsPage() {
 
   const totalLabels = selectedItems.reduce((s, it) => s + it.qty, 0);
 
+  // ເລືອກທຸກຕົວທີ່ກົງເງື່ອນໄຂ (ໝວດ/ຍີ່ຫໍ້/ຄົ້ນຫາ) — ບໍ່ຈຳກັດ 200 ທີ່ສະແດງ
   const selectAllFiltered = () => {
     setSelected(prev => {
       const next = { ...prev };
 
-      filtered.forEach(p => {
+      matched.forEach(p => {
         if (!next[p.id]) next[p.id] = 1;
       });
 
@@ -361,11 +376,31 @@ export default function PriceLabelsPage() {
                 />
               </div>
 
+              <select
+                value={category}
+                onChange={e => setCategory(e.target.value)}
+                className={`h-8 px-2 border rounded-md text-xs outline-none focus:border-red-400 ${category ? 'bg-red-50 border-red-300 text-red-700 font-bold' : 'bg-slate-50 border-slate-200'}`}
+              >
+                <option value="">ທຸກໝວດ</option>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+
+              <select
+                value={brand}
+                onChange={e => setBrand(e.target.value)}
+                className={`h-8 px-2 border rounded-md text-xs outline-none focus:border-red-400 ${brand ? 'bg-red-50 border-red-300 text-red-700 font-bold' : 'bg-slate-50 border-slate-200'}`}
+              >
+                <option value="">ທຸກຍີ່ຫໍ້</option>
+                {brands.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+
               <button
                 onClick={selectAllFiltered}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-md text-xs font-bold"
+                disabled={matched.length === 0}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-md text-xs font-bold disabled:opacity-40 whitespace-nowrap"
+                title="ເລືອກທຸກຕົວທີ່ກົງເງື່ອນໄຂ ໝວດ/ຍີ່ຫໍ້/ຄົ້ນຫາ"
               >
-                + ເພີ່ມທີ່ສະແດງ
+                + ເລືອກທັງໝົດ ({fmtNum(matched.length)})
               </button>
 
               {selectedItems.length > 0 && (
@@ -381,7 +416,8 @@ export default function PriceLabelsPage() {
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/50 text-xs font-bold text-slate-600">
-              ສິນຄ້າ {fmtNum(filtered.length)} ລາຍການ{' '}
+              ສິນຄ້າ {fmtNum(matched.length)} ລາຍການ
+              {matched.length > filtered.length && ` (ສະແດງ ${fmtNum(filtered.length)} — ປຸ່ມເລືອກທັງໝົດຈະກວມທຸກຕົວ)`}{' '}
               {loading && '· ກຳລັງໂຫຼດ...'}
             </div>
 

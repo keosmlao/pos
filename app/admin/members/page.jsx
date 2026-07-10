@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import SearchSelect from '@/components/SearchSelect';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
 import { useLocations } from '@/utils/useLocations';
+import { usePagePermission } from '@/utils/adminPermissions';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0);
@@ -33,6 +34,7 @@ const tierLabel = {
 };
 
 export default function MembersPage() {
+  const perm = usePagePermission('/admin/members');
   const laoLocations = useLocations();
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState('');
@@ -150,12 +152,12 @@ export default function MembersPage() {
         tag="Members"
         title="⭐ ສະມາຊິກ"
         subtitle={`${fmtNum(stats.count)} ຄົນ`}
-        action={
+        action={perm.edit && (
           <button onClick={openCreate}
             className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20">
             + ເພີ່ມສະມາຊິກ
           </button>
-        }
+        )}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
@@ -224,14 +226,18 @@ export default function MembersPage() {
                       <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">{tierLabel[m.tier] || m.tier}</span>
                     </td>
                     <td className="px-3 py-2 text-right">
+                      {perm.edit && (
                       <button onClick={() => openEdit(m)}
                         className="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-[11px] font-bold text-slate-700 mr-1">
                         ແກ້ໄຂ
                       </button>
+                      )}
+                      {perm.delete && (
                       <button onClick={() => remove(m)}
                         className="px-2 py-1 bg-rose-50 hover:bg-rose-100 rounded text-[11px] font-bold text-rose-700">
                         ປິດ
                       </button>
+                      )}
                     </td>
                   </tr>
                 ))}

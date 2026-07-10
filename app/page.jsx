@@ -12,9 +12,19 @@ export default function Home() {
   useEffect(() => {
     installAuditFetch();
     const saved = localStorage.getItem('pos_user');
-    if (saved) setUser(JSON.parse(saved));
-    setLoading(false);
-    fetch('/api/init').catch(() => {});
+    if (!saved) {
+      setLoading(false);
+      return;
+    }
+    fetch('/api/session')
+      .then(async (res) => {
+        if (!res.ok) throw new Error('unauthorized');
+        const current = await res.json();
+        localStorage.setItem('pos_user', JSON.stringify(current));
+        setUser(current);
+      })
+      .catch(() => localStorage.removeItem('pos_user'))
+      .finally(() => setLoading(false));
   }, []);
 
   const handleLogin = (userData) => {
@@ -23,6 +33,7 @@ export default function Home() {
   };
 
   const handleLogout = () => {
+    fetch('/api/logout', { method: 'POST' }).catch(() => {});
     localStorage.removeItem('pos_user');
     setUser(null);
   };
