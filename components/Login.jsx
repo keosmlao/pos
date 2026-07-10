@@ -130,6 +130,11 @@ export default function Login({ onLogin }) {
               {loading ? (<span className="w-5 h-5 border-3 border-white/30 border-t-white rounded-full animate-spin" />) : ('ເຂົ້າສູ່ລະບົບ')}
             </button>
           </form>
+          {process.env.NEXT_PUBLIC_APP_VERSION && (
+            <div className="mt-6 text-center text-xs text-slate-400 font-mono">
+              Version {process.env.NEXT_PUBLIC_APP_VERSION}
+            </div>
+          )}
         </div>
       </div>
     </div>

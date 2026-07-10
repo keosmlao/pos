@@ -24,7 +24,9 @@ function savePins(pins) {
   try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)); } catch {}
 }
 
-export default function AdminSidebar({ company, pathname, user, onClose, onBackToPos }) {
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '';
+
+export default function AdminSidebar({ company, pathname, user, onClose, onBackToPos, collapsed = false, onToggleCollapse }) {
   const permissions = useMemo(() => normalizePermissions(user?.permissions), [user?.permissions]);
   const visibleSections = useMemo(() => {
     if (user?.role === 'admin') return adminMenuSections;
@@ -83,6 +85,56 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
 
   const isPinned = (path) => pins.includes(path);
 
+  // ໂໝດຫຍໍ້: ສະແດງແຕ່ໄອຄອນ + tooltip — ກົດປຸ່ມລູກສອນເພື່ອຂະຫຍາຍຄືນ
+  if (collapsed) {
+    return (
+      <div className="flex h-full w-full flex-col items-center">
+        <div className="pt-3 pb-2">
+          <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-red-500 to-red-700 text-sm font-black text-white shadow-md shadow-red-950/40">
+            {company?.logo_url
+              ? <img src={company.logo_url} alt="logo" className="h-full w-full object-contain" />
+              : (company?.name?.charAt(0).toUpperCase() || 'A')}
+          </span>
+        </div>
+        <button
+          onClick={onToggleCollapse}
+          title="ຂະຫຍາຍເມນູ"
+          className="mb-1 flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-white/10 hover:text-white"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 18l6-6-6-6" /></svg>
+        </button>
+        <nav className="flex-1 overflow-y-auto w-full px-2 py-1 space-y-0.5">
+          {allItems.map(item => {
+            const active = isMenuItemActive(item, pathname);
+            return (
+              <Link
+                key={item.path}
+                href={item.path}
+                title={`${item.label} · ${item.section}`}
+                className={`relative flex h-9 items-center justify-center rounded-md text-base transition-colors ${
+                  active ? 'bg-red-500/20' : 'opacity-70 hover:opacity-100 hover:bg-white/[0.06]'
+                }`}
+              >
+                {active && <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-red-400" />}
+                <span>{item.icon}</span>
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="border-t border-white/[0.06] py-2 w-full flex flex-col items-center gap-1.5">
+          <button
+            onClick={onBackToPos}
+            title="ກັບໜ້າ POS"
+            className="flex h-8 w-8 items-center justify-center rounded-md bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-200 text-sm"
+          >
+            ←
+          </button>
+          {APP_VERSION && <div className="text-[9px] font-mono text-slate-600">v{APP_VERSION}</div>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="px-3 pt-3 pb-2">
@@ -98,6 +150,15 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
               {user?.display_name ? `${user.display_name} · ${user.role}` : 'Admin Console'}
             </div>
           </div>
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              title="ຫຍໍ້ເມນູ"
+              className="hidden md:flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-white/10 hover:text-white"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+          )}
           <button
             onClick={onClose}
             aria-label="ປິດເມນູ"
@@ -214,6 +275,11 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
         >
           {'←'} ກັບໜ້າ POS
         </button>
+        {APP_VERSION && (
+          <div className="text-center text-[10px] font-mono text-slate-600">
+            {company?.name || 'POS'} · v{APP_VERSION}
+          </div>
+        )}
       </div>
     </div>
   );

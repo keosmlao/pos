@@ -15,6 +15,17 @@ export default function AdminLayout({ children }) {
   const [authorized, setAuthorized] = useState(false);
   const [user, setUser] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    try { setCollapsed(localStorage.getItem('admin_sidebar_collapsed_v1') === '1'); } catch {}
+  }, []);
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      try { localStorage.setItem('admin_sidebar_collapsed_v1', prev ? '0' : '1'); } catch {}
+      return !prev;
+    });
+  };
 
   useEffect(() => { installAuditFetch(); }, []);
   useEffect(() => { setMobileOpen(false); }, [pathname]);
@@ -51,8 +62,8 @@ export default function AdminLayout({ children }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 dark:bg-slate-950">
-      <aside className="hidden md:flex w-[230px] bg-slate-950 text-white shrink-0">
-        <AdminSidebar {...sidebarProps} />
+      <aside className={`hidden md:flex bg-slate-950 text-white shrink-0 transition-[width] duration-200 ${collapsed ? 'w-[60px]' : 'w-[230px]'}`}>
+        <AdminSidebar {...sidebarProps} collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
       </aside>
 
       <div
