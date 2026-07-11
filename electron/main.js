@@ -57,12 +57,36 @@ function createWindow() {
     if (code !== -3) showOffline(); // -3 = ຍົກເລີກເອງ ບໍ່ແມ່ນ error
   });
 
+  // ປ່ອງພິມບິນ (window.open ເປັນ about:blank) ແລະ ໜ້າຂອງ server ເປີດໄດ້;
   // ລິ້ງພາຍນອກເປີດໃນ browser ປົກກະຕິ
   win.webContents.setWindowOpenHandler(({ url }) => {
     const server = getServerUrl();
-    if (url.startsWith(server)) return { action: 'allow' }; // ປ່ອງພິມບິນ
+    if (url === 'about:blank' || url.startsWith(server)) return { action: 'allow' };
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // ໂໝດພິມໄວ: ປ່ອງບິນທີ່ເປີດມາ ຖືກສັ່ງພິມຫາ printer ທີ່ຕັ້ງໄວ້ທັນທີ ບໍ່ຖາມ
+  win.webContents.on('did-create-window', (child) => {
+    const cfg = loadConfig();
+    if (!cfg.silentPrint) return;
+    // ກັນໜ້າບິນເອີ້ນ window.print() ເອງ (ຈະເປີດກ່ອງຖາມຊ້ຳ)
+    child.webContents.on('dom-ready', () => {
+      child.webContents.executeJavaScript('window.print = () => {}; true').catch(() => {});
+    });
+    child.webContents.on('did-finish-load', () => {
+      // ຖ້າໜ້າບິນມີ delay ກ່ອນພິມ ໃຫ້ຮູບ/ຟອນໂຫຼດຄົບກ່ອນ
+      setTimeout(() => {
+        child.webContents.print(
+          {
+            silent: true,
+            deviceName: cfg.printerName || undefined,
+            margins: { marginType: 'none' },
+          },
+          () => { try { child.close(); } catch {} }
+        );
+      }, 350);
+    });
   });
 
   loadPos();
@@ -72,7 +96,7 @@ function openSettings() {
   if (settingsWin) { settingsWin.focus(); return; }
   settingsWin = new BrowserWindow({
     width: 460,
-    height: 260,
+    height: 430,
     resizable: false,
     parent: win || undefined,
     modal: !!win,
@@ -132,6 +156,30 @@ app.on('window-all-closed', () => {
 
 // IPC ຈາກໜ້າ settings / offline
 ipcMain.handle('get-server-url', () => getServerUrl());
+ipcMain.handle('get-settings', () => {
+  const cfg = loadConfig();
+  return {
+    serverUrl: getServerUrl(),
+    silentPrint: !!cfg.silentPrint,
+    printerName: cfg.printerName || '',
+  };
+});
+ipcMain.handle('get-printers', async () => {
+  try { return win ? await win.webContents.getPrintersAsync() : []; } catch { return []; }
+});
+ipcMain.handle('save-settings', (_e, next) => {
+  const clean = String(next?.serverUrl || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\/.+/.test(clean)) return { ok: false, error: 'URL ຕ້ອງຂຶ້ນຕົ້ນດ້ວຍ http:// ຫຼື https://' };
+  saveConfig({
+    ...loadConfig(),
+    serverUrl: clean,
+    silentPrint: !!next?.silentPrint,
+    printerName: String(next?.printerName || ''),
+  });
+  if (settingsWin) settingsWin.close();
+  loadPos();
+  return { ok: true };
+});
 ipcMain.handle('set-server-url', (_e, url) => {
   const clean = String(url || '').trim().replace(/\/+$/, '');
   if (!/^https?:\/\/.+/.test(clean)) return { ok: false, error: 'URL ຕ້ອງຂຶ້ນຕົ້ນດ້ວຍ http:// ຫຼື https://' };
