@@ -39,6 +39,13 @@ cd electron
 npm start   # ເປີດແອັບຊີ້ຫາ http://localhost:3000 (ຄ່າເລີ່ມຕົ້ນ)
 ```
 
+ຂໍ້ຄວນຮູ້ເມື່ອທົດສອບໃນ Mac ເຄື່ອງນີ້:
+- ຖ້າແລ່ນຈາກ terminal ຂອງ VS Code ແລ້ວ error `app.requestSingleInstanceLock` —
+  ຕົວແປ `ELECTRON_RUN_AS_NODE` ຕິດມາຈາກ VS Code. ແລ່ນແບບນີ້ແທນ:
+  `env -u ELECTRON_RUN_AS_NODE ./node_modules/electron/dist/Electron.app/Contents/MacOS/Electron .`
+- ຖ້າ error `Electron failed to install correctly` — binary ຍັງບໍ່ຖືກ extract:
+  `cd node_modules/electron && node install.js` (ຫຼື unzip ໄຟລ໌ໃນ ~/Library/Caches/electron ໃສ່ dist/)
+
 ## ໝາຍເຫດ
 
 - ຍັງບໍ່ໄດ້ໃສ່ icon ສະເພາະ (ໃຊ້ icon Electron ມາດຕະຖານ) — ຢາກໃສ່ໂລໂກ້ຮ້ານ
