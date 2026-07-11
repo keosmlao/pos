@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useCompanyProfile } from '@/utils/useCompanyProfile';
 
 const API = '/api';
@@ -13,6 +13,21 @@ export default function Login({ onLogin }) {
   const [remember, setRemember] = useState(!!saved.username);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // ແຈ້ງຜູ້ໃຊ້ Windows ທີ່ເປີດຜ່ານ browser ໃຫ້ດາວໂຫຼດແອັບ POS (ບໍ່ສະແດງໃນຕົວແອັບເອງ)
+  const [showWinApp, setShowWinApp] = useState(false);
+  useEffect(() => {
+    const isWindows = /Windows/i.test(navigator.userAgent);
+    const inDesktopApp = typeof window.posDesktop !== 'undefined';
+    const dismissed = localStorage.getItem('pos_winapp_dismissed') === '1';
+    if (!isWindows || inDesktopApp || dismissed) return;
+    fetch('/downloads/SMLAO-POS-Setup.exe', { method: 'HEAD' })
+      .then(res => { if (res.ok) setShowWinApp(true); })
+      .catch(() => {});
+  }, []);
+  const dismissWinApp = () => {
+    localStorage.setItem('pos_winapp_dismissed', '1');
+    setShowWinApp(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -130,6 +145,29 @@ export default function Login({ onLogin }) {
               {loading ? (<span className="w-5 h-5 border-3 border-white/30 border-t-white rounded-full animate-spin" />) : ('ເຂົ້າສູ່ລະບົບ')}
             </button>
           </form>
+
+          {showWinApp && (
+            <div className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 p-4 flex items-start gap-3">
+              <div className="text-2xl">🖥️</div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-extrabold text-sky-900">ມີແອັບ POS ສຳລັບ Windows</div>
+                <div className="text-xs text-sky-700 mt-0.5 leading-relaxed">
+                  ເປີດເປັນປ່ອງແອັບແທ້ · ພິມບິນອັດຕະໂນມັດ · ໃຊ້ງານສະດວກກວ່າ browser
+                </div>
+                <div className="flex items-center gap-2 mt-2.5">
+                  <a href="/downloads/SMLAO-POS-Setup.exe" download="SMLAO-POS-Setup.exe"
+                    className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-extrabold transition-colors">
+                    ⬇ ດາວໂຫຼດຕິດຕັ້ງ
+                  </a>
+                  <button type="button" onClick={dismissWinApp}
+                    className="px-3 py-1.5 text-xs font-bold text-sky-600 hover:bg-sky-100 rounded-lg transition-colors">
+                    ບໍ່ຕ້ອງເຕືອນອີກ
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {process.env.NEXT_PUBLIC_APP_VERSION && (
             <div className="mt-6 text-center text-xs text-slate-400 font-mono">
               Version {process.env.NEXT_PUBLIC_APP_VERSION}

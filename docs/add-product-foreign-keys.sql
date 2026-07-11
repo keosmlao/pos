@@ -1,5 +1,7 @@
 -- ລຶບແຖວກຳພ້າ + ເພີ່ມ foreign key ໃຫ້ທຸກຕາຕະລາງທີ່ອ້າງອີງ products
--- ວິທີແລ່ນ: PGPASSWORD="$PGPASSWORD" psql -h YOUR_DB_HOST -U postgres -d pos_db -f docs/add-product-foreign-keys.sql
+-- ວິທີແລ່ນ (ອ່ານຄ່າເຊື່ອມຕໍ່ຈາກ .env ຂອງໂປຣເຈັກ ຢ່າຝັງລະຫັດໃນຄຳສັ່ງ):
+--   set -a; source .env; set +a
+--   PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -p "${PGPORT:-5432}" -f docs/add-product-foreign-keys.sql
 
 BEGIN;
 

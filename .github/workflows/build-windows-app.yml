@@ -1,0 +1,46 @@
+name: Build Windows App
+
+# Build ແອັບ Windows (.exe) ໃນເຄື່ອງ Windows ຂອງ GitHub —
+# ແລ່ນເອງເມື່ອ electron/ ປ່ຽນ ຫຼື ກົດ Run workflow ໃນແທັບ Actions
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'electron/**'
+      - '.github/workflows/build-windows-app.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: electron
+        run: npm install
+
+      - name: Build NSIS installer (x64)
+        working-directory: electron
+        run: npx electron-builder --win nsis --x64
+        env:
+          # ບໍ່ມີ code signing — ຂ້າມການເຊັນ
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Rename installer
+        shell: bash
+        run: |
+          mkdir -p out
+          cp electron/dist/*.exe "out/SMLAO-POS-Setup.exe"
+          ls -lh out/
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SMLAO-POS-Setup
+          path: out/SMLAO-POS-Setup.exe
+          retention-days: 30

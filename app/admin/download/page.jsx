@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
 
 const APK_PATH = '/downloads/owner-app.apk';
+const EXE_PATH = '/downloads/SMLAO-POS-Setup.exe';
 
 export default function DownloadAppPage() {
   const [apkInfo, setApkInfo] = useState({ available: null, size: null });
+  const [exeInfo, setExeInfo] = useState({ available: null, size: null });
   const [origin, setOrigin] = useState('');
 
   useEffect(() => {
@@ -21,6 +23,16 @@ export default function DownloadAppPage() {
         }
       })
       .catch(() => setApkInfo({ available: false, size: null }));
+    fetch(EXE_PATH, { method: 'HEAD' })
+      .then(res => {
+        if (res.ok) {
+          const size = Number(res.headers.get('content-length') || 0);
+          setExeInfo({ available: true, size });
+        } else {
+          setExeInfo({ available: false, size: null });
+        }
+      })
+      .catch(() => setExeInfo({ available: false, size: null }));
   }, []);
 
   const fullUrl = origin + APK_PATH;
@@ -34,6 +46,49 @@ export default function DownloadAppPage() {
         title="📱 ດາວໂຫຼດແອັບສຳລັບເຈົ້າຂອງ"
         subtitle="ຕິດຕັ້ງເທິງມືຖືເພື່ອເບິ່ງສະຫຼຸບການຂາຍ, ສະຕັອກ, ໜີ້ສິນ ແບບປະຈຳວັນ"
       />
+
+      {/* Windows POS app */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-sky-100 flex items-center justify-center text-2xl">🖥️</div>
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900">Windows — ແອັບ POS ໜ້າຮ້ານ</h2>
+              <p className="text-xs text-slate-500">ເປີດ POS ເປັນປ່ອງແອັບແທ້ + ພິມບິນອັດຕະໂນມັດ + ໂໝດ offline</p>
+            </div>
+          </div>
+          {exeInfo.size ? (
+            <span className="px-2 py-1 bg-slate-100 rounded-md text-[10px] font-bold text-slate-600 font-mono">
+              {(exeInfo.size / 1024 / 1024).toFixed(1)} MB
+            </span>
+          ) : null}
+        </div>
+
+        {exeInfo.available ? (
+          <a
+            href={EXE_PATH}
+            download="SMLAO-POS-Setup.exe"
+            className="flex items-center justify-center gap-2 w-full sm:w-96 px-4 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-sm font-extrabold shadow-lg shadow-sky-950/20 transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            ດາວໂຫຼດ SMLAO-POS-Setup.exe
+          </a>
+        ) : (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 font-bold">
+            ⚠ ຍັງບໍ່ມີໄຟລ໌ .exe ໃນເຊີເວີ — ດາວໂຫຼດຈາກ GitHub Actions (workflow &quot;Build Windows App&quot;)
+            ແລ້ວວາງທີ່ <span className="font-mono text-[11px]">public/downloads/SMLAO-POS-Setup.exe</span>
+          </div>
+        )}
+
+        <div className="mt-3 text-[11px] text-slate-500 leading-relaxed">
+          ຕິດຕັ້ງແລ້ວເປີດແອັບ → ກົດ Ctrl+, → ໃສ່ URL server: <code className="text-[11px] bg-slate-100 px-1.5 py-0.5 rounded font-mono">{origin}</code>
+          {' '}→ ຕັ້ງ printer ບິນ (ຖ້າຢາກພິມອັດຕະໂນມັດ) → ພ້ອມຂາຍ
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Android */}

@@ -6,7 +6,9 @@
 -- ສະນັ້ນຫຼັງລວມ ຈະໃຫ້ id 928 ໃຊ້ບາໂຄດ 8858799702528 ແທນ
 -- ເພື່ອໃຫ້ບາໂຄດໜຶ່ງຊີ້ຫາສິນຄ້າດຽວ (ຖ້າຕົວຈິງແມ່ນກົງກັນຂ້າມ ໃຫ້ສະຫຼັບບາໂຄດ 928/1288 ພາຍຫຼັງ)
 --
--- ວິທີແລ່ນ: PGPASSWORD="$PGPASSWORD" psql -h YOUR_DB_HOST -U postgres -d pos_db -f docs/fix-duplicate-130105-0219.sql
+-- ວິທີແລ່ນ (ອ່ານຄ່າເຊື່ອມຕໍ່ຈາກ .env ຂອງໂປຣເຈັກ ຢ່າຝັງລະຫັດໃນຄຳສັ່ງ):
+--   set -a; source .env; set +a
+--   PGPASSWORD="$PGPASSWORD" psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -p "${PGPORT:-5432}" -f docs/fix-duplicate-130105-0219.sql
 
 BEGIN;
 

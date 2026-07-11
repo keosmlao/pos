@@ -9,3 +9,4 @@ dist
 backups/
 electron/dist/
 electron/node_modules/
+public/downloads/*.exe
