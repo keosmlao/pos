@@ -7,3 +7,5 @@ dist
 .DS_Store
 *.log
 backups/
+electron/dist/
+electron/node_modules/

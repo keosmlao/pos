@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="lo">
+<head>
+  <meta charset="UTF-8" />
+  <title>ເຊື່ອມຕໍ່ບໍ່ໄດ້</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Noto Sans Lao', system-ui, sans-serif;
+      background: #0f172a; color: #e2e8f0;
+      height: 100vh; display: flex; align-items: center; justify-content: center;
+    }
+    .card { text-align: center; max-width: 420px; padding: 24px; }
+    .icon { font-size: 56px; margin-bottom: 16px; }
+    h1 { font-size: 20px; margin-bottom: 8px; }
+    p { font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }
+    .url { font-family: monospace; color: #fca5a5; }
+    .row { display: flex; gap: 10px; justify-content: center; }
+    button {
+      padding: 11px 22px; border-radius: 10px; border: none;
+      font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+    .retry { background: #dc2626; color: #fff; }
+    .retry:hover { background: #b91c1c; }
+    .settings { background: #334155; color: #cbd5e1; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📡</div>
+    <h1>ເຊື່ອມຕໍ່ server ບໍ່ໄດ້</h1>
+    <p>
+      ບໍ່ສາມາດເປີດ <span class="url" id="server"></span><br />
+      ກວດວ່າ server POS ເປີດຢູ່ ແລະ ເຄື່ອງນີ້ຢູ່ໃນເຄືອຂ່າຍດຽວກັນ
+    </p>
+    <div class="row">
+      <button class="settings" onclick="window.posDesktop.openSettings()">⚙️ ຕັ້ງຄ່າ Server</button>
+      <button class="retry" onclick="window.posDesktop.retry()">↻ ລອງໃໝ່</button>
+    </div>
+  </div>
+  <script>
+    window.posDesktop.getServerUrl().then(u => {
+      document.getElementById('server').textContent = u;
+    });
+    // ລອງໃໝ່ອັດຕະໂນມັດທຸກ 10 ວິນາທີ
+    setInterval(() => window.posDesktop.retry(), 10000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="lo">
+<head>
+  <meta charset="UTF-8" />
+  <title>ຕັ້ງຄ່າ Server</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Noto Sans Lao', system-ui, sans-serif;
+      background: #0f172a; color: #e2e8f0;
+      padding: 24px; font-size: 14px;
+    }
+    h1 { font-size: 16px; margin-bottom: 6px; }
+    p { font-size: 12px; color: #94a3b8; margin-bottom: 14px; }
+    input {
+      width: 100%; padding: 10px 12px; border-radius: 8px;
+      border: 1px solid #334155; background: #1e293b; color: #f1f5f9;
+      font-size: 14px; outline: none; font-family: inherit;
+    }
+    input:focus { border-color: #ef4444; }
+    .error { color: #f87171; font-size: 12px; min-height: 18px; margin-top: 6px; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    button {
+      flex: 1; padding: 10px; border-radius: 8px; border: none;
+      font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    .save { background: #dc2626; color: #fff; }
+    .save:hover { background: #b91c1c; }
+    .cancel { background: #334155; color: #cbd5e1; }
+  </style>
+</head>
+<body>
+  <h1>🖥️ ຕັ້ງຄ່າ Server POS</h1>
+  <p>ໃສ່ URL ຂອງ server ທີ່ແອັບຈະເຊື່ອມຕໍ່ ເຊັ່ນ http://10.0.20.180:3000</p>
+  <input id="url" type="text" placeholder="http://..." spellcheck="false" />
+  <div class="error" id="error"></div>
+  <div class="row">
+    <button class="cancel" onclick="window.close()">ຍົກເລີກ</button>
+    <button class="save" id="save">ບັນທຶກ ແລະ ເຊື່ອມຕໍ່</button>
+  </div>
+  <script>
+    const input = document.getElementById('url');
+    const errorEl = document.getElementById('error');
+    window.posDesktop.getServerUrl().then(u => { input.value = u; input.select(); });
+    async function save() {
+      errorEl.textContent = '';
+      const res = await window.posDesktop.setServerUrl(input.value);
+      if (!res.ok) errorEl.textContent = res.error || 'ບັນທຶກບໍ່ສຳເລັດ';
+    }
+    document.getElementById('save').addEventListener('click', save);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "name": "smlao-pos-desktop",
+  "productName": "SMLAO POS",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SMLAO POS desktop shell for Windows",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64",
+    "dist:portable": "electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.smlao.pos",
+    "productName": "SMLAO POS",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "settings.html",
+      "offline.html"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "SMLAO POS"
+    }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}
