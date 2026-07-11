@@ -8,6 +8,7 @@ import { connectCashDrawer, isCashDrawerSupported, openCashDrawer } from '../uti
 import { useLocations } from '../utils/useLocations'
 import { useBranches } from '../utils/useBranches'
 import { firstAccessibleAdminPath, getPagePermission } from '../utils/adminPermissions'
+import { queueOrder, queueCount, syncQueue, cacheProducts, getCachedProducts } from '../utils/offlineQueue'
 import { normalizeVatSettings, applyVat } from '../lib/vat'
 import { applyRounding } from '../lib/rounding'
 import SearchSelect from './SearchSelect'
@@ -525,10 +526,40 @@ export default function POS({ user, onLogout }) {
     const params = new URLSearchParams()
     if (selectedCategory) params.set('category', selectedCategory)
     if (search && showCatalog) params.set('search', search)
-    const res = await fetch(`${API}/products?${params}`)
-    const data = await res.json()
-    setProducts(Array.isArray(data) ? data : [])
+    try {
+      const res = await fetch(`${API}/products?${params}`)
+      const data = await res.json()
+      setProducts(Array.isArray(data) ? data : [])
+      // cache ໄວ້ໃຊ້ຕອນເນັດຫຼຸດ (ສະເພາະລາຍການເຕັມ ບໍ່ແມ່ນຜົນຄົ້ນຫາ)
+      if (!selectedCategory && !(search && showCatalog)) cacheProducts(data)
+    } catch {
+      // ເນັດຫຼຸດ — ໃຊ້ລາຍການສິນຄ້າທີ່ cache ໄວ້ ຂາຍຕໍ່ໄດ້
+      const cached = getCachedProducts()
+      if (cached.length > 0) setProducts(cached)
+    }
   }, [selectedCategory, search, showCatalog])
+
+  // ── ໂໝດ offline: ບິນທີ່ຄ້າງສົ່ງ + sync ອັດຕະໂນມັດເມື່ອເນັດກັບມາ ──
+  const [offlinePending, setOfflinePending] = useState(0)
+  useEffect(() => { setOfflinePending(queueCount()) }, [])
+  const runOfflineSync = useCallback(async (manual = false) => {
+    if (queueCount() === 0) { if (manual) showToast('ບໍ່ມີບິນຄ້າງສົ່ງ', 'info'); return }
+    const result = await syncQueue()
+    setOfflinePending(result.remaining)
+    if (result.sent > 0) {
+      showToast(`📤 ສົ່ງບິນ offline ${result.sent} ໃບຂຶ້ນ server ແລ້ວ`, 'success')
+      fetchProducts()
+    }
+    for (const f of result.failed) {
+      showToast(`⚠ ບິນ ${f.ref} ຖືກປະຕິເສດ: ${f.error}`, 'error')
+    }
+  }, [fetchProducts]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const t = setInterval(() => { runOfflineSync() }, 30000)
+    const onOnline = () => runOfflineSync()
+    window.addEventListener('online', onOnline)
+    return () => { clearInterval(t); window.removeEventListener('online', onOnline) }
+  }, [runOfflineSync])
 
   useEffect(() => {
     fetch(`${API}/categories`).then(r => r.json()).then(list => {
@@ -1378,27 +1409,58 @@ export default function POS({ user, onLogout }) {
     for (const bl of (promoResult.bonusLines || [])) {
       checkoutItems.push({ product_id: bl.product_id, variant_id: null, quantity: bl.qty, price: 0 })
     }
-    const res = await fetch(`${API}/orders`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: checkoutItems,
-        total: finalTotal,
-        change_amount: isCredit ? 0 : paid - finalTotal,
-        payment_method: isCredit ? 'credit' : orderMethodFromPayments(paymentsPayload, paymentMethod),
-        amount_paid: paid,
-        discount: discountAmount,
-        note: customerNote,
-        payments: isCredit ? null : paymentsPayload,
-        customer_name: isCredit ? creditName : null,
-        customer_phone: isCredit ? (creditCustomer.phone || selectedMember?.phone || '') : null,
-        credit_due_date: isCredit ? creditCustomer.dueDate : null,
-        member_id: selectedMember?.id || null,
-        points_used: pointsUsed,
-        coupon_codes: activeCouponCodes,
-        applied_promo_ids: (promoResult.appliedPromos || []).map(p => p.id),
-        branch_id: activeBranchId || null,
+    const orderPayload = {
+      items: checkoutItems,
+      total: finalTotal,
+      change_amount: isCredit ? 0 : paid - finalTotal,
+      payment_method: isCredit ? 'credit' : orderMethodFromPayments(paymentsPayload, paymentMethod),
+      amount_paid: paid,
+      discount: discountAmount,
+      note: customerNote,
+      payments: isCredit ? null : paymentsPayload,
+      customer_name: isCredit ? creditName : null,
+      customer_phone: isCredit ? (creditCustomer.phone || selectedMember?.phone || '') : null,
+      credit_due_date: isCredit ? creditCustomer.dueDate : null,
+      member_id: selectedMember?.id || null,
+      points_used: pointsUsed,
+      coupon_codes: activeCouponCodes,
+      applied_promo_ids: (promoResult.appliedPromos || []).map(p => p.id),
+      branch_id: activeBranchId || null,
+    }
+    let res
+    try {
+      res = await fetch(`${API}/orders`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderPayload),
       })
-    })
+    } catch {
+      // ── ເນັດຫຼຸດ: ເກັບບິນໄວ້ໃນເຄື່ອງ ແລ້ວສົ່ງຄືນອັດຕະໂນມັດເມື່ອເນັດກັບມາ ──
+      if (isCredit) { showToast('📴 ເນັດຫຼຸດ — ບິນຕິດໜີ້ຕ້ອງມີເນັດ (ກັນໜີ້ຊ້ຳຊ້ອນ)', 'error'); return }
+      if (pointsUsed > 0) { showToast('📴 ເນັດຫຼຸດ — ການໃຊ້ແຕ້ມສະສົມຕ້ອງມີເນັດ', 'error'); return }
+      const entry = queueOrder(orderPayload)
+      setOfflinePending(queueCount())
+      const localOrder = {
+        id: entry.ref,
+        bill_number: entry.ref,
+        created_at: entry.sold_at,
+        total: finalTotal,
+        subtotal: cartTotal,
+        discount: discountAmount,
+        amount_paid: paid,
+        change_amount: paid - finalTotal,
+        payment_method: orderMethodFromPayments(paymentsPayload, paymentMethod),
+        payments: paymentsPayload,
+        items: cart.map(it => ({ product_id: it.product_id, product_name: it.name, name: it.name, quantity: it.quantity, price: it.price })),
+        offline: true,
+      }
+      showToast('📴 ເນັດຫຼຸດ — ບິນຖືກເກັບໄວ້ໃນເຄື່ອງ ຈະສົ່ງຂຶ້ນ server ເມື່ອເນັດກັບມາ', 'info')
+      if (hasCashTender) kickCashDrawer()
+      try { bcRef.current?.postMessage({ type: 'complete', order: localOrder }) } catch {}
+      clearPosDraft()
+      setShowReceipt(localOrder); setCart([]); setAmountPaid(''); setShowCheckout(false)
+      setDiscount(0); setDiscountMode('percent'); setCustomerNote(''); setLastScan(null); setPayments([]); setActiveMethod('cash'); setCashAuto(true); setSelectedMember(DEFAULT_MEMBER); setPointsToRedeem(0); setActiveCoupons([]); setCouponInput('')
+      return
+    }
     if (res.ok) {
       const order = await res.json()
       showToast(isCredit ? 'ອອກບິນຕິດໜີ້ສຳເລັດ' : 'ການຊຳລະສຳເລັດ', 'success')
@@ -2106,6 +2168,13 @@ export default function POS({ user, onLogout }) {
               className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="ຮັບຄືນສິນຄ້າ / ຄືນເງິນ">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>
               <span className="hidden md:inline">ຮັບຄືນ</span>
+            </button>
+          )}
+          {offlinePending > 0 && (
+            <button onClick={() => runOfflineSync(true)}
+              className="px-2 sm:px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-md text-xs font-extrabold text-amber-300 flex items-center gap-1.5 animate-pulse"
+              title="ບິນຂາຍຕອນເນັດຫຼຸດ ຍັງບໍ່ໄດ້ສົ່ງຂຶ້ນ server — ກົດເພື່ອສົ່ງທັນທີ">
+              📴 <span>{offlinePending} ບິນຄ້າງສົ່ງ</span>
             </button>
           )}
           <button onClick={loadOrders}
