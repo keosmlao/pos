@@ -175,17 +175,18 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="px-3 pt-3 pb-2">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-red-500 to-red-700 text-sm font-black text-white shadow-md shadow-red-950/40">
+    <div className="admin-sidebar-panel flex h-full flex-col">
+      <div className="sidebar-brand mx-3 mt-3 rounded-2xl p-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-red-500 to-red-700 text-sm font-black text-white shadow-lg shadow-red-950/20 ring-1 ring-white/15">
             {company?.logo_url
               ? <img src={company.logo_url} alt="logo" className="h-full w-full object-contain" />
               : (company?.name?.charAt(0).toUpperCase() || 'A')}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-extrabold text-white leading-tight">{company?.name || 'POS Admin'}</div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mt-0.5">
+            <div className="truncate text-[14px] font-extrabold text-white leading-tight">{company?.name || 'POS Admin'}</div>
+            <div className="mt-1 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
               {user?.display_name ? `${user.display_name} · ${user.role}` : 'Admin Console'}
             </div>
           </div>
@@ -208,7 +209,7 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
         </div>
       </div>
 
-      <div className="px-3 pb-2">
+      <div className="px-3 pb-3 pt-3">
         <div className="relative">
           <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="11" cy="11" r="8" />
@@ -219,7 +220,7 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="ຄົ້ນຫາເມນູ..."
-            className="w-full h-8 pl-8 pr-7 bg-white/[0.04] border border-white/10 rounded-lg text-[12px] text-slate-200 placeholder:text-slate-500 outline-none focus:border-red-500/50 focus:bg-white/[0.06]"
+            className="sidebar-search w-full h-10 pl-9 pr-8 bg-white/[0.04] border border-white/10 rounded-xl text-[12px] font-semibold text-slate-200 placeholder:text-slate-500 outline-none focus:border-red-500/50 focus:bg-white/[0.06] focus:ring-4 focus:ring-red-500/5 transition-all"
           />
           {search && (
             <button
@@ -230,7 +231,7 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 pb-2">
+      <nav className="sidebar-nav flex-1 overflow-y-auto px-2.5 pb-3">
         {searchResults ? (
           searchResults.length === 0 ? (
             <div className="py-8 text-center text-[11px] text-slate-500">
@@ -282,11 +283,11 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
               const open = isSectionOpen(section.title);
               const hasActive = section.title === activeSection;
               return (
-                <div key={section.title} className="mb-0.5">
+                <div key={section.title} className="mb-1">
                   <button
                     type="button"
                     onClick={() => toggleSection(section.title)}
-                    className={`w-full flex items-center gap-2 rounded-md px-2 py-2 text-[13px] font-extrabold transition-colors select-none ${
+                    className={`sidebar-section w-full flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-[12.5px] font-extrabold leading-5 transition-all select-none ${
                       hasActive ? 'text-white bg-white/[0.03]' : 'text-slate-300 hover:bg-white/[0.04] hover:text-white'
                     }`}
                   >
@@ -296,12 +297,12 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
                     >
                       <path d="M8 5l8 7-8 7V5z" />
                     </svg>
-                    <span className="text-sm leading-none shrink-0 w-4 text-center">{section.icon}</span>
+                    <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sm leading-none ${hasActive ? 'bg-red-500/15' : 'bg-white/[0.04]'}`}>{section.icon}</span>
                     <span className="truncate flex-1 text-left">{section.title}</span>
-                    <span className="text-[9px] font-bold text-slate-600">{section.items.length}</span>
+                    <span className="flex min-w-5 h-5 items-center justify-center rounded-full bg-white/[0.04] px-1.5 text-[9px] font-bold text-slate-500">{section.items.length}</span>
                   </button>
                   {open && (
-                    <div className="ml-[13px] border-l border-white/[0.08] pl-1.5 py-0.5 space-y-0.5">
+                    <div className="ml-[21px] border-l border-white/[0.08] pl-2 py-1 space-y-1">
                       {section.items.map(item => (
                         <SidebarItem
                           key={item.path}
@@ -326,11 +327,11 @@ export default function AdminSidebar({ company, pathname, user, onClose, onBackT
         )}
       </nav>
 
-      <div className="border-t border-white/[0.06] p-2 space-y-2">
+      <div className="sidebar-footer border-t border-white/[0.06] p-3 space-y-2">
         <ThemeToggle />
         <button
           onClick={onBackToPos}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg text-xs font-extrabold text-red-200 transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl text-xs font-extrabold text-red-200 transition-all hover:-translate-y-px"
         >
           {'←'} ກັບໜ້າ POS
         </button>
@@ -350,14 +351,14 @@ function SidebarItem({ item, pathname, pinned, onTogglePin, showSection, pinnedA
     <div className="group relative">
       <Link
         href={item.path}
-        className={`relative flex items-center gap-2.5 rounded-lg pl-2.5 pr-8 py-1.5 text-[12.5px] font-bold transition-all ${
+        className={`sidebar-item relative flex items-center gap-2.5 rounded-xl pl-2.5 pr-8 py-1.5 text-[12px] font-bold leading-5 transition-all ${
           active
-            ? 'bg-gradient-to-r from-red-600/40 to-red-500/10 text-white shadow-sm shadow-red-950/30'
-            : 'text-slate-400 hover:bg-white/[0.05] hover:text-white hover:translate-x-0.5'
+            ? 'bg-gradient-to-r from-red-600/35 to-red-500/10 text-white shadow-sm shadow-red-950/20'
+            : 'text-slate-400 hover:bg-white/[0.05] hover:text-white'
         }`}
       >
-        {active && <span className="absolute left-0 top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-red-400" />}
-        <span className={`text-base leading-none shrink-0 ${active ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'}`}>
+        {active && <span className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-red-400" />}
+        <span className={`flex h-6 w-6 items-center justify-center rounded-md text-[14px] leading-none shrink-0 ${active ? 'bg-white/10 opacity-100' : 'bg-white/[0.03] opacity-80 group-hover:opacity-100'}`}>
           {item.icon}
         </span>
         <div className="min-w-0 flex-1">
