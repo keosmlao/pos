@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="lo">
+<head>
+  <meta charset="UTF-8" />
+  <title>ເຊື່ອມຕໍ່ບໍ່ໄດ້</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Noto Sans Lao', 'Phetsarath OT', system-ui, sans-serif;
+      background: #0f172a; color: #e2e8f0;
+      height: 100vh; display: flex; align-items: center; justify-content: center;
+    }
+    .card { text-align: center; max-width: 440px; padding: 24px; }
+    .icon { font-size: 56px; margin-bottom: 16px; }
+    h1 { font-size: 20px; margin-bottom: 8px; }
+    p { font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }
+    .url { font-family: monospace; color: #fca5a5; }
+    .row { display: flex; gap: 10px; justify-content: center; }
+    button {
+      padding: 11px 22px; border-radius: 10px; border: none;
+      font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+    .retry { background: #dc2626; color: #fff; }
+    .settings { background: #334155; color: #cbd5e1; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📡</div>
+    <h1>ເຊື່ອມຕໍ່ server ບໍ່ໄດ້</h1>
+    <p>
+      ກວດວ່າ server POS ເປີດຢູ່ ແລະ ເຄື່ອງນີ້ຢູ່ໃນເຄືອຂ່າຍດຽວກັນ<br />
+      ບິນ offline ທີ່ຄ້າງຢູ່ໃນຖານຂໍ້ມູນຂອງເຄື່ອງບໍ່ຫາຍ — ຈະຖືກສົ່ງໃຫ້ເມື່ອຕໍ່ໄດ້
+    </p>
+    <div class="row">
+      <button class="settings" onclick="send('settings')">⚙️ ຕັ້ງຄ່າ Server</button>
+      <button class="retry" onclick="send('retry')">↻ ລອງໃໝ່</button>
+    </div>
+  </div>
+  <script>
+    function send(msg) {
+      try { window.chrome.webview.postMessage(msg); } catch (e) {}
+    }
+    // ລອງໃໝ່ອັດຕະໂນມັດທຸກ 10 ວິນາທີ
+    setInterval(() => send('retry'), 10000);
+  </script>
+</body>
+</html>

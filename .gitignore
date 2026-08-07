@@ -11,3 +11,9 @@ backups/
 electron/dist/
 electron/node_modules/
 public/downloads/*.exe
+
+# .NET Windows app build output
+windows-app/bin/
+windows-app/obj/
+windows-app/out/
+windows-app/out-standalone/

@@ -4,7 +4,14 @@ let drawerPort = null;
 
 const DRAWER_KICK_COMMAND = new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa]);
 
+// ແອັບ Windows (.NET + WebView2) ເປີດລີ້ນຊັກຜ່ານ COM port ໃຫ້ໂດຍກົງ —
+// ບໍ່ຕ້ອງຂໍສິດເລືອກ port ຄືນ Web Serial ຂອງ browser
+function hostDrawer() {
+  try { return window.chrome?.webview?.hostObjects?.drawer || null; } catch { return null; }
+}
+
 export function isCashDrawerSupported() {
+  if (hostDrawer()) return true;
   return typeof navigator !== 'undefined' && !!navigator.serial;
 }
 
@@ -41,6 +48,17 @@ export async function connectCashDrawer() {
 }
 
 export async function openCashDrawer({ requestPort = false } = {}) {
+  const host = hostDrawer();
+  if (host) {
+    try {
+      const answer = await host.Kick();
+      if (String(answer) === 'ok') return { ok: true };
+      return { ok: false, reason: 'host_error', error: new Error(String(answer)) };
+    } catch (error) {
+      return { ok: false, reason: 'host_error', error };
+    }
+  }
+
   const result = await getDrawerPort(requestPort);
   if (!result.ok) return result;
 
