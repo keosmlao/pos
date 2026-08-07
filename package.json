@@ -1,6 +1,6 @@
 {
   "name": "pos-nextjs",
-  "version": "1.17.0",
+  "version": "1.17.1",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
@@ -11,6 +11,8 @@
     "test": "node --test tests/*.test.mjs",
     "backup:verify": "node scripts/verify-backups.mjs",
     "db:sync-test": "bash scripts/sync-test-db.sh",
+    "build:win": "bash windows-app/build.sh standalone",
+    "build:win:small": "bash windows-app/build.sh",
     "backup:restore-rehearsal": "node --env-file=.env scripts/restore-rehearsal.mjs"
   },
   "dependencies": {
