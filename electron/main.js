@@ -33,7 +33,10 @@ function showOffline(target) {
   target.loadFile(path.join(__dirname, 'offline.html'));
 }
 
-// ໂຫຼດໜ້າ POS ຄືນທຸກປ່ອງທີ່ຊີ້ຫາ server (ໃຊ້ຫຼັງປ່ຽນ URL / ກົດໂຫຼດໃໝ່)
+// ປ່ອງນີ້ຄ້າງຢູ່ໜ້າ offline ບໍ່ (offline.html ໂຫຼດຈາກໄຟລ໌ ບໍ່ແມ່ນ server)
+const isOffline = (w) => alive(w) && w.webContents.getURL().startsWith('file://');
+
+// ໂຫຼດໜ້າ POS ຄືນທຸກປ່ອງທີ່ຊີ້ຫາ server (ໃຊ້ຫຼັງປ່ຽນ URL ຂອງ server)
 function loadPos() {
   const server = getServerUrl();
   for (const w of [win, posWin]) {
@@ -82,7 +85,7 @@ function wireServerWindow(w) {
   });
 }
 
-function createWindow() {
+function createWindow(startUrl) {
   const cfg = loadConfig();
   win = new BrowserWindow({
     width: cfg.width || 1366,
@@ -108,7 +111,7 @@ function createWindow() {
   win.on('closed', () => { win = null; });
 
   wireServerWindow(win);
-  win.loadURL(getServerUrl()).catch(() => showOffline(win));
+  win.loadURL(startUrl || getServerUrl()).catch(() => showOffline(win));
 }
 
 // ປ່ອງໜ້າຂາຍ (cashier) — ແຍກຈາກປ່ອງຫຼັກ, ບໍ່ມີແຖບເມນູ, ຈື່ຂະໜາດ/ຕຳແໜ່ງ/ເຕັມຈໍຂອງມັນເອງ
@@ -147,6 +150,14 @@ function openPosWindow() {
     openInMainWindow(url);
   });
 
+  // Next.js ຍ້າຍໜ້າຝັ່ງ client (router.push) ບໍ່ຜ່ານ will-navigate —
+  // ດຶງກັບຄືນໜ້າຂາຍ ແລ້ວເປີດໃນປ່ອງຫຼັກແທນ
+  posWin.webContents.on('did-navigate-in-page', (_e, url, isMainFrame) => {
+    if (!isMainFrame || !isAdminUrl(url)) return;
+    posWin.webContents.executeJavaScript('history.back(); true').catch(() => {});
+    openInMainWindow(url);
+  });
+
   posWin.on('close', () => {
     try {
       const { width, height, x, y } = posWin.getNormalBounds();
@@ -165,8 +176,8 @@ function openPosWindow() {
 
 // ເປີດ URL ໃນປ່ອງຫຼັກ (ສ້າງໃໝ່ຖ້າຖືກປິດໄປແລ້ວ)
 function openInMainWindow(url) {
-  if (!alive(win)) createWindow();
-  win.loadURL(url).catch(() => showOffline(win));
+  if (!alive(win)) createWindow(url);
+  else win.loadURL(url).catch(() => showOffline(win));
   if (win.isMinimized()) win.restore();
   win.focus();
 }
@@ -192,15 +203,28 @@ function openSettings() {
   settingsWin.on('closed', () => { settingsWin = null; });
 }
 
-// ປ່ອງທີ່ກຳລັງໃຊ້ຢູ່ (ເມນູຕ້ອງມີຜົນກັບປ່ອງນັ້ນ ບໍ່ແມ່ນປ່ອງຫຼັກສະເໝີ)
-const activeWindow = () => BrowserWindow.getFocusedWindow() || (alive(posWin) ? posWin : win);
+// ປ່ອງທີ່ກຳລັງໃຊ້ຢູ່ (ເມນູຕ້ອງມີຜົນກັບປ່ອງນັ້ນ ບໍ່ແມ່ນປ່ອງຫຼັກສະເໝີ) — ບໍ່ນັບປ່ອງຕັ້ງຄ່າ
+function activeWindow() {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && focused !== settingsWin) return focused;
+  return alive(posWin) ? posWin : win;
+}
+
+// ໂຫຼດໃໝ່: ຄ້າງຢູ່ໜ້າ offline ໃຫ້ກັບໄປ server, ບໍ່ດັ່ງນັ້ນ reload ໜ້າເດີມ
+// (ບໍ່ດຶງໜ້າຫຼັງບ້ານທີ່ເປີດຢູ່ກັບຄືນໜ້າຂາຍ)
+function reloadActive() {
+  const w = activeWindow();
+  if (!alive(w)) return;
+  if (isOffline(w)) w.loadURL(getServerUrl()).catch(() => showOffline(w));
+  else w.webContents.reload();
+}
 
 function buildMenu() {
   const template = [
     {
       label: 'POS',
       submenu: [
-        { label: 'ໂຫຼດໃໝ່', accelerator: 'CmdOrCtrl+R', click: () => loadPos() },
+        { label: 'ໂຫຼດໃໝ່', accelerator: 'CmdOrCtrl+R', click: () => reloadActive() },
         { label: 'ເປີດປ່ອງໜ້າຂາຍ', accelerator: 'F9', click: () => openPosWindow() },
         { label: 'ຕັ້ງຄ່າ Server...', accelerator: 'CmdOrCtrl+,', click: () => openSettings() },
         { type: 'separator' },
@@ -285,6 +309,14 @@ ipcMain.handle('set-server-url', (_e, url) => {
   loadPos();
   return { ok: true };
 });
-ipcMain.handle('retry', () => { loadPos(); return true; });
+// ໜ້າ offline ກົດ/ລອງໃໝ່ອັດຕະໂນມັດທຸກ 10 ວິ — ໃຫ້ມີຜົນສະເພາະປ່ອງທີ່ຄ້າງຢູ່ໜ້າ offline
+// (ບໍ່ດັ່ງນັ້ນປ່ອງອື່ນທີ່ໃຊ້ງານປົກກະຕິຈະຖືກໂຫຼດຄືນທຸກ 10 ວິນາທີ)
+ipcMain.handle('retry', () => {
+  const server = getServerUrl();
+  for (const w of [win, posWin]) {
+    if (isOffline(w)) w.loadURL(server).catch(() => showOffline(w));
+  }
+  return true;
+});
 ipcMain.handle('open-settings', () => { openSettings(); return true; });
 ipcMain.handle('open-pos-window', () => { openPosWindow(); return true; });

@@ -6,13 +6,21 @@ import { AdminHero } from '@/components/admin/ui/AdminHero';
 const APK_PATH = '/downloads/owner-app.apk';
 const EXE_PATH = '/downloads/SMLAO-POS-Setup.exe';
 
+const EXE_API = '/api/admin/uploads/windows-app';
+
 export default function DownloadAppPage() {
   const [apkInfo, setApkInfo] = useState({ available: null, size: null });
-  const [exeInfo, setExeInfo] = useState({ available: null, size: null });
+  const [exeInfo, setExeInfo] = useState({ available: null, size: null, updatedAt: null });
   const [origin, setOrigin] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [upload, setUpload] = useState({ busy: false, percent: 0, error: '', done: false });
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     setOrigin(window.location.origin);
+    try {
+      setIsAdmin(JSON.parse(localStorage.getItem('pos_user') || '{}')?.role === 'admin');
+    } catch {}
     fetch(APK_PATH, { method: 'HEAD' })
       .then(res => {
         if (res.ok) {
@@ -23,17 +31,53 @@ export default function DownloadAppPage() {
         }
       })
       .catch(() => setApkInfo({ available: false, size: null }));
-    fetch(EXE_PATH, { method: 'HEAD' })
-      .then(res => {
-        if (res.ok) {
-          const size = Number(res.headers.get('content-length') || 0);
-          setExeInfo({ available: true, size });
-        } else {
-          setExeInfo({ available: false, size: null });
-        }
-      })
-      .catch(() => setExeInfo({ available: false, size: null }));
+    fetch(EXE_API)
+      .then(res => (res.ok ? res.json() : { available: false }))
+      .then(d => setExeInfo({
+        available: !!d.available,
+        size: d.size ?? null,
+        updatedAt: d.updatedAt ?? null,
+      }))
+      .catch(() => setExeInfo({ available: false, size: null, updatedAt: null }));
   }, []);
+
+  // ອັບຕົວຕິດຕັ້ງຂຶ້ນ server ໂດຍກົງ — ບໍ່ຕ້ອງ copy ໄຟລ໌ໃສ່ເຄື່ອງ server ດ້ວຍມື
+  // (ໃຊ້ XHR ແທນ fetch ເພາະຕ້ອງການ % ຄວາມຄືບໜ້າ ໄຟລ໌ໃຫຍ່ຮ້ອຍກວ່າ MB)
+  function uploadInstaller(file) {
+    if (!file) return;
+    setUpload({ busy: true, percent: 0, error: '', done: false });
+    const body = new FormData();
+    body.append('file', file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', EXE_API);
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      setUpload(u => ({ ...u, percent: Math.round((e.loaded / e.total) * 100) }));
+    };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText || '{}'); } catch {}
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setUpload({ busy: false, percent: 100, error: '', done: true });
+        setExeInfo({ available: true, size: data.size ?? null, updatedAt: data.updatedAt ?? null });
+      } else {
+        setUpload({ busy: false, percent: 0, error: data.error || 'ອັບໂຫຼດບໍ່ສຳເລັດ', done: false });
+      }
+    };
+    xhr.onerror = () => setUpload({ busy: false, percent: 0, error: 'ເຊື່ອມຕໍ່ບໍ່ໄດ້ — ລອງໃໝ່', done: false });
+    xhr.send(body);
+  }
+
+  function copyExeUrl() {
+    navigator.clipboard?.writeText(origin + EXE_PATH).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }
+
+  const exeUpdated = exeInfo.updatedAt
+    ? new Date(exeInfo.updatedAt).toLocaleString('lo-LA', { dateStyle: 'medium', timeStyle: 'short' })
+    : null;
 
   const fullUrl = origin + APK_PATH;
   const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(fullUrl)}&bgcolor=ffffff&color=020617&margin=0`;
@@ -57,30 +101,88 @@ export default function DownloadAppPage() {
               <p className="text-xs text-slate-500">ເປີດ POS ເປັນປ່ອງແອັບແທ້ + ພິມບິນອັດຕະໂນມັດ + ໂໝດ offline</p>
             </div>
           </div>
-          {exeInfo.size ? (
-            <span className="px-2 py-1 bg-slate-100 rounded-md text-[10px] font-bold text-slate-600 font-mono">
-              {(exeInfo.size / 1024 / 1024).toFixed(1)} MB
-            </span>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {exeUpdated ? (
+              <span className="px-2 py-1 bg-slate-100 rounded-md text-[10px] font-bold text-slate-600">
+                ອັບເດດ {exeUpdated}
+              </span>
+            ) : null}
+            {exeInfo.size ? (
+              <span className="px-2 py-1 bg-slate-100 rounded-md text-[10px] font-bold text-slate-600 font-mono">
+                {(exeInfo.size / 1024 / 1024).toFixed(1)} MB
+              </span>
+            ) : null}
+          </div>
         </div>
 
         {exeInfo.available ? (
-          <a
-            href={EXE_PATH}
-            download="SMLAO-POS-Setup.exe"
-            className="flex items-center justify-center gap-2 w-full sm:w-96 px-4 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-sm font-extrabold shadow-lg shadow-sky-950/20 transition-colors"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            ດາວໂຫຼດ SMLAO-POS-Setup.exe
-          </a>
+          <>
+            <a
+              href={EXE_PATH}
+              download="SMLAO-POS-Setup.exe"
+              className="flex items-center justify-center gap-2 w-full sm:w-96 px-4 py-3 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-sm font-extrabold shadow-lg shadow-sky-950/20 transition-colors"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              ດາວໂຫຼດ SMLAO-POS-Setup.exe
+            </a>
+
+            <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                URL ດາວໂຫຼດ — ພິມໃສ່ browser ຂອງເຄື່ອງຈຸດຂາຍໄດ້ເລີຍ
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="text-[11px] text-slate-700 font-mono break-all flex-1">{origin + EXE_PATH}</code>
+                <button
+                  onClick={copyExeUrl}
+                  className="shrink-0 px-2.5 py-1 rounded-md bg-slate-200 hover:bg-slate-300 text-[11px] font-bold text-slate-700"
+                >
+                  {copied ? '✓ copy ແລ້ວ' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          </>
         ) : (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 font-bold">
-            ⚠ ຍັງບໍ່ມີໄຟລ໌ .exe ໃນເຊີເວີ — ດາວໂຫຼດຈາກ GitHub Actions (workflow &quot;Build Windows App&quot;)
-            ແລ້ວວາງທີ່ <span className="font-mono text-[11px]">public/downloads/SMLAO-POS-Setup.exe</span>
+            ⚠ ຍັງບໍ່ມີໄຟລ໌ .exe ໃນເຊີເວີ — ໃຫ້ build ໃນເຄື່ອງ Windows ກ່ອນ:
+            double-click <span className="font-mono text-[11px]">electron\build-windows.cmd</span>
+            {isAdmin ? ' ແລ້ວອັບໄຟລ໌ຂຶ້ນທີ່ນີ້ຂ້າງລຸ່ມ' : ' ແລ້ວແຈ້ງ admin ໃຫ້ອັບຂຶ້ນລະບົບ'}
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+            <div className="text-[11px] font-extrabold text-slate-700 mb-2">
+              ⬆️ ອັບໂຫຼດ / ອັບເດດຕົວຕິດຕັ້ງ (ສະເພາະ admin)
+            </div>
+            <input
+              type="file"
+              accept=".exe"
+              disabled={upload.busy}
+              onChange={(e) => { uploadInstaller(e.target.files?.[0]); e.target.value = ''; }}
+              className="block w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-sky-600 file:text-white hover:file:bg-sky-700 disabled:opacity-50"
+            />
+            {upload.busy && (
+              <div className="mt-2">
+                <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                  <div className="h-full bg-sky-600 transition-all" style={{ width: `${upload.percent}%` }} />
+                </div>
+                <div className="mt-1 text-[11px] font-bold text-slate-600">ກຳລັງອັບໂຫຼດ {upload.percent}%</div>
+              </div>
+            )}
+            {upload.done && !upload.busy && (
+              <div className="mt-2 text-[11px] font-bold text-emerald-700">✓ ອັບໂຫຼດສຳເລັດ — ເຄື່ອງອື່ນດາວໂຫຼດໄດ້ເລີຍ</div>
+            )}
+            {upload.error && (
+              <div className="mt-2 text-[11px] font-bold text-red-600">✕ {upload.error}</div>
+            )}
+            <div className="mt-2 text-[10px] text-slate-500 leading-relaxed">
+              ເອົາໄຟລ໌ຈາກ <span className="font-mono">electron\out\SMLAO-POS-Setup.exe</span> ຂອງເຄື່ອງທີ່ build —
+              ອັບແລ້ວທັບໄຟລ໌ເກົ່າໃຫ້ອັດຕະໂນມັດ
+            </div>
           </div>
         )}
 
