@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('posDesktop', {
   getPrinters: () => ipcRenderer.invoke('get-printers'),
   retry: () => ipcRenderer.invoke('retry'),
   openSettings: () => ipcRenderer.invoke('open-settings'),
+  openPosWindow: () => ipcRenderer.invoke('open-pos-window'),
 });

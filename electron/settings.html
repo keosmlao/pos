@@ -48,6 +48,12 @@
     <div class="hint">ເລືອກ printer ບິນ 80mm ຂອງຮ້ານ</div>
   </div>
 
+  <label class="check">
+    <input id="posOnStart" type="checkbox" />
+    🧾 ເປີດປ່ອງໜ້າຂາຍທັນທີຕອນເປີດໂປຣແກຣມ
+  </label>
+  <div class="hint">ເໝາະກັບເຄື່ອງຈຸດຂາຍ — ເປີດປ່ອງໜ້າຂາຍແຍກເລີຍ (ເປີດເອງໄດ້ດ້ວຍ F9)</div>
+
   <div class="error" id="error"></div>
   <div class="row">
     <button class="cancel" onclick="window.close()">ຍົກເລີກ</button>
@@ -59,6 +65,7 @@
     const silent = document.getElementById('silent');
     const printer = document.getElementById('printer');
     const printerRow = document.getElementById('printerRow');
+    const posOnStart = document.getElementById('posOnStart');
     const errorEl = document.getElementById('error');
 
     function refreshRows() { printerRow.style.display = silent.checked ? 'block' : 'none'; }
@@ -68,6 +75,7 @@
       const s = await window.posDesktop.getSettings();
       url.value = s.serverUrl;
       silent.checked = s.silentPrint;
+      posOnStart.checked = s.openPosOnStart;
       const printers = await window.posDesktop.getPrinters();
       for (const p of printers) {
         const opt = document.createElement('option');
@@ -85,6 +93,7 @@
         serverUrl: url.value,
         silentPrint: silent.checked,
         printerName: printer.value,
+        openPosOnStart: posOnStart.checked,
       });
       if (!res.ok) errorEl.textContent = res.error || 'ບັນທຶກບໍ່ສຳເລັດ';
     }
