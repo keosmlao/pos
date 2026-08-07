@@ -2443,11 +2443,11 @@ export default function POS({ user, onLogout }) {
 
         {/* Right: summary + actions */}
         <aside className="pos-summary w-full md:w-[300px] lg:w-[360px] max-h-[43vh] md:max-h-none shrink-0 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950 shadow-lg shadow-slate-950/30 flex flex-col">
-          <section className="pos-summary-card m-2 mb-0 rounded-xl border-2 border-red-500/30 bg-gradient-to-br from-red-500/10 to-red-600/5 p-4">
+          <section className="pos-summary-card m-1.5 mb-0 rounded-xl border-2 border-red-500/30 bg-gradient-to-br from-red-500/10 to-red-600/5 p-2.5">
             <div className="text-[10px] text-red-300 uppercase tracking-widest font-extrabold mb-1">
               {loadedLayby ? 'ຄ້າງຊຳລະ (Layby)' : 'ມູນຄ່າລວມ'}
             </div>
-            <div className="text-5xl font-extrabold text-red-400 font-mono-t tracking-tight leading-none">{formatPrice(amountDue)}</div>
+            <div className="text-3xl font-extrabold text-red-400 font-mono-t tracking-tight leading-none">{formatPrice(amountDue)}</div>
             <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-300 font-bold">
               {discountAmount > 0 && <span className="text-rose-300">−{formatPrice(discountAmount)}</span>}
             </div>
@@ -2466,7 +2466,7 @@ export default function POS({ user, onLogout }) {
           </section>
 
           {loadedLayby && (
-            <section className="pos-summary-card m-2 mb-0 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5">
+            <section className="pos-summary-card m-1.5 mb-0 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5">
               <div className="flex items-center justify-between mb-1">
                 <div className="text-[10px] font-extrabold text-amber-300 uppercase tracking-wider">📦 Layby</div>
                 <button type="button" onClick={clearLoadedLayby}
@@ -2479,10 +2479,10 @@ export default function POS({ user, onLogout }) {
             </section>
           )}
 
-          <section className="pos-summary-card m-2 mb-0 rounded-lg border border-slate-800 bg-slate-900/70 p-2.5">
-            <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-2">ລູກຄ້າ / ສະມາຊິກ</div>
+          <section className="pos-summary-card m-1.5 mb-0 rounded-lg border border-slate-800 bg-slate-900/70 p-2">
+            <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-1.5">ລູກຄ້າ / ສະມາຊິກ</div>
             <button type="button" onClick={() => { setShowMemberModal(true); loadMembers(memberSearch) }}
-              className={`w-full rounded-md border px-2.5 py-2 text-left transition flex items-center gap-2 ${
+              className={`w-full rounded-md border px-2 py-1.5 text-left transition flex items-center gap-2 ${
                 selectedMember?.isDefault
                   ? 'border-slate-700 bg-slate-950/70 hover:border-slate-600'
                   : 'border-emerald-500/40 bg-emerald-500/10 hover:border-emerald-400/70'
@@ -2504,8 +2504,8 @@ export default function POS({ user, onLogout }) {
             </button>
           </section>
 
-          <section className="pos-summary-card m-2 mb-0 rounded-lg border border-slate-800 bg-slate-900/70 p-2.5">
-            <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-2">Section 03 · ສະຫຼຸບຍອດ</div>
+          <section className="pos-summary-card m-1.5 mb-0 rounded-lg border border-slate-800 bg-slate-900/70 p-2">
+            <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-1.5">Section 03 · ສະຫຼຸບຍອດ</div>
             <div className="space-y-1.5 text-[13px] font-mono-t">
               <div className="flex justify-between text-slate-200 font-bold">
                 <span>ລວມຍ່ອຍ</span>
@@ -2525,7 +2525,7 @@ export default function POS({ user, onLogout }) {
                   ))}
                 </div>
               )}
-              <div className={`pos-discount-box rounded-lg border ${manualDiscountAmount > 0 ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-800 bg-slate-950/40'} p-2 space-y-1.5`}>
+              <div className={`pos-discount-box rounded-lg border ${manualDiscountAmount > 0 ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-800 bg-slate-950/40'} p-1.5 space-y-1`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex flex-col gap-0 min-w-0">
                     <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300">ຫຼຸດເພີ່ມ</span>
@@ -2552,7 +2552,7 @@ export default function POS({ user, onLogout }) {
                     ].map(m => (
                       <button key={m.key} type="button"
                         onClick={() => { if (discountMode !== m.key) { setDiscountMode(m.key); setDiscount(0) } }}
-                        className={`w-8 h-8 text-xs font-extrabold transition ${
+                        className={`w-7 h-7 text-xs font-extrabold transition ${
                           discountMode === m.key
                             ? 'bg-amber-500 text-slate-950'
                             : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
@@ -2619,7 +2619,7 @@ export default function POS({ user, onLogout }) {
                   </div>
                 )}
               </div>
-              <div className={`rounded-lg border ${activeCoupons.length > 0 ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-800 bg-slate-950/40'} p-2 space-y-1.5`}>
+              <div className={`rounded-lg border ${activeCoupons.length > 0 ? 'border-amber-500/40 bg-amber-500/5' : 'border-slate-800 bg-slate-950/40'} p-1.5 space-y-1`}>
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300">🎟 Coupon</span>
                   {activeCoupons.length > 0 && (
@@ -2707,7 +2707,7 @@ export default function POS({ user, onLogout }) {
             </div>
           </section>
 
-          <section className="pos-summary-card m-2 mt-auto rounded-lg border border-slate-800 bg-slate-900/70 p-2.5">
+          <section className="pos-summary-card m-1.5 mt-auto rounded-lg border border-slate-800 bg-slate-900/70 p-2">
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold">Section 05 · ດຳເນີນການ</div>
               {parkedCarts.length > 0 && (
@@ -2724,18 +2724,18 @@ export default function POS({ user, onLogout }) {
               }}
               disabled={cart.length === 0}
               title="ຮັບເງິນ (F12)"
-              className="pos-checkout-button w-full h-12 bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-white rounded-lg font-extrabold text-base tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-500/20 disabled:shadow-none transition-all active:scale-[0.98]">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 12h.01M17 12h.01"/></svg>
+              className="pos-checkout-button w-full h-10 bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-white rounded-lg font-extrabold text-sm tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-500/20 disabled:shadow-none transition-all active:scale-[0.98]">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 12h.01M17 12h.01"/></svg>
               PAY
               <kbd className="ml-1 px-1.5 py-0.5 bg-black/25 border border-white/25 rounded text-[10px] font-mono">F12</kbd>
             </button>
             <div className="mt-2 grid grid-cols-2 gap-1.5">
               <button onClick={parkCurrentCart} disabled={cart.length === 0 || !!loadedLayby}
-                className="py-2 bg-amber-500/15 hover:bg-amber-500/25 disabled:bg-slate-800/50 disabled:text-slate-600 text-amber-200 border border-amber-500/30 rounded-md text-[11px] font-extrabold transition">
+                className="py-1.5 bg-amber-500/15 hover:bg-amber-500/25 disabled:bg-slate-800/50 disabled:text-slate-600 text-amber-200 border border-amber-500/30 rounded-md text-[11px] font-extrabold transition">
                 🅿️ ພັກບີນ
               </button>
               <button onClick={() => { if (loadedLayby) clearLoadedLayby(); else setCart([]) }} disabled={cart.length === 0}
-                className="py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/50 disabled:text-slate-600 text-slate-300 rounded-md text-[11px] font-bold transition">
+                className="py-1.5 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/50 disabled:text-slate-600 text-slate-300 rounded-md text-[11px] font-bold transition">
                 ✕ ລ້າງ
               </button>
             </div>
