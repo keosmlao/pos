@@ -34,6 +34,9 @@ export const POST = handle(async (request) => {
     suppliers_synced: 0,
     inserted_count: 0,
     updated_count: 0,
+    unchanged_count: 0,
+    duplicates_prevented_count: 0,
+    conflicts_count: 0,
     skipped_count: 0,
     categories_added: 0,
     brands_added: 0,
@@ -48,6 +51,9 @@ export const POST = handle(async (request) => {
       summary.suppliers_synced += 1;
       summary.inserted_count += result.inserted;
       summary.updated_count += result.updated;
+      summary.unchanged_count += result.unchanged;
+      summary.duplicates_prevented_count += result.duplicates_prevented;
+      summary.conflicts_count += result.conflicts;
       summary.skipped_count += result.skipped;
       summary.categories_added += result.categories_added;
       summary.brands_added += result.brands_added;

@@ -143,7 +143,13 @@ export default function Products() {
       if (data.brands_added) extra.push(`ຍີ່ຫໍ້ +${data.brands_added}`)
       if (data.units_added) extra.push(`ຫົວໜ່ວຍ +${data.units_added}`)
       const extraStr = extra.length > 0 ? `\n(${extra.join(', ')})` : ''
-      alert(`sync ສຳເລັດ: ເພີ່ມ ${data.inserted_count || 0} / ອັບເດດ ${data.updated_count || 0} ລາຍການ${extraStr}`)
+      // sync ບໍ່ລຶບ ແລະ ບໍ່ທັບຂໍ້ມູນເກົ່າ — ບອກໃຫ້ຮູ້ວ່າມີຈັກລາຍການທີ່ຄືເກົ່າ/ກັນຊ້ຳໄວ້
+      const guarded = []
+      if (data.unchanged_count) guarded.push(`ຄືເກົ່າ ${data.unchanged_count}`)
+      if (data.duplicates_prevented_count) guarded.push(`ກັນຊ້ຳ ${data.duplicates_prevented_count}`)
+      if (data.conflicts_count) guarded.push(`ລະຫັດ/ບາໂຄດຖືກໃຊ້ແລ້ວ ${data.conflicts_count}`)
+      const guardedStr = guarded.length > 0 ? `\n${guarded.join(', ')}` : ''
+      alert(`sync ສຳເລັດ: ເພີ່ມ ${data.inserted_count || 0} / ຕື່ມຂໍ້ມູນທີ່ຂາດ ${data.updated_count || 0} ລາຍການ${guardedStr}${extraStr}`)
     } catch (error) {
       alert('ບໍ່ສາມາດ sync ສິນຄ້າຈາກຜູ້ສະໜອງໄດ້')
     } finally { setIsSyncingSuppliers(false) }
