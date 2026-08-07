@@ -8,7 +8,7 @@ import { connectCashDrawer, isCashDrawerSupported, openCashDrawer } from '../uti
 import { useLocations } from '../utils/useLocations'
 import { useBranches } from '../utils/useBranches'
 import { firstAccessibleAdminPath, getPagePermission } from '../utils/adminPermissions'
-import { queueOrder, queueCount, syncQueue, cacheProducts, getCachedProducts } from '../utils/offlineQueue'
+import { queueOrder, queueCount, syncQueue, cacheProducts, getCachedProducts, applyQueuedStock } from '../utils/offlineQueue'
 import { normalizeVatSettings, applyVat } from '../lib/vat'
 import { applyRounding } from '../lib/rounding'
 import SearchSelect from './SearchSelect'
@@ -535,8 +535,9 @@ export default function POS({ user, onLogout }) {
       if (!selectedCategory && !(search && showCatalog)) cacheProducts(data)
     } catch {
       // ເນັດຫຼຸດ — ໃຊ້ລາຍການສິນຄ້າທີ່ cache ໄວ້ ຂາຍຕໍ່ໄດ້
+      // ຫັກຈຳນວນທີ່ຂາຍໄປແລ້ວໃນບິນ offline ທີ່ຍັງຄ້າງອອກ ເພື່ອບໍ່ໃຫ້ຂາຍເກີນສະຕັອກ
       const cached = getCachedProducts()
-      if (cached.length > 0) setProducts(cached)
+      if (cached.length > 0) setProducts(applyQueuedStock(cached))
     }
   }, [selectedCategory, search, showCatalog])
 
@@ -1440,6 +1441,7 @@ export default function POS({ user, onLogout }) {
       if (pointsUsed > 0) { showToast('📴 ເນັດຫຼຸດ — ການໃຊ້ແຕ້ມສະສົມຕ້ອງມີເນັດ', 'error'); return }
       const entry = queueOrder(orderPayload)
       setOfflinePending(queueCount())
+      fetchProducts() // ໂຫຼດຄືນ → ສະຕັອກໃນຈໍຫັກຕາມບິນ offline ທີ່ຫາກໍເກັບໄວ້
       const localOrder = {
         id: entry.ref,
         bill_number: entry.ref,

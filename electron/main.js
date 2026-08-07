@@ -1,6 +1,6 @@
 // SMLAO POS — Windows desktop shell
 // ເປັນປ່ອງເປີດຫາ server POS (Next.js) ທີ່ຕັ້ງ URL ໄດ້ — ຖານຂໍ້ມູນຍັງຢູ່ສູນກາງ
-const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -36,19 +36,32 @@ function showOffline(target) {
 // ປ່ອງນີ້ຄ້າງຢູ່ໜ້າ offline ບໍ່ (offline.html ໂຫຼດຈາກໄຟລ໌ ບໍ່ແມ່ນ server)
 const isOffline = (w) => alive(w) && w.webContents.getURL().startsWith('file://');
 
+// ປ່ອງໃດເຄີຍໂຫຼດໜ້າ POS ສຳເລັດແລ້ວແດ່ — ໃຊ້ຕັດສິນວ່າຄວນສະແດງໜ້າ offline ບໍ
+const posLoaded = new WeakMap();
+
 // ໂຫຼດໜ້າ POS ຄືນທຸກປ່ອງທີ່ຊີ້ຫາ server (ໃຊ້ຫຼັງປ່ຽນ URL ຂອງ server)
 function loadPos() {
   const server = getServerUrl();
   for (const w of [win, posWin]) {
-    if (alive(w)) w.loadURL(server).catch(() => showOffline(w));
+    if (!alive(w)) continue;
+    posLoaded.set(w, false); // ປ່ຽນ server ແລ້ວ — ນັບໃໝ່
+    w.loadURL(server).catch(() => showOffline(w));
   }
 }
 
 // ພຶດຕິກຳຮ່ວມຂອງທຸກປ່ອງທີ່ໂຫຼດ server: ໜ້າ offline, ເປີດລິ້ງ, ພິມບິນແບບໄວ
 function wireServerWindow(w) {
-  // ໂຫຼດບໍ່ສຳເລັດ (server ຍັງບໍ່ເປີດ / URL ຜິດ) → ໜ້າ offline + retry
-  w.webContents.on('did-fail-load', (_e, code) => {
-    if (code !== -3) showOffline(w); // -3 = ຍົກເລີກເອງ ບໍ່ແມ່ນ error
+  w.webContents.on('did-finish-load', () => {
+    if (!isOffline(w)) posLoaded.set(w, true);
+  });
+
+  // ໂຫຼດບໍ່ສຳເລັດ (server ຍັງບໍ່ເປີດ / URL ຜິດ / ເນັດຫຼຸດ) → ໜ້າ offline + retry
+  // ໝາຍເຫດ: ເມື່ອ navigation ຂອງ main frame ລົ້ມ Chromium ໄດ້ຖີ້ມໜ້າເກົ່າໄປແລ້ວ
+  // ຈຶ່ງເອົາໜ້າ offline ຂອງເຮົາມາໃສ່ແທນໜ້າ error ຂອງ Chromium
+  w.webContents.on('did-fail-load', (_e, code, _desc, _url, isMainFrame) => {
+    if (code === -3 || !isMainFrame) return; // -3 = ຍົກເລີກເອງ ບໍ່ແມ່ນ error
+    if (isOffline(w)) return;                // ຢູ່ໜ້າ offline ຢູ່ແລ້ວ (retry ທຸກ 10 ວິ)
+    showOffline(w);
   });
 
   // ປ່ອງພິມບິນ (window.open ເປັນ about:blank) ແລະ ໜ້າຂອງ server ເປີດໄດ້;
@@ -212,11 +225,26 @@ function activeWindow() {
 
 // ໂຫຼດໃໝ່: ຄ້າງຢູ່ໜ້າ offline ໃຫ້ກັບໄປ server, ບໍ່ດັ່ງນັ້ນ reload ໜ້າເດີມ
 // (ບໍ່ດຶງໜ້າຫຼັງບ້ານທີ່ເປີດຢູ່ກັບຄືນໜ້າຂາຍ)
-function reloadActive() {
+async function reloadActive() {
   const w = activeWindow();
   if (!alive(w)) return;
-  if (isOffline(w)) w.loadURL(getServerUrl()).catch(() => showOffline(w));
-  else w.webContents.reload();
+  if (isOffline(w)) { w.loadURL(getServerUrl()).catch(() => showOffline(w)); return; }
+
+  // ⚠️ ເນັດຫຼຸດ: ຫ້າມໂຫຼດໃໝ່ — ໜ້າ POS ຈະຫາຍ ແລະ ໂຫຼດຄືນບໍ່ໄດ້ຈົນກວ່າເນັດຈະມາ.
+  // ປ່ອຍໃຫ້ໜ້າເດີມແລ່ນຕໍ່ ຈຶ່ງຂາຍ-ຮັບເງິນ-ເບິ່ງສະຕັອກ offline ໄດ້ ແລ້ວ sync ເອງເມື່ອເນັດກັບມາ
+  const online = await w.webContents.executeJavaScript('navigator.onLine').catch(() => true);
+  if (!online) {
+    dialog.showMessageBox(w, {
+      type: 'warning',
+      title: 'ເນັດຫຼຸດ',
+      message: 'ຕອນນີ້ເຊື່ອມຕໍ່ server ບໍ່ໄດ້ — ຍັງບໍ່ໂຫຼດໃໝ່',
+      detail: 'ໜ້າ POS ທີ່ເປີດຢູ່ຍັງຂາຍໄດ້ປົກກະຕິ ແລະ ບິນຈະຖືກສົ່ງຂຶ້ນ server ໃຫ້ອັດຕະໂນມັດເມື່ອເນັດກັບມາ.\nຖ້າໂຫຼດໃໝ່ຕອນນີ້ ໜ້າ POS ຈະຫາຍ ແລະ ເປີດຄືນບໍ່ໄດ້ຈົນກວ່າເນັດຈະມາ.',
+      buttons: ['ຕົກລົງ'],
+      noLink: true,
+    });
+    return;
+  }
+  w.webContents.reload();
 }
 
 function buildMenu() {
@@ -244,6 +272,33 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// ລີ້ນຊັກເງິນ (cash drawer) ຕໍ່ຜ່ານ serial — ໜ້າ POS ເອີ້ນ navigator.serial.
+// ໃນ Electron ຕ້ອງເລືອກ port ໃຫ້ຈາກ main process ບໍ່ດັ່ງນັ້ນຈະຄ້າງບໍ່ມີຫຍັງເກີດຂຶ້ນ
+// (ຢູ່ browser ຜູ້ໃຊ້ຕ້ອງເລືອກ port ເອງທຸກເທື່ອທີ່ເປີດໃໝ່ — ນີ້ຄືເຫດຜົນທີ່ແອັບສະດວກກວ່າ)
+function setupSerialAccess() {
+  const ses = session.defaultSession;
+
+  ses.on('select-serial-port', (event, portList, _webContents, callback) => {
+    event.preventDefault();
+    const cfg = loadConfig();
+    const saved = portList.find(p => p.portId === cfg.serialPortId);
+    const chosen = saved || portList[0];
+    if (chosen && chosen.portId !== cfg.serialPortId) {
+      saveConfig({ ...loadConfig(), serialPortId: chosen.portId });
+    }
+    callback(chosen ? chosen.portId : '');
+  });
+
+  // ອະນຸຍາດ serial ໃຫ້ໜ້າຂອງ server ເຮົາເອງ ບໍ່ຕ້ອງຖາມທຸກເທື່ອ
+  const fromOurServer = (origin) => {
+    try { return !origin || origin === new URL(getServerUrl()).origin; } catch { return false; }
+  };
+  ses.setPermissionCheckHandler((_wc, permission, origin) => (
+    permission === 'serial' ? fromOurServer(origin) : true
+  ));
+  ses.setDevicePermissionHandler((details) => details.deviceType === 'serial');
+}
+
 // ບໍ່ໃຫ້ເປີດຊ້ອນຫຼາຍປ່ອງ
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -255,6 +310,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    setupSerialAccess();
     buildMenu();
     // ເຄື່ອງຈຸດຂາຍ: ຕັ້ງໄວ້ໃຫ້ເປີດຂຶ້ນມາເປັນປ່ອງໜ້າຂາຍເລີຍ ບໍ່ຕ້ອງຜ່ານປ່ອງຫຼັກ
     if (loadConfig().openPosOnStart) openPosWindow();

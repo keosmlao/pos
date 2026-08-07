@@ -83,6 +83,29 @@ export function cacheProducts(products) {
   } catch {}
 }
 
+// ຈຳນວນທີ່ຖືກຂາຍໄປແລ້ວໃນບິນ offline ທີ່ຍັງບໍ່ທັນສົ່ງ (product_id → ຈຳນວນ)
+export function getQueuedStockUsage() {
+  const usage = new Map();
+  for (const entry of getQueue()) {
+    for (const item of entry?.payload?.items || []) {
+      if (item?.product_id == null) continue;
+      usage.set(item.product_id, (usage.get(item.product_id) || 0) + (Number(item.quantity) || 0));
+    }
+  }
+  return usage;
+}
+
+// ຫັກສະຕັອກຂອງບິນ offline ທີ່ຍັງຄ້າງອອກຈາກລາຍການທີ່ cache ໄວ້ —
+// ພະນັກງານຈຶ່ງເຫັນຈຳນວນທີ່ໃກ້ຄວາມຈິງ ແລະ ບໍ່ຂາຍເກີນຕອນເນັດຫຼຸດ
+export function applyQueuedStock(products) {
+  const usage = getQueuedStockUsage();
+  if (usage.size === 0) return products;
+  return products.map(p => {
+    const used = usage.get(p.id) || 0;
+    return used ? { ...p, qty_on_hand: Math.max(0, Number(p.qty_on_hand || 0) - used) } : p;
+  });
+}
+
 export function getCachedProducts() {
   try {
     const arr = JSON.parse(localStorage.getItem(PRODUCTS_CACHE_KEY) || '[]');
