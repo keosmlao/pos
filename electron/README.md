@@ -22,11 +22,14 @@
 
 1. ຕິດຕັ້ງ Node.js (LTS) ໃນເຄື່ອງ Windows: https://nodejs.org
 2. Copy ໂຟນເດີ `electron/` ນີ້ໄປເຄື່ອງ Windows (ຫຼື clone ທັງ repo)
-3. ເປີດ Command Prompt ໃນໂຟນເດີນັ້ນ:
+3. **double-click `build-windows.cmd`** — ມັນຈະ npm install → build → ໄດ້ໄຟລ໌
+   `out\SMLAO-POS-Setup.exe` ໃຫ້ເລີຍ
+
+ຫຼືພິມເອງໃນ Command Prompt ທີ່ໂຟນເດີນັ້ນ:
 
 ```cmd
 npm install
-npm run dist          :: ໄດ້ dist\SMLAO POS Setup 1.0.0.exe (installer)
+npm run dist          :: ໄດ້ dist\SMLAO POS Setup 1.1.0.exe (installer)
 npm run dist:portable :: ຫຼື portable .exe ບໍ່ຕ້ອງຕິດຕັ້ງ
 ```
 
