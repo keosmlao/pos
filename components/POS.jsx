@@ -3976,10 +3976,13 @@ export default function POS({ user, onLogout }) {
                   )
                 })}
                 <div className="flex gap-2 pt-2">
-                  <button onClick={() => { router.push('/admin/customer-debts'); setShowDebtAlerts(false) }}
-                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-sm">
-                    ໄປໜ້າຈັດການໜີ້ລູກຄ້າ
-                  </button>
+                  {/* ໜ້າຫຼັງບ້ານເປັນຂອງ admin ເທົ່ານັ້ນ — ພະນັກງານຂາຍເບິ່ງໄດ້ແຕ່ລາຍການເຕືອນນີ້ */}
+                  {user.role === 'admin' && (
+                    <button onClick={() => { router.push('/admin/customer-debts'); setShowDebtAlerts(false) }}
+                      className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-sm">
+                      ໄປໜ້າຈັດການໜີ້ລູກຄ້າ
+                    </button>
+                  )}
                   <button onClick={() => setShowDebtAlerts(false)}
                     className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-sm">
                     ປິດ

@@ -429,6 +429,14 @@ export default function UsersPage() {
                   )}
                 </div>
 
+                {form.role !== 'admin' && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-900 leading-relaxed">
+                    ⚠ ພະນັກງານຂາຍ (cashier) ເຂົ້າໜ້າຫຼັງບ້ານບໍ່ໄດ້ເດັດຂາດ ບໍ່ວ່າຈະຕິກສິດໃດກໍຕາມ.
+                    ສິດຂ້າງລຸ່ມນີ້ຄຸມແຕ່ຄວາມສາມາດໃນໜ້າ POS — ຕິກ &quot;ແກ້&quot; ຂອງ ຄືນສິນຄ້າ = ຄືນສິນຄ້າໄດ້,
+                    ຕິກ &quot;ລົບ&quot; ຂອງ ລາຍການຂາຍ = ຍົກເລີກບິນໄດ້. ຢາກໃຫ້ເຂົ້າຫຼັງບ້ານ ຕ້ອງປ່ຽນ role ເປັນ admin
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   {adminMenuSections.map(section => {
                     const perms = form.role === 'admin' ? createFullPermissions() : normalizePermissions(form.permissions);

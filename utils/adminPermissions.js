@@ -9,23 +9,21 @@ export {
 } from '@/lib/adminMenu';
 
 import { useState, useEffect } from 'react';
-import { adminMenuItems, normalizePermissions } from '@/lib/adminMenu';
+import { normalizePermissions } from '@/lib/adminMenu';
 
 export function isMenuItemActive(item, pathname) {
   return item.path === '/admin' ? pathname === '/admin' : pathname.startsWith(item.path);
 }
 
-export function canAccessAdmin(user, pathname = '/admin') {
-  if (user?.role === 'admin') return true;
-  const permissions = normalizePermissions(user?.permissions);
-  const match = adminMenuItems
-    .filter(item => isMenuItemActive(item, pathname))
-    .sort((a, b) => b.path.length - a.path.length)[0];
-  // ບໍ່ພົບໃນເມນູ → ປິດໄວ້ກ່ອນ (fail-closed) ບໍ່ໃຫ້ຫຼຸດເຂົ້າໜ້າທີ່ບໍ່ໄດ້ຮັບສິດ
-  return match ? !!permissions[match.path]?.access : false;
+// ໜ້າຫຼັງບ້ານເປັນຂອງ admin ເທົ່ານັ້ນ — ພະນັກງານຂາຍ (cashier) ເຂົ້າບໍ່ໄດ້ເດັດຂາດ
+// ເຖິງວ່າຈະຖືກຕັ້ງສິດລາຍໜ້າໄວ້ກໍຕາມ (server ກວດຊ້ຳອີກຊັ້ນໃນ lib/api.js)
+export function canAccessAdmin(user) {
+  return user?.role === 'admin';
 }
 
 // ສິດຂອງໜ້າໃດໜຶ່ງ: { access, edit, delete } — admin ໄດ້ທຸກຢ່າງ
+// ໝາຍເຫດ: ສິດເຫຼົ່ານີ້ບໍ່ໄດ້ເປີດທາງໃຫ້ cashier ເຂົ້າໜ້າຫຼັງບ້ານ — ມັນຄຸມແຕ່
+// ຄວາມສາມາດໃນໜ້າ POS ເອງ (ຄືນສິນຄ້າ / ຍົກເລີກບິນ) ເທົ່ານັ້ນ
 export function getPagePermission(user, path) {
   if (user?.role === 'admin') return { access: true, edit: true, delete: true };
   const permissions = normalizePermissions(user?.permissions);
@@ -46,7 +44,5 @@ export function usePagePermission(path) {
 }
 
 export function firstAccessibleAdminPath(user) {
-  if (user?.role === 'admin') return '/admin';
-  const permissions = normalizePermissions(user?.permissions);
-  return adminMenuItems.find(item => permissions[item.path]?.access)?.path || null;
+  return user?.role === 'admin' ? '/admin' : null;
 }
