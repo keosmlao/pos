@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDateTime } from '@/utils/formatDate';
 
 const TABLES = [
   { key: 'products', label: 'ສິນຄ້າ', icon: '📦' },
@@ -104,7 +105,7 @@ function AutoBackupSection() {
       </div>
       {settings.last_status && (
         <div className="px-4 pb-2 text-xs text-slate-500">
-          ຄັ້ງຫຼ້າສຸດ: {settings.last_run_at ? new Date(settings.last_run_at).toLocaleString('lo-LA') : '-'} — {settings.last_status}
+          ຄັ້ງຫຼ້າສຸດ: {settings.last_run_at ? formatDateTime(settings.last_run_at) : '-'} — {settings.last_status}
         </div>
       )}
       {files.length > 0 && (

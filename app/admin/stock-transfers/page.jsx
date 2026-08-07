@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
-const fmtDateTime = s => s ? new Date(s).toLocaleString('lo-LA') : '—';
+const fmtDateTime = s => s ? formatDateTime(s) : '—';
 
 const STATUS = {
   pending: { label: 'ກຳລັງດຳເນີນ', color: 'bg-amber-100 text-amber-800' },

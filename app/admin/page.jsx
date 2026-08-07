@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDate, formatDateTime, formatDayMonth, formatTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
@@ -16,7 +17,7 @@ const fmtCompact = n => {
   if (abs >= 1_000) return sign + (abs / 1_000).toFixed(1) + 'K';
   return sign + String(abs);
 };
-const fmtDT = s => s ? new Date(s).toLocaleString('lo-LA', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '—';
+const fmtDT = s => s ? formatDateTime(s) : '—';
 
 const METHOD_META = {
   cash: { label: 'ເງິນສົດ', icon: '💵', color: 'emerald' },
@@ -90,7 +91,7 @@ export default function Dashboard() {
       <AdminHero
         tag="Executive dashboard"
         title="📊 ແຜງຄວບຄຸມຜູ້ບໍລິຫານ"
-        subtitle={`${new Date().toLocaleDateString('lo-LA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} · LIVE · ອັບເດດ ${new Date().toLocaleTimeString('lo-LA', { hour: '2-digit', minute: '2-digit' })}`}
+        subtitle={`${formatDate(new Date())} · LIVE · ອັບເດດ ${formatTime(new Date())}`}
         action={
           <button onClick={load} disabled={refreshing}
             className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20 disabled:opacity-50">
@@ -418,7 +419,7 @@ function TrendChart({ data }) {
         ))}
         {data.length > 1 && [0, Math.floor(data.length / 2), data.length - 1].map(i => (
           <text key={i} x={points[i].x} y={H - 2} fontSize="9" fill="#94a3b8" textAnchor="middle">
-            {new Date(data[i].date).toLocaleDateString('lo-LA', { month: '2-digit', day: '2-digit' })}
+            {formatDayMonth(data[i].date)}
           </text>
         ))}
       </svg>

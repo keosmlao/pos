@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { formatDate } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
@@ -283,8 +284,8 @@ export default function QuotationBuilder({ quotationId }) {
     <div class="doc">
       <h1>ໃບສະເໜີລາຄາ</h1>
       <div class="meta"><b>ເລກ:</b> ${esc(data?.quotation_number || '—')}</div>
-      <div class="meta"><b>ວັນທີ:</b> ${esc(new Date(form.quote_date).toLocaleDateString('lo-LA'))}</div>
-      ${form.valid_until ? `<div class="meta"><b>ໝົດອາຍຸ:</b> ${esc(new Date(form.valid_until).toLocaleDateString('lo-LA'))}</div>` : ''}
+      <div class="meta"><b>ວັນທີ:</b> ${esc(formatDate(form.quote_date))}</div>
+      ${form.valid_until ? `<div class="meta"><b>ໝົດອາຍຸ:</b> ${esc(formatDate(form.valid_until))}</div>` : ''}
     </div>
   </div>
   <div class="box grid">
@@ -616,8 +617,8 @@ export default function QuotationBuilder({ quotationId }) {
                 <InfoBox label="ສະຖານະ" value={STATUSES.find(s => s.key === form.status)?.label || form.status} />
                 <InfoBox label="ລູກຄ້າ" value={form.customer_name || '—'} />
                 <InfoBox label="ເບີໂທ" value={form.customer_phone || '—'} />
-                <InfoBox label="ວັນທີໃບສະເໜີ" value={form.quote_date ? new Date(form.quote_date).toLocaleDateString('lo-LA') : '—'} />
-                <InfoBox label="ໝົດອາຍຸໃບສະເໜີ" value={form.valid_until ? new Date(form.valid_until).toLocaleDateString('lo-LA') : '—'} />
+                <InfoBox label="ວັນທີໃບສະເໜີ" value={form.quote_date ? formatDate(form.quote_date) : '—'} />
+                <InfoBox label="ໝົດອາຍຸໃບສະເໜີ" value={form.valid_until ? formatDate(form.valid_until) : '—'} />
               </div>
 
               <div className="rounded-xl border border-slate-200 overflow-hidden">

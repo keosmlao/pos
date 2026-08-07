@@ -3,10 +3,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDate, formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
-const fmtDateTime = s => s ? new Date(s).toLocaleString('lo-LA') : '—';
+const fmtDateTime = s => s ? formatDateTime(s) : '—';
 
 const STATUS_TABS = [
   { key: 'all', label: 'ທັງໝົດ' },
@@ -122,7 +123,7 @@ export default function StockTakeListPage() {
     }
   };
 
-  const todayLabel = useMemo(() => new Date().toLocaleDateString('lo-LA'), []);
+  const todayLabel = useMemo(() => formatDate(new Date()), []);
 
   return (
     <div className="space-y-4 pb-6 max-w-6xl">

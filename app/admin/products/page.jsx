@@ -7,6 +7,7 @@ import SearchSelect from '@/components/SearchSelect'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
 import { usePagePermission } from '@/utils/adminPermissions'
 import { COSTING_METHODS, COSTING_METHOD_LABELS } from '@/lib/costingMethods'
+import { formatDate } from '@/utils/formatDate';
 
 const API = '/api'
 const fmtPrice = p => new Intl.NumberFormat('lo-LA').format(p) + ' ກີບ'
@@ -220,7 +221,7 @@ export default function Products() {
         'ມູນຄ່າຕົ້ນທຶນ': cost * qty,
         'ມູນຄ່າຂາຍ': selling * qty,
         'ວິທີຄຳນວນຕົ້ນທຶນ': COSTING_METHOD_LABELS[method] || method || '',
-        'ວັນໝົດອາຍຸ': p.expiry_date ? new Date(p.expiry_date).toLocaleDateString('lo-LA') : '',
+        'ວັນໝົດອາຍຸ': p.expiry_date ? formatDate(p.expiry_date) : '',
         'ສະຖານະ': p.status ? 'ເປີດ' : 'ປິດ',
       }
     })
@@ -641,7 +642,7 @@ export default function Products() {
                       </td>
                     </tr>
                     {viewDetail.expiry_date && (
-                      <tr><td className="py-1.5 text-slate-500">ວັນໝົດອາຍຸ</td><td className="py-1.5 text-right text-slate-700">{new Date(viewDetail.expiry_date).toLocaleDateString('lo-LA')}</td></tr>
+                      <tr><td className="py-1.5 text-slate-500">ວັນໝົດອາຍຸ</td><td className="py-1.5 text-right text-slate-700">{formatDate(viewDetail.expiry_date)}</td></tr>
                     )}
                     <tr><td className="py-1.5 text-slate-500">ສະຖານະ</td><td className="py-1.5 text-right">
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${viewDetail.status ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -674,7 +675,7 @@ export default function Products() {
                       <tbody className="divide-y divide-slate-100">
                         {movements.map((m, i) => (
                           <tr key={i}>
-                            <td className="py-1 text-[11px] text-slate-500">{new Date(m.created_at).toLocaleDateString('lo-LA')}</td>
+                            <td className="py-1 text-[11px] text-slate-500">{formatDate(m.created_at)}</td>
                             <td className="py-1 text-[11px]">
                               <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${m.type === 'in' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                                 {m.type === 'in' ? '↓ ເຂົ້າ' : '↑ ອອກ'}

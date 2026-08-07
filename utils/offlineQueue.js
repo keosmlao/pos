@@ -1,5 +1,7 @@
 'use client';
 
+import { formatDateTime } from '@/utils/formatDate';
+
 // ຄິວບິນຂາຍ offline — ເນັດຫຼຸດແລ້ວຍັງຂາຍໄດ້:
 // ບິນຖືກເກັບໃນເຄື່ອງ (localStorage) ແລ້ວສົ່ງຫາ server ອັດຕະໂນມັດເມື່ອເນັດກັບມາ.
 // ໃຊ້ໄດ້ສະເພາະບິນແບບງ່າຍ (ສົດ/ໂອນ) — ຕິດໜີ້/ໃຊ້ແຕ້ມສະມາຊິກ ຕ້ອງມີເນັດ.
@@ -32,7 +34,7 @@ export function queueOrder(payload) {
     sold_at: new Date().toISOString(),
     payload: {
       ...payload,
-      note: [payload.note, `[ຂາຍ offline ${new Date().toLocaleString('lo-LA')} · ${ref}]`]
+      note: [payload.note, `[ຂາຍ offline ${formatDateTime(new Date())} · ${ref}]`]
         .filter(Boolean).join(' '),
     },
   };

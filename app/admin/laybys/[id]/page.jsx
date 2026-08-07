@@ -3,12 +3,13 @@
 import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { formatDate, formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
 const fmtPrice = n => `${fmtNum(n)} ₭`;
-const fmtDate = s => s ? new Date(s).toLocaleDateString('lo-LA') : '—';
-const fmtDateTime = s => s ? new Date(s).toLocaleString('lo-LA') : '—';
+const fmtDate = s => s ? formatDate(s) : '—';
+const fmtDateTime = s => s ? formatDateTime(s) : '—';
 
 const STATUS_LABEL = {
   open: { label: 'ເປີດ', color: 'bg-amber-100 text-amber-800' },

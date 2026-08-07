@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { generateAndPrintPurchaseA4, generateAndPrintPaymentReceipt } from '@/utils/receiptPdfGenerator'
 import { usePagePermission } from '@/utils/adminPermissions'
+import { formatDate, formatDateTime } from '@/utils/formatDate';
 
 const API = '/api'
 
@@ -111,15 +112,7 @@ function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, op
           </div>
         </td>
         <td className="py-2 px-3 text-[11px] text-slate-500 font-mono whitespace-nowrap">
-          {(() => {
-            const d = new Date(p.created_at)
-            const dd = String(d.getDate()).padStart(2, '0')
-            const mm = String(d.getMonth() + 1).padStart(2, '0')
-            const yyyy = d.getFullYear()
-            const HH = String(d.getHours()).padStart(2, '0')
-            const MM = String(d.getMinutes()).padStart(2, '0')
-            return `${dd}-${mm}-${yyyy} ${HH}:${MM}`
-          })()}
+          {formatDateTime(p.created_at)}
         </td>
         <td className="py-2 px-3 text-[12px] font-medium text-slate-700 whitespace-nowrap">{p.supplier_name || '—'}</td>
         <td className="py-2 px-3 whitespace-nowrap">
@@ -143,7 +136,7 @@ function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, op
             const cd = formatCountdown(p.due_date)
             return (
               <div className="text-[11px] leading-tight">
-                <div className="text-slate-500">{new Date(p.due_date).toLocaleDateString('lo-LA')}</div>
+                <div className="text-slate-500">{formatDate(p.due_date)}</div>
                 {cd && (
                   <div className={`font-mono font-semibold ${cd.expired ? 'text-red-600' : cd.days <= 3 ? 'text-amber-600' : 'text-emerald-600'}`}>
                     {cd.expired ? `⚠ ເກີນ ${cd.days}ວ` : cd.text}
@@ -679,7 +672,7 @@ export default function Purchases() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-mono font-bold text-slate-800 text-[13px]">{inv.doc_no}</span>
-                          {inv.doc_date && <span className="text-[11px] text-slate-400 font-mono">{new Date(inv.doc_date).toLocaleDateString('lo-LA')}</span>}
+                          {inv.doc_date && <span className="text-[11px] text-slate-400 font-mono">{formatDate(inv.doc_date)}</span>}
                           {billTotal > 0 && (
                             <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
                               ฿ {thbFmt.format(billTotal)}
@@ -818,7 +811,7 @@ export default function Purchases() {
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-slate-400">ໃບສັ່ງຊື້</div>
                 <h2 className="text-[15px] font-bold">#{viewDetail.id} {viewDetail.ref_number && <span className="text-[11px] font-mono text-slate-300 ml-1">{viewDetail.ref_number}</span>}</h2>
-                <div className="text-[11px] text-slate-300 mt-0.5">🏭 {viewDetail.supplier_name || '—'} · 📅 {new Date(viewDetail.created_at).toLocaleDateString('lo-LA')}</div>
+                <div className="text-[11px] text-slate-300 mt-0.5">🏭 {viewDetail.supplier_name || '—'} · 📅 {formatDate(viewDetail.created_at)}</div>
               </div>
               <div className="flex items-center gap-1">
                 {perm.edit && viewDetail.payment_type === 'debt' && effectiveStatus(viewDetail) !== 'paid' && (
@@ -885,7 +878,7 @@ export default function Purchases() {
                     <div className="flex justify-between items-center">
                       <span className="text-slate-500">ຄົບກຳນົດ</span>
                       <div className="text-right">
-                        <div className="font-semibold text-slate-700">{new Date(viewDetail.due_date).toLocaleDateString('lo-LA')}</div>
+                        <div className="font-semibold text-slate-700">{formatDate(viewDetail.due_date)}</div>
                         {cd && <div className={`text-[10px] font-mono ${cd.expired ? 'text-red-600' : cd.days <= 3 ? 'text-amber-600' : 'text-emerald-600'}`}>{cd.expired ? `⚠ ເກີນ ${cd.days}ວ` : `⏳ ${cd.text}`}</div>}
                       </div>
                     </div>
@@ -955,7 +948,7 @@ export default function Purchases() {
                               </div>
                             </div>
                             <div className="flex items-center justify-between mt-1 text-[10px] text-slate-400">
-                              <span>{new Date(pay.payment_date || pay.created_at).toLocaleDateString('lo-LA')}{isForeign && ` • 1 ${paySym} = ${new Intl.NumberFormat('lo-LA').format(payRate)} ₭`}</span>
+                              <span>{formatDate(pay.payment_date || pay.created_at)}{isForeign && ` • 1 ${paySym} = ${new Intl.NumberFormat('lo-LA').format(payRate)} ₭`}</span>
                               <div className="flex items-center gap-1">
                                 {pay.note && <span className="truncate max-w-[120px]">📝 {pay.note}</span>}
                                 {pay.attachment && <a href={pay.attachment} target="_blank" rel="noreferrer" className="text-red-500 hover:underline">📎</a>}
@@ -1072,7 +1065,7 @@ export default function Purchases() {
                           {pay.note && <span className="text-slate-400 text-[10px] truncate">{pay.note}</span>}
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-slate-400 text-[10px]">{new Date(pay.created_at).toLocaleDateString('lo-LA')}</span>
+                          <span className="text-slate-400 text-[10px]">{formatDate(pay.created_at)}</span>
                           <button onClick={() => generateAndPrintPaymentReceipt(pay, showPay)} className="w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded flex items-center justify-center" title="ພິມໃບຊຳລະ">
                             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                           </button>

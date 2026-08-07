@@ -1,3 +1,5 @@
+import { formatDate } from '@/utils/formatDate'
+
 const curSymbol = { LAK: '₭', THB: '฿', USD: '$', CNY: '¥', VND: '₫' }
 const receiptFontStack = "'Noto Sans Lao', 'Phetsarath OT', 'Saysettha OT', system-ui, sans-serif"
 
@@ -11,13 +13,7 @@ function formatRate(rate) {
 }
 
 function formatDisplayDate(value) {
-  const date = value ? new Date(value) : new Date()
-  if (Number.isNaN(date.getTime())) return '--'
-
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const year = date.getFullYear()
-  return `${day}-${month}-${year}`
+  return formatDate(value || new Date(), '--')
 }
 
 async function fetchCompanyProfile() {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { adminMenuSections, createFullPermissions, normalizePermissions } from '@/utils/adminPermissions';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDate } from '@/utils/formatDate';
 
 const API = '/api';
 
@@ -317,7 +318,7 @@ export default function UsersPage() {
 
                 <div className="mt-2.5 flex items-center justify-between gap-2">
                   <span className="text-[10px] text-slate-400 font-mono">
-                    {u.created_at ? new Date(u.created_at).toLocaleDateString('lo-LA') : ''}
+                    {u.created_at ? formatDate(u.created_at) : ''}
                   </span>
                   <div className="flex gap-1">
                     <button onClick={() => openEdit(u)}

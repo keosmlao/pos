@@ -4,6 +4,7 @@ import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureStockTakesSchema } from '@/lib/migrations';
 import { extractActor } from '@/lib/audit';
+import { formatDateTime } from '@/utils/formatDate';
 
 export const GET = handle(async () => {
   await ensureStockTakesSchema();
@@ -21,7 +22,7 @@ export const GET = handle(async () => {
 export const POST = handle(async (request) => {
   await ensureStockTakesSchema();
   const body = await readJson(request);
-  const name = String(body.name || '').trim() || `Stock take ${new Date().toLocaleString('lo-LA')}`;
+  const name = String(body.name || '').trim() || `Stock take ${formatDateTime(new Date())}`;
   const scope = body.scope || 'all';
   const scopeValue = body.scope_value || null;
   const actor = extractActor(request);

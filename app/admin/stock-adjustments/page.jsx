@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
-const fmtDateTime = s => s ? new Date(s).toLocaleString('lo-LA') : '—';
+const fmtDateTime = s => s ? formatDateTime(s) : '—';
 
 const REASONS = [
   { key: 'damaged', label: '💥 ເສຍຫາຍ' },
@@ -38,7 +39,7 @@ export default function StockAdjustmentsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [toast, setToast] = useState(null);
-  const requestCreatedAt = useMemo(() => new Date().toLocaleString('lo-LA'), [showRequestModal]);
+  const requestCreatedAt = useMemo(() => formatDateTime(new Date()), [showRequestModal]);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });

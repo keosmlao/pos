@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDate, formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0);
@@ -11,7 +12,7 @@ const methodLabel = { cash: 'ເງິນສົດ', transfer: 'ໂອນ', qr: 
 
 function fmtDate(value) {
   if (!value) return '—';
-  return new Date(value).toLocaleDateString('lo-LA');
+  return formatDate(value);
 }
 
 function statusOf(debt) {
@@ -112,7 +113,7 @@ export default function CustomerDebtsPage() {
           <h1>ໃບແຈ້ງໜີ້</h1>
           <div class="meta">ບິນ ${esc(debt.bill_number || `#${debt.id}`)} · ວັນຂາຍ ${fmtDate(debt.created_at)}</div>
         </div>
-        <div class="meta">ພິມວັນທີ ${new Date().toLocaleString('lo-LA')}</div>
+        <div class="meta">ພິມວັນທີ ${formatDateTime(new Date())}</div>
       </div>
       <div class="box grid">
         <div class="row"><span class="label">ລູກຄ້າ</span><span class="value">${esc(debt.customer_name || '—')}</span></div>
@@ -143,7 +144,7 @@ export default function CustomerDebtsPage() {
           <h1>ໃບຮັບຊຳລະໜີ້</h1>
           <div class="meta">ເລກຊຳລະ ${esc(payment.payment_number || `#${payment.id}`)} · ອ້າງອີງ ${esc(debt.bill_number || `#${debt.id}`)}</div>
         </div>
-        <div class="meta">ພິມວັນທີ ${new Date().toLocaleString('lo-LA')}</div>
+        <div class="meta">ພິມວັນທີ ${formatDateTime(new Date())}</div>
       </div>
       <div class="box grid">
         <div class="row"><span class="label">ລູກຄ້າ</span><span class="value">${esc(debt.customer_name || '—')}</span></div>

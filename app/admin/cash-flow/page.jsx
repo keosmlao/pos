@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDate, formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
 const fmtPrice = (n, c = 'LAK') => c === 'LAK' ? `${fmtNum(n)} ₭` : `${fmtNum(n)} ${c}`;
-const fmtDateTime = s => s ? new Date(s).toLocaleString('lo-LA') : '—';
-const fmtDate = s => s ? new Date(s).toLocaleDateString('lo-LA') : '—';
+const fmtDateTime = s => s ? formatDateTime(s) : '—';
+const fmtDate = s => s ? formatDate(s) : '—';
 
 const SOURCE_LABEL = {
   sale: { label: '💰 ຂາຍ', tone: 'emerald' },

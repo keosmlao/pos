@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useCompanyProfile } from '../utils/useCompanyProfile'
+import { formatClock, formatDate } from '@/utils/formatDate';
 
 const fmt = n => new Intl.NumberFormat('lo-LA').format(n || 0) + ' ₭'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0)
@@ -48,8 +49,8 @@ export default function CustomerDisplay() {
   }, [])
 
   const hasCart = state.cart.length > 0
-  const dateStr = clock.toLocaleDateString('lo-LA', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
-  const timeStr = clock.toLocaleTimeString('lo-LA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const dateStr = formatDate(clock)
+  const timeStr = formatClock(clock)
 
   return (
     <div className="h-screen overflow-hidden bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white flex flex-col">

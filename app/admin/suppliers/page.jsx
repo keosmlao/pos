@@ -6,6 +6,7 @@ import { useLocations } from '@/utils/useLocations'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
 import SearchSelect from '@/components/SearchSelect'
 import { usePagePermission } from '@/utils/adminPermissions'
+import { formatDate, formatDateTime } from '@/utils/formatDate';
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n)
@@ -207,7 +208,7 @@ export default function Suppliers() {
           <h1>ລາຍຊື່ຜູ້ສະໜອງ</h1>
           <div class="meta">ຈຳນວນ ${fmtNum(filtered.length)} / ${fmtNum(suppliers.length)} ລາຍການ</div>
         </div>
-        <div class="meta">ພິມວັນທີ ${new Date().toLocaleString('lo-LA')}</div>
+        <div class="meta">ພິມວັນທີ ${formatDateTime(new Date())}</div>
       </div>
       <table>
         <thead><tr><th>#</th><th>ຜູ້ສະໜອງ</th><th>ເບີໂທ</th><th>ຜູ້ປະສານ</th><th>ສິນເຊື່ອ</th><th>ທີ່ຢູ່</th><th>API</th></tr></thead>
@@ -226,7 +227,7 @@ export default function Suppliers() {
         <td>${esc(h.contact_person || '-')}</td>
         <td>${esc(h.contact_phone || '-')}</td>
         <td>${esc(h.note || '')}</td>
-        <td>${new Date(h.created_at).toLocaleDateString('lo-LA')}</td>
+        <td>${formatDate(h.created_at)}</td>
       </tr>
     `).join('')
     openPrintWindow(`ຜູ້ສະໜອງ ${s.name}`, `
@@ -235,7 +236,7 @@ export default function Suppliers() {
           <h1>ຂໍ້ມູນຜູ້ສະໜອງ</h1>
           <div class="meta">#${esc(s.id)} · ${esc(s.name)}</div>
         </div>
-        <div class="meta">ພິມວັນທີ ${new Date().toLocaleString('lo-LA')}</div>
+        <div class="meta">ພິມວັນທີ ${formatDateTime(new Date())}</div>
       </div>
       <div class="grid">
         <div>ຊື່</div><div><b>${esc(s.name)}</b></div>
@@ -525,7 +526,7 @@ export default function Suppliers() {
                             </td>
                             <td className="py-1.5 font-mono text-[11px] text-slate-500">{h.contact_phone || '-'}</td>
                             <td className="py-1.5 text-right text-[10px] text-slate-400 font-mono">
-                              {new Date(h.created_at).toLocaleDateString('lo-LA')}
+                              {formatDate(h.created_at)}
                             </td>
                           </tr>
                         ))}
@@ -628,7 +629,7 @@ export default function Suppliers() {
                           <span className="font-medium text-slate-700 truncate">{h.contact_person}</span>
                           {h.contact_phone && <span className="text-slate-400 font-mono">{h.contact_phone}</span>}
                           <span className="text-slate-300 ml-auto text-[10px] font-mono">
-                            {new Date(h.created_at).toLocaleDateString('lo-LA')}
+                            {formatDate(h.created_at)}
                           </span>
                         </div>
                       ))}

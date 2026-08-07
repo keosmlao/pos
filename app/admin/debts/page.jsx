@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
+import { formatDate } from '@/utils/formatDate';
 
 const API = '/api'
 const curSymbol = { LAK: '₭', THB: '฿', USD: '$', CNY: '¥', VND: '₫' }
@@ -191,12 +192,6 @@ export default function Debts() {
     }
     const m = map[method] || { label: method || '—', icon: '', cls: 'bg-slate-50 text-slate-500 border-slate-200' }
     return <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold border ${m.cls}`}>{m.icon} {m.label}</span>
-  }
-
-  const formatDate = (str) => {
-    if (!str) return '—'
-    const d = new Date(str)
-    return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`
   }
 
   return (

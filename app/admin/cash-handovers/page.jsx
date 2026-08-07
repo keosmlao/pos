@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
+import { formatDate, formatDateTime, formatTime } from '@/utils/formatDate';
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0)
@@ -223,8 +224,8 @@ export default function CashHandovers() {
                     <tr key={r.id} className={`hover:bg-slate-50 ${!received ? 'bg-amber-50/30' : ''}`}>
                       <td className="py-1.5 px-3 font-mono text-[11px] text-slate-400">#{r.id}</td>
                       <td className="py-1.5 px-3 whitespace-nowrap">
-                        <div className="font-mono font-bold text-slate-700">{dt.toLocaleDateString('lo-LA')}</div>
-                        <div className="text-[10px] font-mono text-slate-400">{time.toLocaleTimeString('lo-LA', { hour: '2-digit', minute: '2-digit' })}</div>
+                        <div className="font-mono font-bold text-slate-700">{formatDate(dt)}</div>
+                        <div className="text-[10px] font-mono text-slate-400">{formatTime(time)}</div>
                       </td>
                       <td className="py-1.5 px-3 font-semibold text-slate-700">{r.cashier_name || <span className="text-slate-300">-</span>}</td>
                       <td className="py-1.5 px-3 text-right font-mono text-slate-500">{fmtPrice(r.expected_cash)}</td>
@@ -242,7 +243,7 @@ export default function CashHandovers() {
                         {received ? (
                           <div>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ ຮັບແລ້ວ</span>
-                            <div className="text-[9px] text-slate-400 font-mono mt-0.5">{new Date(r.received_at).toLocaleString('lo-LA', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                            <div className="text-[9px] text-slate-400 font-mono mt-0.5">{formatDateTime(r.received_at)}</div>
                           </div>
                         ) : (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 animate-pulse">⏳ ລໍຮັບ</span>

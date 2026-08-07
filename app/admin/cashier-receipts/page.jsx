@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => {
@@ -369,7 +370,7 @@ function buildReportBody({ from, to, cashier, rows, totals, company }) {
   <div class="meta">
     ໄລຍະ: <b>${periodLabel}</b>
     ${cashier ? ` · Cashier: <b>${escapeHtml(cashier)}</b>` : ''}
-    · ພິມເມື່ອ: ${new Date().toLocaleString('lo-LA')}
+    · ພິມເມື່ອ: ${formatDateTime(new Date())}
   </div>
   <table>
     <thead>

@@ -13,6 +13,7 @@ import { normalizeVatSettings, applyVat } from '../lib/vat'
 import { applyRounding } from '../lib/rounding'
 import SearchSelect from './SearchSelect'
 import ThemeToggle from './admin/ThemeToggle'
+import { formatDate, formatDateTime, formatTime } from '@/utils/formatDate';
 
 const API = '/api'
 const POS_DRAFT_KEY = 'pos_sale_draft_v1'
@@ -89,7 +90,7 @@ function buildReceiptsSummaryBody({ rows, totals, cashierName, dateLabel, compan
   <div class="meta">
     ວັນທີ: <b>${dateLabel}</b>
     ${cashierName ? ` · Cashier: <b>${escapeReceiptHtml(cashierName)}</b>` : ''}
-    · ພິມເມື່ອ: ${new Date().toLocaleString('lo-LA')}
+    · ພິມເມື່ອ: ${formatDateTime(new Date())}
   </div>
   <table>
     <thead>
@@ -153,7 +154,7 @@ function printReceiptsSummary(receipts, user, company) {
   const totals = receipts?.totals || {}
   if (rows.length === 0) return
   const cashierName = user?.display_name || user?.username || ''
-  const dateLabel = new Date().toLocaleDateString('lo-LA', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const dateLabel = formatDate(new Date())
   const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>ສະຫຼຸບການຮັບເງິນ ${dateLabel}</title>
 <style>${receiptsSummaryStyles()}</style></head>
@@ -173,7 +174,7 @@ async function downloadReceiptsSummaryPdf(receipts, user, company) {
   const totals = receipts?.totals || {}
   if (rows.length === 0) return
   const cashierName = user?.display_name || user?.username || ''
-  const dateLabel = new Date().toLocaleDateString('lo-LA', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const dateLabel = formatDate(new Date())
   const isoDate = new Date().toISOString().slice(0, 10)
   const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
     import('jspdf'),
@@ -844,7 +845,7 @@ export default function POS({ user, onLogout }) {
     if (cart.length === 0) { showToast('ກະຣຸນາເພີ່ມສິນຄ້າກ່ອນ', 'error'); return }
     const defaultName = selectedMember && !selectedMember.isDefault
       ? selectedMember.name
-      : `Park ${new Date().toLocaleTimeString('lo-LA', { hour: '2-digit', minute: '2-digit' })}`
+      : `Park ${formatTime(new Date())}`
     const name = window.prompt('ຊື່ບີນພັກ (ສຳລັບອ້າງອີງ)', defaultName)
     if (name === null) return
     try {
@@ -1706,7 +1707,7 @@ export default function POS({ user, onLogout }) {
     const methodText = order.payment_method === 'cash' ? 'ເງິນສົດ' : order.payment_method === 'transfer' ? 'ໂອນ' : order.payment_method === 'qr' ? 'QR' : order.payment_method === 'credit' ? 'ຂາຍຕິດໜີ້' : order.payment_method === 'mixed' ? 'ຫຼາຍຊ່ອງທາງ' : order.payment_method
     const isCreditOrder = order.payment_method === 'credit'
     const dt = new Date(order.created_at || Date.now())
-    const dateStr = dt.toLocaleString('lo-LA')
+    const dateStr = formatDateTime(dt)
     const orderPayments = Array.isArray(order.payments)
       ? order.payments
       : typeof order.payments === 'string'
@@ -1820,7 +1821,7 @@ export default function POS({ user, onLogout }) {
       ${isCreditOrder ? `
         <div class="sm"><span class="bold">ລູກຄ້າ:</span> ${order.customer_name || '—'}</div>
         ${order.customer_phone ? `<div class="sm"><span class="bold">ເບີໂທ:</span> ${order.customer_phone}</div>` : ''}
-        ${order.credit_due_date ? `<div class="sm"><span class="bold">ກຳນົດຊຳລະ:</span> ${new Date(order.credit_due_date).toLocaleDateString('lo-LA')}</div>` : ''}
+        ${order.credit_due_date ? `<div class="sm"><span class="bold">ກຳນົດຊຳລະ:</span> ${formatDate(order.credit_due_date)}</div>` : ''}
       ` : ''}
       <div class="divider"></div>
 
@@ -1964,7 +1965,7 @@ export default function POS({ user, onLogout }) {
           ${order.member_id && Number(order.member_points_earned) > 0 ? `<div class="row"><span class="label">ໄດ້ແຕ້ມ</span><span class="value">+${formatNumber(order.member_points_earned)}</span></div>` : ''}
           ${isCreditOrder ? `<div class="row"><span class="label">ລູກຄ້າ</span><span class="value">${order.customer_name || '—'}</span></div>` : ''}
           ${isCreditOrder && order.customer_phone ? `<div class="row"><span class="label">ເບີໂທ</span><span class="value">${order.customer_phone}</span></div>` : ''}
-          ${isCreditOrder && order.credit_due_date ? `<div class="row"><span class="label">ກຳນົດຊຳລະ</span><span class="value">${new Date(order.credit_due_date).toLocaleDateString('lo-LA')}</span></div>` : ''}
+          ${isCreditOrder && order.credit_due_date ? `<div class="row"><span class="label">ກຳນົດຊຳລະ</span><span class="value">${formatDate(order.credit_due_date)}</span></div>` : ''}
         </div>
 
         <table class="items">
@@ -2266,7 +2267,7 @@ export default function POS({ user, onLogout }) {
             <div className="flex items-center gap-3">
               <span className="text-red-300">Section 02 · ໃບບິນ</span>
               <span className="text-slate-600">·</span>
-              <span>ວັນທີ {new Date().toLocaleDateString('lo-LA')}</span>
+              <span>ວັນທີ {formatDate(new Date())}</span>
               <span className="text-slate-600">·</span>
               <span>ລາຍການ <span className="text-white">{cart.length}</span></span>
               <span className="text-slate-600">·</span>
@@ -2835,7 +2836,7 @@ export default function POS({ user, onLogout }) {
                         <div className="text-[11px] text-slate-500 mt-0.5">
                           {p.username && <span className="mr-2">👤 {p.username}</span>}
                           <span className="mr-2">📦 {itemCount} ຊິ້ນ</span>
-                          <span>{new Date(p.updated_at || p.created_at).toLocaleString('lo-LA')}</span>
+                          <span>{formatDateTime(p.updated_at || p.created_at)}</span>
                         </div>
                         <div className="text-sm font-mono font-extrabold text-red-600 mt-1">{formatPrice(total)}</div>
                         <div className="mt-2 flex flex-wrap gap-1">
@@ -2929,7 +2930,7 @@ export default function POS({ user, onLogout }) {
                         <div className="text-[11px] text-slate-500">
                           {l.customer_phone && <span className="mr-2">📞 {l.customer_phone}</span>}
                           <span className="mr-2">📦 {l.item_count || 0} ລາຍການ</span>
-                          {l.due_date && <span>📅 {new Date(l.due_date).toLocaleDateString('lo-LA')}</span>}
+                          {l.due_date && <span>📅 {formatDate(l.due_date)}</span>}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
@@ -3476,7 +3477,7 @@ export default function POS({ user, onLogout }) {
         return (
         <Modal onClose={() => setShowDailySummary(false)} title="ສະຫຼຸບການຂາຍ ແລະ ສົ່ງເງິນ" size="xl">
           <div className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-2">
-            ວັນທີ: {new Date().toLocaleDateString('lo-LA', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+            ວັນທີ: {formatDate(new Date())}
           </div>
 
           {/* Sales hero */}
@@ -3768,7 +3769,7 @@ export default function POS({ user, onLogout }) {
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-slate-800 font-mono-t">{formatPrice(h.actual_cash)}</div>
                           <div className="text-[10px] text-slate-500">
-                            {new Date(h.created_at).toLocaleTimeString('lo-LA', { hour: '2-digit', minute: '2-digit' })}
+                            {formatTime(h.created_at)}
                             {h.received_by && ` · ຮັບ: ${h.received_by}`}
                             {h.note && ` · ${h.note}`}
                           </div>
@@ -3805,7 +3806,7 @@ export default function POS({ user, onLogout }) {
             </div>
             <h3 className="text-lg font-extrabold text-slate-900">{showReceipt.payment_method === 'credit' ? 'ອອກບິນຕິດໜີ້ສຳເລັດ' : 'ການຊຳລະສຳເລັດ'}</h3>
             <div className="text-[11px] text-slate-500 mt-0.5">
-              ໃບບິນ {showReceipt.bill_number || `#${showReceipt.id}`} · {new Date(showReceipt.created_at).toLocaleString('lo-LA')}
+              ໃບບິນ {showReceipt.bill_number || `#${showReceipt.id}`} · {formatDateTime(showReceipt.created_at)}
             </div>
           </div>
           <div className="my-4 py-3 border-y border-dashed border-slate-300 space-y-1">
@@ -3831,7 +3832,7 @@ export default function POS({ user, onLogout }) {
             <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-2 text-xs text-amber-900">
               <div className="font-bold text-amber-700 mb-0.5 text-[10px] uppercase tracking-wider">ລູກຄ້າຕິດໜີ້</div>
               <div>{showReceipt.customer_name || '—'}{showReceipt.customer_phone ? ` · ${showReceipt.customer_phone}` : ''}</div>
-              {showReceipt.credit_due_date && <div className="mt-0.5">ກຳນົດຊຳລະ: {new Date(showReceipt.credit_due_date).toLocaleDateString('lo-LA')}</div>}
+              {showReceipt.credit_due_date && <div className="mt-0.5">ກຳນົດຊຳລະ: {formatDate(showReceipt.credit_due_date)}</div>}
             </div>
           )}
           {showReceipt.member_id && (
@@ -3962,7 +3963,7 @@ export default function POS({ user, onLogout }) {
                               </div>
                               <div className="text-[11px] text-slate-500 mt-0.5">
                                 {it.customer_phone ? `${it.customer_phone} · ` : ''}
-                                {it.credit_due_date ? `ກຳນົດ ${new Date(it.credit_due_date).toLocaleDateString('lo-LA')}` : '—'}
+                                {it.credit_due_date ? `ກຳນົດ ${formatDate(it.credit_due_date)}` : '—'}
                               </div>
                             </div>
                             <div className="text-right shrink-0">
@@ -4000,7 +4001,7 @@ export default function POS({ user, onLogout }) {
           {/* Daily summary */}
           {dailySummary?.today && (
             <div className="mb-4">
-              <div className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-2">ສະຫຼຸບການຂາຍປະຈຳວັນ · {new Date().toLocaleDateString('lo-LA')}</div>
+              <div className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-2">ສະຫຼຸບການຂາຍປະຈຳວັນ · {formatDate(new Date())}</div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <div className="bg-red-50 border border-red-100 rounded-lg p-3">
                   <div className="text-[10px] font-bold text-red-500 uppercase tracking-wider">ຈຳນວນບິນ</div>
@@ -4087,7 +4088,7 @@ export default function POS({ user, onLogout }) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[10px] font-mono-t bg-rose-100 text-rose-900 font-extrabold px-2 py-0.5 rounded shrink-0">{r.return_number || `#${r.id}`}</span>
                         <span className="text-[10px] font-mono-t bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">ບິນ {r.bill_number || `#${r.order_id}`}</span>
-                        <span className="text-[10px] text-slate-500">{new Date(r.created_at).toLocaleString('lo-LA')}</span>
+                        <span className="text-[10px] text-slate-500">{formatDateTime(r.created_at)}</span>
                       </div>
                       <div className="mt-1.5 text-[11px] text-slate-600">
                         {(r.items || []).map((it, i) => (
@@ -4136,7 +4137,7 @@ export default function POS({ user, onLogout }) {
                           {isToday && <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">ມື້ນີ້</span>}
                         </div>
                         <div className="text-[10px] text-slate-500">
-                          {new Date(order.created_at).toLocaleString('lo-LA')}
+                          {formatDateTime(order.created_at)}
                           {order.payment_method === 'credit' && order.customer_name ? ` · ${order.customer_name}` : ''}
                         </div>
                       </div>
@@ -4187,7 +4188,7 @@ export default function POS({ user, onLogout }) {
                   {order.payment_method === 'credit' && (
                     <div className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
                       ຍອດຄ້າງ {formatPrice(Number(order.total) - Number(order.amount_paid || 0))}
-                      {order.credit_due_date ? ` · ກຳນົດ ${new Date(order.credit_due_date).toLocaleDateString('lo-LA')}` : ''}
+                      {order.credit_due_date ? ` · ກຳນົດ ${formatDate(order.credit_due_date)}` : ''}
                     </div>
                   )}
                 </div>
@@ -4247,7 +4248,7 @@ export default function POS({ user, onLogout }) {
                       <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">ບິນອ້າງອີງ</div>
                       <div className="font-mono text-xl font-extrabold text-slate-900 mt-0.5">{returnLookup.order.bill_number || `#${returnLookup.order.id}`}</div>
                       <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
-                        <span>{new Date(returnLookup.order.created_at).toLocaleString('lo-LA')}</span>
+                        <span>{formatDateTime(returnLookup.order.created_at)}</span>
                         <span className="text-slate-300">·</span>
                         <span className="font-bold">👤 {returnLookup.order.customer_name || 'ລູກຄ້າທົ່ວໄປ'}</span>
                       </div>
@@ -4332,7 +4333,7 @@ export default function POS({ user, onLogout }) {
                     <div className="space-y-0.5">
                       {returnLookup.returns.map(ret => (
                         <div key={ret.id} className="flex justify-between gap-3 text-[11px] text-amber-900">
-                          <span className="font-mono">{ret.return_number} · {new Date(ret.created_at).toLocaleString('lo-LA')}</span>
+                          <span className="font-mono">{ret.return_number} · {formatDateTime(ret.created_at)}</span>
                           <span className="font-mono-t font-extrabold">{formatPrice(ret.refund_amount || 0)}</span>
                         </div>
                       ))}

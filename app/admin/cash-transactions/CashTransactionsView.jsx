@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { formatDate } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
 const fmtPrice = (n, c = 'LAK') => c === 'LAK' ? `${fmtNum(n)} ₭` : `${fmtNum(n)} ${c}`;
-const fmtDate = s => s ? new Date(s).toLocaleDateString('lo-LA') : '—';
+const fmtDate = s => s ? formatDate(s) : '—';
 
 const INCOME_CATEGORIES = [
   { value: 'capital', label: '💰 ທຶນເພີ່ມ' },

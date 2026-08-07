@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDate } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
-const fmtDate = s => s ? new Date(s).toLocaleDateString('lo-LA') : '—';
+const fmtDate = s => s ? formatDate(s) : '—';
 
 const SEVERITY = {
   out: { label: 'ໝົດ', bg: 'bg-rose-100', text: 'text-rose-800', border: 'border-rose-300' },

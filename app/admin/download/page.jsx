@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDateTime } from '@/utils/formatDate';
 
 const APK_PATH = '/downloads/owner-app.apk';
 const EXE_PATH = '/downloads/SMLAO-POS-Setup.exe';
@@ -76,7 +77,7 @@ export default function DownloadAppPage() {
   }
 
   const exeUpdated = exeInfo.updatedAt
-    ? new Date(exeInfo.updatedAt).toLocaleString('lo-LA', { dateStyle: 'medium', timeStyle: 'short' })
+    ? formatDateTime(exeInfo.updatedAt)
     : null;
 
   const fullUrl = origin + APK_PATH;

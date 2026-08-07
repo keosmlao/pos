@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
+import { formatDateTime } from '@/utils/formatDate';
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0)
@@ -205,7 +206,7 @@ export default function Currencies() {
                       )}
                     </td>
                     <td className="py-2 px-3 text-[11px] text-slate-500 font-mono-t">
-                      {c.updated_at ? new Date(c.updated_at).toLocaleString('lo-LA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                      {c.updated_at ? formatDateTime(c.updated_at) : '-'}
                     </td>
                     <td className="py-2 px-3 text-right">
                       <div className="flex items-center justify-end gap-1">

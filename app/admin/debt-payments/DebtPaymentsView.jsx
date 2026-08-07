@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDate, formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = (n) => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
 const fmtPrice = (n) => `${fmtNum(n)} ₭`;
-const fmtDate = (str) => (str ? new Date(str).toLocaleDateString('lo-LA') : '—');
+const fmtDate = (str) => (str ? formatDate(str) : '—');
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 const methodLabel = {
@@ -119,7 +120,7 @@ export default function DebtPaymentsView({ debtType, title, subtitle, icon, name
       <div class="top">
         <h1>${debtType === 'customer' ? 'ໃບຮັບຊຳລະໜີ້' : 'ໃບຊຳລະໜີ້'}</h1>
         <div class="meta">ເລກຊຳລະ ${esc(p.payment_number || `#${p.id}`)} · ອ້າງອີງ ${esc(p.ref_number || `#${p.ref_id}`)}</div>
-        <div class="meta">ພິມວັນທີ ${new Date().toLocaleString('lo-LA')}</div>
+        <div class="meta">ພິມວັນທີ ${formatDateTime(new Date())}</div>
       </div>
       <div class="box">
         <div class="row"><span class="label">${esc(nameLabel)}</span><span class="value">${esc(p.party_name || '—')}</span></div>

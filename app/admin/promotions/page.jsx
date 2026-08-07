@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
+import { formatDate } from '@/utils/formatDate';
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0)
@@ -402,7 +403,7 @@ export default function Promotions() {
                   {(p.start_date || p.end_date) && (
                     <span className="inline-flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-                      {p.start_date ? new Date(p.start_date).toLocaleDateString('lo-LA') : '—'} → {p.end_date ? new Date(p.end_date).toLocaleDateString('lo-LA') : '—'}
+                      {p.start_date ? formatDate(p.start_date) : '—'} → {p.end_date ? formatDate(p.end_date) : '—'}
                     </span>
                   )}
                   {showTime && (

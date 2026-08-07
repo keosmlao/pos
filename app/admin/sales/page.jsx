@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
 import { usePagePermission } from '@/utils/adminPermissions'
+import { formatDate, formatDateTime } from '@/utils/formatDate';
 
 const API = '/api'
 const fmtPrice = n => new Intl.NumberFormat('lo-LA').format(Math.round(n || 0)) + ' ກີບ'
@@ -15,10 +16,7 @@ const fmtCompact = n => {
   if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K'
   return String(num)
 }
-const fmtDT = (s) => {
-  const d = new Date(s)
-  return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getFullYear()).slice(2)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+const fmtDT = (s) => formatDateTime(s)
 
 const methodMeta = {
   cash: { icon: '💵', label: 'ສົດ', color: 'emerald' },
@@ -179,7 +177,7 @@ export default function Sales() {
       const refund = Number(o.refund_total) || 0
       const net = netTotalOf(o)
       lines.push([
-        o.id, `"${new Date(o.created_at).toLocaleString('lo-LA')}"`, o.payment_method || 'cash',
+        o.id, `"${formatDateTime(o.created_at)}"`, o.payment_method || 'cash',
         `"${o.customer_name || ''}"`, `"${o.customer_phone || ''}"`, o.credit_due_date || '',
         o.payment_method === 'credit' ? Math.max(0, (Number(o.total) || 0) - (Number(o.amount_paid) || 0) - refund) : 0,
         itemsCount, subtotal, o.discount || 0, o.total, refund, net, o.amount_paid || 0, o.change_amount || 0
@@ -486,7 +484,7 @@ function Row({ o, m, itemsCount, isExpanded, deleting, canDelete, onToggle, onDe
             <div className="leading-tight">
               <div className="font-bold text-rose-700 truncate max-w-[160px]">{o.customer_name || '—'}</div>
               <div className="text-[10px] text-slate-400">
-                {o.credit_due_date ? `ຄົບ ${new Date(o.credit_due_date).toLocaleDateString('lo-LA')}` : 'ບໍ່ມີວັນຄົບ'}
+                {o.credit_due_date ? `ຄົບ ${formatDate(o.credit_due_date)}` : 'ບໍ່ມີວັນຄົບ'}
               </div>
             </div>
           ) : (

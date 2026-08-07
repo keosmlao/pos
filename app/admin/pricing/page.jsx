@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { downloadWorkbook, readFirstWorksheet, rowsToObjects } from '@/utils/excelClient'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
 import { COSTING_METHOD_LABELS } from '@/lib/costingMethods'
+import { formatDate } from '@/utils/formatDate';
 
 const API = '/api'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0)
@@ -545,7 +546,7 @@ export default function Pricing() {
                           return (
                             <tr key={r.id} className={`hover:bg-slate-50 ${idx === 0 ? 'bg-red-50/30' : ''}`}>
                               <td className="py-1.5 px-2 font-mono text-[10px] text-slate-500 whitespace-nowrap">
-                                {dt.toLocaleDateString('lo-LA')}
+                                {formatDate(dt)}
                                 {idx === 0 && <span className="ml-1 text-[8px] font-bold text-red-600">●</span>}
                               </td>
                               <td className="py-1.5 px-2 font-mono text-[10px] text-slate-600 whitespace-nowrap">
@@ -593,7 +594,7 @@ export default function Pricing() {
                               <span className="text-[10px] font-bold px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded uppercase">{h.source || 'manual'}</span>
                             </div>
                             <span className="text-[10px] text-slate-400 font-mono">
-                              {dt.toLocaleDateString('lo-LA')} {String(dt.getHours()).padStart(2, '0')}:{String(dt.getMinutes()).padStart(2, '0')}
+                              {formatDate(dt)} {String(dt.getHours()).padStart(2, '0')}:{String(dt.getMinutes()).padStart(2, '0')}
                             </span>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
@@ -686,7 +687,7 @@ export default function Pricing() {
                         return (
                           <tr key={h.id} className="hover:bg-slate-50">
                             <td className="py-1.5 px-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">
-                              {dt.toLocaleDateString('lo-LA')} {String(dt.getHours()).padStart(2, '0')}:{String(dt.getMinutes()).padStart(2, '0')}
+                              {formatDate(dt)} {String(dt.getHours()).padStart(2, '0')}:{String(dt.getMinutes()).padStart(2, '0')}
                             </td>
                             <td className="py-1.5 px-3 font-mono text-[11px] text-slate-600">{h.product_code || '-'}</td>
                             <td className="py-1.5 px-3 font-semibold text-slate-800 truncate max-w-[280px]">{h.product_name || '-'}</td>

@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
 import { usePagePermission } from '@/utils/adminPermissions';
+import { formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Number(n) || 0);
 const fmtPrice = n => `${fmtNum(Math.round(Number(n) || 0))} ₭`;
-const fmtDate = s => s ? new Date(s).toLocaleString('lo-LA') : '—';
+const fmtDate = s => s ? formatDateTime(s) : '—';
 const esc = v => String(v ?? '').replace(/[&<>"']/g, ch => ({
   '&': '&amp;',
   '<': '&lt;',

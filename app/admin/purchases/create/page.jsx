@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import SearchSelect from '@/components/SearchSelect'
 import { generateAndPrintPurchaseA4 } from '@/utils/receiptPdfGenerator'
+import { formatDate } from '@/utils/formatDate';
 
 const API = '/api'
 
@@ -630,7 +631,7 @@ export default function PurchaseCreate() {
               const daysLeft = Math.ceil((due - new Date()) / (1000 * 60 * 60 * 24))
               return (
                 <div className="bg-slate-50 rounded-md px-3 py-1.5 flex items-center justify-between text-[11px]">
-                  <span className="text-slate-600">ຄົບກຳນົດ: <strong>{due.toLocaleDateString('lo-LA')}</strong></span>
+                  <span className="text-slate-600">ຄົບກຳນົດ: <strong>{formatDate(due)}</strong></span>
                   <span className={`font-bold ${daysLeft <= 0 ? 'text-red-500' : daysLeft <= 7 ? 'text-amber-600' : 'text-emerald-600'}`}>
                     {daysLeft <= 0 ? '⚠ ເກີນ' : `${daysLeft}ວ`}
                   </span>

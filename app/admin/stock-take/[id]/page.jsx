@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
@@ -150,11 +151,11 @@ export default function StockTakeDetailPage({ params }) {
             <h1 className="text-xl font-extrabold text-slate-900">{data.name}</h1>
             <div className="text-xs text-slate-500 mt-1">
               {data.created_by && `${data.created_by} · `}
-              {new Date(data.created_at).toLocaleString('lo-LA')}
+              {formatDateTime(data.created_at)}
             </div>
           </div>
           {completed
-            ? <span className="px-3 py-1 bg-emerald-100 text-emerald-700 font-bold rounded">✓ ປິດແລ້ວ {data.completed_at ? `· ${new Date(data.completed_at).toLocaleString('lo-LA')}` : ''}</span>
+            ? <span className="px-3 py-1 bg-emerald-100 text-emerald-700 font-bold rounded">✓ ປິດແລ້ວ {data.completed_at ? `· ${formatDateTime(data.completed_at)}` : ''}</span>
             : <span className="px-3 py-1 bg-amber-100 text-amber-700 font-bold rounded">⏳ ກຳລັງນັບ</span>}
         </div>
         <div className="mt-4 grid grid-cols-3 gap-3">

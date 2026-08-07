@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
-const fmtDateTime = s => s ? new Date(s).toLocaleString('lo-LA') : '—';
+const fmtDateTime = s => s ? formatDateTime(s) : '—';
 
 const ENTITY_LABEL = {
   http: { icon: '🌐', label: 'HTTP' },
