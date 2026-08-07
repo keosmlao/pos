@@ -112,9 +112,57 @@ body {
 /* === Sidebar ຕາມໂໝດ ===
  * Sidebar ຂຽນແບບມືດເປັນຫຼັກ (ຄື dark mode ຢູ່ແລ້ວ).
  * ຊັ້ນນີ້ແປງເປັນສີຂາວເມື່ອຢູ່ໂໝດສະຫວ່າງ. */
+
+/* ── Sidebar base ─────────────────────────────────────────────── */
+.admin-sidebar {
+  background:
+    radial-gradient(circle at 15% -5%, rgb(239 68 68 / 0.12), transparent 28%),
+    #0b1120;
+  box-shadow: 12px 0 35px rgb(2 6 23 / 0.08);
+}
+.admin-sidebar .sidebar-brand {
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.065), rgb(255 255 255 / 0.025));
+  border: 1px solid rgb(255 255 255 / 0.07);
+}
+.admin-sidebar .sidebar-nav {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(100 116 139 / 0.4) transparent;
+}
+.admin-sidebar .sidebar-nav::-webkit-scrollbar { width: 4px; }
+.admin-sidebar .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.admin-sidebar .sidebar-nav::-webkit-scrollbar-thumb { background: rgb(100 116 139 / 0.3); border-radius: 2px; }
+.admin-sidebar .sidebar-search { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.025); }
+.admin-sidebar .sidebar-item,
+.admin-sidebar .sidebar-section { letter-spacing: -0.01em; }
+.admin-sidebar .sidebar-footer {
+  background: linear-gradient(to top, rgb(2 6 23 / 0.26), transparent);
+}
+
+/* ── Section expand/collapse animation ──────────────────────────── */
+.admin-sidebar .sidebar-section-content {
+  overflow: hidden;
+  transition: max-height 0.2s ease-in-out, opacity 0.15s ease-in-out;
+}
+
+/* ── Search result mark highlight ────────────────────────────────── */
+.admin-sidebar mark {
+  background-color: rgb(251 191 36 / 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* ── Active item glow ─────────────────────────────────────────────── */
+.admin-sidebar .sidebar-item-active {
+  box-shadow: 0 0 12px rgb(239 68 68 / 0.15);
+}
+
+/* ── Light mode overrides ─────────────────────────────────────────── */
 html:not(.dark) .admin-sidebar {
-  background-color: #ffffff;
-  border-right: 1px solid #e2e8f0;
+  background:
+    radial-gradient(circle at 15% -5%, rgb(239 68 68 / 0.07), transparent 28%),
+    #ffffff;
+  box-shadow: 12px 0 35px rgb(15 23 42 / 0.055);
 }
 html:not(.dark) .admin-sidebar .text-white { color: #0f172a; }
 html:not(.dark) .admin-sidebar .hover\:text-white:hover { color: #0f172a; }
@@ -149,34 +197,6 @@ html:not(.dark) .admin-sidebar a.bg-red-500\/20 { color: #991b1b; }
 html:not(.dark) .admin-sidebar .text-red-200 { color: #b91c1c; }
 /* ໂລໂກ້/ຮູບວົງມົນພື້ນແດງ: ຕົວໜັງສືຂາວຄືເກົ່າ */
 html:not(.dark) .admin-sidebar span.bg-gradient-to-br { color: #ffffff; }
-
-/* Refined admin navigation: calm surfaces, stronger hierarchy, compact density. */
-.admin-sidebar {
-  background:
-    radial-gradient(circle at 15% -5%, rgb(239 68 68 / 0.12), transparent 28%),
-    #0b1120;
-  box-shadow: 12px 0 35px rgb(2 6 23 / 0.08);
-}
-.admin-sidebar .sidebar-brand {
-  background: linear-gradient(135deg, rgb(255 255 255 / 0.065), rgb(255 255 255 / 0.025));
-  border: 1px solid rgb(255 255 255 / 0.07);
-}
-.admin-sidebar .sidebar-nav {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(100 116 139 / 0.4) transparent;
-}
-.admin-sidebar .sidebar-search { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.025); }
-.admin-sidebar .sidebar-item,
-.admin-sidebar .sidebar-section { letter-spacing: -0.01em; }
-.admin-sidebar .sidebar-footer {
-  background: linear-gradient(to top, rgb(2 6 23 / 0.26), transparent);
-}
-html:not(.dark) .admin-sidebar {
-  background:
-    radial-gradient(circle at 15% -5%, rgb(239 68 68 / 0.07), transparent 28%),
-    #ffffff;
-  box-shadow: 12px 0 35px rgb(15 23 42 / 0.055);
-}
 html:not(.dark) .admin-sidebar .sidebar-brand {
   background: linear-gradient(135deg, #fff7f7, #ffffff);
   border-color: #fee2e2;
@@ -192,6 +212,10 @@ html:not(.dark) .admin-sidebar .sidebar-footer {
 html:not(.dark) .admin-sidebar .sidebar-item.bg-gradient-to-r {
   background-color: #fff1f2;
   box-shadow: 0 5px 14px rgb(225 29 72 / 0.08);
+}
+html:not(.dark) .admin-sidebar mark {
+  background-color: rgb(250 204 21 / 0.35);
+  color: #854d0e;
 }
 .admin-content h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01em; }
 .admin-content h2 { font-size: 1.05rem; font-weight: 700; }

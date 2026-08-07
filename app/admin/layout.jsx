@@ -78,15 +78,21 @@ export default function AdminLayout({ children }) {
       </aside>
 
       <div
-        className={`md:hidden fixed inset-0 z-40 transition ${mobileOpen ? 'visible' : 'invisible pointer-events-none'}`}
+        className={`md:hidden fixed inset-0 z-40 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          mobileOpen ? 'visible' : 'invisible pointer-events-none'
+        }`}
         aria-hidden={!mobileOpen}
       >
         <div
-          className={`absolute inset-0 bg-black transition-opacity ${mobileOpen ? 'opacity-50' : 'opacity-0'}`}
+          className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${
+            mobileOpen ? 'opacity-100' : 'opacity-0'
+          }`}
           onClick={() => setMobileOpen(false)}
         />
         <aside
-          className={`admin-sidebar absolute top-0 left-0 bottom-0 w-[280px] max-w-[90vw] bg-slate-950 text-white shadow-2xl transition-transform ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          className={`admin-sidebar absolute top-0 left-0 bottom-0 w-[280px] max-w-[90vw] bg-slate-950 text-white shadow-2xl transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+            mobileOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
         >
           <AdminSidebar {...sidebarProps} />
         </aside>
