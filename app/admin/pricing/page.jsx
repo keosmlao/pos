@@ -23,6 +23,8 @@ const productCostValue = (p) => {
 }
 
 export default function Pricing() {
+  // ຄຳນວນຕົ້ນທຶນຄືນຈາກເອກະສານຮັບເຂົ້າ-ຈ່າຍອອກທີ່ມີຢູ່ຈິງ
+  const [recalcState, setRecalcState] = useState({ busy: false, preview: null })
   const [products, setProducts] = useState([])
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({ cost_price: '', selling_price: '' })
@@ -247,14 +249,115 @@ export default function Pricing() {
     slate: 'text-slate-700 bg-slate-50 border-slate-200',
   }
 
+  const previewRecalc = async () => {
+    setRecalcState({ busy: true, preview: null })
+    try {
+      const res = await fetch(`${API}/admin/products/recalc-cost`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setRecalcState({ busy: false, preview: await res.json() })
+    } catch (e) {
+      setRecalcState({ busy: false, preview: null })
+      alert(`ກວດບໍ່ໄດ້: ${e.message}`)
+    }
+  }
+  const applyRecalc = async () => {
+    setRecalcState(s => ({ ...s, busy: true }))
+    try {
+      const res = await fetch(`${API}/admin/products/recalc-cost`, { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setRecalcState({ busy: false, preview: null })
+      alert(`ອັບເດດຕົ້ນທຶນແລ້ວ ${data.changed} ລາຍການ (ກວດ ${data.scanned} ລາຍການ)`)
+      load()
+    } catch (e) {
+      setRecalcState(s => ({ ...s, busy: false }))
+      alert(`ອັບເດດບໍ່ໄດ້: ${e.message}`)
+    }
+  }
+
   return (
     <div className="space-y-4 pb-6">
+      {recalcState.preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          onClick={() => setRecalcState({ busy: false, preview: null })}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col"
+            onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-slate-200">
+              <div className="text-base font-extrabold text-slate-900">ກວດຕົ້ນທຶນຈາກເອກະສານ</div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                ຄຳນວນຄືນຈາກໃບຮັບເຂົ້າ · ໃບສົ່ງຄືນ · ບິນຂາຍ · ໃບຮັບຄືນ · ໃບປັບປຸງ ທີ່ມີຢູ່ຈິງ
+                ຕາມວິທີຄິດຕົ້ນທຶນຂອງແຕ່ລະສິນຄ້າ
+              </div>
+            </div>
+
+            <div className="px-5 py-3 border-b border-slate-100 flex gap-4 text-xs">
+              <div><span className="text-slate-500">ກວດແລ້ວ</span> <b className="text-slate-900">{fmtNum(recalcState.preview.scanned)}</b> ລາຍການ</div>
+              <div><span className="text-slate-500">ຕ້ອງແກ້</span> <b className={recalcState.preview.changed > 0 ? 'text-rose-600' : 'text-emerald-600'}>{fmtNum(recalcState.preview.changed)}</b> ລາຍການ</div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {recalcState.preview.changed === 0 ? (
+                <div className="py-12 text-center text-sm text-emerald-700 font-bold">
+                  ✓ ຕົ້ນທຶນທຸກລາຍການກົງກັບເອກະສານແລ້ວ ບໍ່ຕ້ອງແກ້
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="px-4 py-2">ລະຫັດ</th>
+                      <th className="px-4 py-2">ຊື່ສິນຄ້າ</th>
+                      <th className="px-4 py-2">ວິທີ</th>
+                      <th className="px-4 py-2 text-right">ຕົ້ນທຶນເກົ່າ</th>
+                      <th className="px-4 py-2 text-right">ຕົ້ນທຶນໃໝ່</th>
+                      <th className="px-4 py-2 text-right">ຕ່າງ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {recalcState.preview.changes.map(c => (
+                      <tr key={c.product_id} className="hover:bg-slate-50">
+                        <td className="px-4 py-1.5 font-mono text-slate-500">{c.product_code || '—'}</td>
+                        <td className="px-4 py-1.5 font-bold text-slate-800">{c.product_name || `#${c.product_id}`}</td>
+                        <td className="px-4 py-1.5 text-slate-500">{COSTING_METHOD_LABELS[c.method] || c.method}</td>
+                        <td className="px-4 py-1.5 text-right font-mono text-slate-500">{fmtNum(Math.round(c.before))}</td>
+                        <td className="px-4 py-1.5 text-right font-mono font-extrabold text-slate-900">{fmtNum(Math.round(c.after))}</td>
+                        <td className={`px-4 py-1.5 text-right font-mono font-bold ${c.diff > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {c.diff > 0 ? '+' : ''}{fmtNum(Math.round(c.diff))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+              <button onClick={() => setRecalcState({ busy: false, preview: null })}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50">
+                ປິດ
+              </button>
+              {recalcState.preview.changed > 0 && (
+                <button onClick={applyRecalc} disabled={recalcState.busy}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+                  {recalcState.busy ? 'ກຳລັງບັນທຶກ...' : `ອັບເດດ ${recalcState.preview.changed} ລາຍການ`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <AdminHero
         tag="Pricing"
         title="💲 ກຳນົດລາຄາຂາຍ"
         subtitle={`${fmtNum(products.length)} ລາຍການ${stats.missing > 0 ? ` · ${stats.missing} ບໍ່ຄົບ` : ''}${stats.loss > 0 ? ` · ${stats.loss} ຂາດທຶນ` : ''}`}
         action={
         <div className="flex items-center gap-2">
+          <button onClick={previewRecalc} disabled={recalcState.busy}
+            className="px-3 py-1.5 bg-white hover:bg-cyan-50 hover:text-cyan-600 hover:border-cyan-200 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
+            title="ຄຳນວນຕົ້ນທຶນຄືນຈາກເອກະສານຮັບເຂົ້າ-ຈ່າຍອອກ">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+            {recalcState.busy ? 'ກຳລັງກວດ...' : 'ກວດຕົ້ນທຶນ'}
+          </button>
           <button onClick={openRecent}
             className="px-3 py-1.5 bg-white hover:bg-violet-50 hover:text-violet-600 hover:border-violet-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 8v4l3 3M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/></svg>

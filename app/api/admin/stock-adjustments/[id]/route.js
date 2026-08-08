@@ -4,6 +4,7 @@ import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureStockAdjustmentsSchema } from '@/lib/migrations';
 import { extractActor } from '@/lib/audit';
+import { recalcProductCosts } from '@/lib/productCost';
 
 export const PUT = handle(async (request, { params }) => {
   await ensureStockAdjustmentsSchema();
@@ -72,6 +73,8 @@ export const PUT = handle(async (request, { params }) => {
        RETURNING *`,
       [actor.username || null, docNumber || adjustmentId]
     );
+    // ປັບປຸງສະຕັອກເຮັດໃຫ້ຈຳນວນຄົງເຫຼືອປ່ຽນ → ນ້ຳໜັກຂອງໃບຮັບເຂົ້າຫຼັງຈາກນັ້ນປ່ຽນຕາມ
+    await recalcProductCosts(client, rows.map(r => r.product_id));
     await client.query('COMMIT');
     return ok({ adjustment_number: docNumber, count: result.rowCount, items: result.rows });
   } catch (e) {

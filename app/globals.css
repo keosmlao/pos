@@ -454,6 +454,65 @@ html:not(.dark) .pos-root .hover\:border-slate-900:hover:not(.no-theme-flip, .no
 /* --- Ring --- */
 html:not(.dark) .pos-root .ring-slate-700:not(.no-theme-flip, .no-theme-flip *) { --tw-ring-color: #cbd5e1; }
 
+/* --- ຂໍ້ຄວາມສີອ່ອນ (100/200/300/400) ຢູ່ພື້ນອ່ອນ = ອ່ານບໍ່ອອກ → ໃຊ້ເສດເຂັ້ມແທນ --- */
+html:not(.dark) .pos-root .text-amber-100:not(.no-theme-flip, .no-theme-flip *) { color: #92400e; }
+html:not(.dark) .pos-root .text-amber-200:not(.no-theme-flip, .no-theme-flip *) { color: #92400e; }
+html:not(.dark) .pos-root .text-amber-300:not(.no-theme-flip, .no-theme-flip *) { color: #b45309; }
+html:not(.dark) .pos-root .text-amber-400:not(.no-theme-flip, .no-theme-flip *) { color: #d97706; }
+html:not(.dark) .pos-root .text-emerald-100:not(.no-theme-flip, .no-theme-flip *) { color: #065f46; }
+html:not(.dark) .pos-root .text-emerald-200:not(.no-theme-flip, .no-theme-flip *) { color: #065f46; }
+html:not(.dark) .pos-root .text-emerald-300:not(.no-theme-flip, .no-theme-flip *) { color: #047857; }
+html:not(.dark) .pos-root .text-emerald-400:not(.no-theme-flip, .no-theme-flip *) { color: #059669; }
+html:not(.dark) .pos-root .text-red-100:not(.no-theme-flip, .no-theme-flip *) { color: #991b1b; }
+html:not(.dark) .pos-root .text-red-200:not(.no-theme-flip, .no-theme-flip *) { color: #991b1b; }
+html:not(.dark) .pos-root .text-red-300:not(.no-theme-flip, .no-theme-flip *) { color: #b91c1c; }
+html:not(.dark) .pos-root .text-red-400:not(.no-theme-flip, .no-theme-flip *) { color: #dc2626; }
+html:not(.dark) .pos-root .text-rose-100:not(.no-theme-flip, .no-theme-flip *) { color: #9f1239; }
+html:not(.dark) .pos-root .text-rose-200:not(.no-theme-flip, .no-theme-flip *) { color: #9f1239; }
+html:not(.dark) .pos-root .text-rose-300:not(.no-theme-flip, .no-theme-flip *) { color: #be123c; }
+html:not(.dark) .pos-root .text-rose-400:not(.no-theme-flip, .no-theme-flip *) { color: #e11d48; }
+html:not(.dark) .pos-root .text-blue-100:not(.no-theme-flip, .no-theme-flip *) { color: #1e40af; }
+html:not(.dark) .pos-root .text-blue-200:not(.no-theme-flip, .no-theme-flip *) { color: #1e40af; }
+html:not(.dark) .pos-root .text-blue-300:not(.no-theme-flip, .no-theme-flip *) { color: #1d4ed8; }
+html:not(.dark) .pos-root .text-blue-400:not(.no-theme-flip, .no-theme-flip *) { color: #2563eb; }
+html:not(.dark) .pos-root .text-cyan-100:not(.no-theme-flip, .no-theme-flip *) { color: #155e75; }
+html:not(.dark) .pos-root .text-cyan-200:not(.no-theme-flip, .no-theme-flip *) { color: #155e75; }
+html:not(.dark) .pos-root .text-cyan-300:not(.no-theme-flip, .no-theme-flip *) { color: #0e7490; }
+html:not(.dark) .pos-root .text-cyan-400:not(.no-theme-flip, .no-theme-flip *) { color: #0891b2; }
+html:not(.dark) .pos-root .text-violet-100:not(.no-theme-flip, .no-theme-flip *) { color: #5b21b6; }
+html:not(.dark) .pos-root .text-violet-200:not(.no-theme-flip, .no-theme-flip *) { color: #5b21b6; }
+html:not(.dark) .pos-root .text-violet-300:not(.no-theme-flip, .no-theme-flip *) { color: #6d28d9; }
+html:not(.dark) .pos-root .text-violet-400:not(.no-theme-flip, .no-theme-flip *) { color: #7c3aed; }
+
+/* ຮຸ່ນທີ່ມີຄວາມໂປ່ງໃສ (/70 /80) ທີ່ໜ້າ POS ໃຊ້ຈິງ */
+html:not(.dark) .pos-root .text-amber-200\/80:not(.no-theme-flip, .no-theme-flip *) { color: #92400e; }
+html:not(.dark) .pos-root .text-amber-300\/80:not(.no-theme-flip, .no-theme-flip *) { color: #b45309; }
+html:not(.dark) .pos-root .text-amber-400\/70:not(.no-theme-flip, .no-theme-flip *) { color: #d97706; }
+html:not(.dark) .pos-root .text-amber-400\/80:not(.no-theme-flip, .no-theme-flip *) { color: #d97706; }
+html:not(.dark) .pos-root .text-emerald-300\/80:not(.no-theme-flip, .no-theme-flip *) { color: #047857; }
+html:not(.dark) .pos-root .text-cyan-400\/80:not(.no-theme-flip, .no-theme-flip *) { color: #0891b2; }
+
+/* hover ກໍ່ຕ້ອງເຫັນ */
+html:not(.dark) .pos-root .hover\:text-amber-300:hover:not(.no-theme-flip, .no-theme-flip *) { color: #b45309; }
+html:not(.dark) .pos-root .hover\:text-rose-300:hover:not(.no-theme-flip, .no-theme-flip *) { color: #be123c; }
+
+/* placeholder ຈາງເກີນ */
+html:not(.dark) .pos-root .placeholder\:text-slate-300:not(.no-theme-flip, .no-theme-flip *)::placeholder { color: #94a3b8; }
+
+/* --- ປຸ່ມພື້ນເຂັ້ມ + ຕົວອັກສອນຂາວ: ຢ່າພິກພື້ນເປັນສີອ່ອນ ---
+ * `bg-slate-800 text-white` ພໍພື້ນຖືກພິກເປັນສີອ່ອນ ຕົວອັກສອນຂາວຈະຫາຍໄປເລີຍ.
+ * ປຸ່ມເຂັ້ມເທິງພື້ນຂາວເປັນເລື່ອງປົກກະຕິຢູ່ແລ້ວ ຈຶ່ງໃຫ້ມັນເຂັ້ມຄືເກົ່າ. */
+html:not(.dark) .pos-root .bg-slate-950.text-white:not(.no-theme-flip, .no-theme-flip *) { background-color: #020617; }
+html:not(.dark) .pos-root .bg-slate-900.text-white:not(.no-theme-flip, .no-theme-flip *) { background-color: #0f172a; }
+html:not(.dark) .pos-root .bg-slate-800.text-white:not(.no-theme-flip, .no-theme-flip *) { background-color: #1e293b; }
+html:not(.dark) .pos-root .bg-slate-700.text-white:not(.no-theme-flip, .no-theme-flip *) { background-color: #334155; }
+html:not(.dark) .pos-root .hover\:bg-slate-900.text-white:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #0f172a; }
+html:not(.dark) .pos-root .hover\:bg-slate-800.text-white:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #1e293b; }
+html:not(.dark) .pos-root .hover\:bg-slate-700.text-white:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #334155; }
+
+/* ພື້ນຫຼັງເຂັ້ມທີ່ຫໍ່ຂໍ້ຄວາມຂາວໄວ້ຂ້າງໃນ (ບໍ່ໄດ້ຢູ່ element ດຽວກັນ) */
+html:not(.dark) .pos-root .bg-slate-900:has(> .text-white):not(.no-theme-flip, .no-theme-flip *) { background-color: #0f172a; }
+
 /* --- Header opt-out: .pos-header is a branded dark bar in BOTH themes ---
  * Restore the original dark values for slate utilities inside .pos-header.
  * Higher specificity (0,4,0) than the .pos-root rules above so order doesn't matter.
@@ -477,6 +536,37 @@ html:not(.dark) .pos-root .pos-header .border-slate-700 { border-color: #334155;
 html:not(.dark) .pos-root .pos-header .border-slate-900 { border-color: #0f172a; }
 /* Header inherits text from .pos-root (text-slate-100); restore that on the header element itself. */
 html:not(.dark) .pos-root .pos-header { color: #f1f5f9; }
+
+
+/* Header ເປັນແຖບເຂັ້ມທັງສອງໂໝດ — ຄືນສີອ່ອນເດີມໃຫ້ຂໍ້ຄວາມພາຍໃນ */
+html:not(.dark) .pos-root .pos-header .text-amber-100 { color: #fef3c7; }
+html:not(.dark) .pos-root .pos-header .text-amber-200 { color: #fde68a; }
+html:not(.dark) .pos-root .pos-header .text-amber-300 { color: #fcd34d; }
+html:not(.dark) .pos-root .pos-header .text-amber-400 { color: #fbbf24; }
+html:not(.dark) .pos-root .pos-header .text-emerald-100 { color: #d1fae5; }
+html:not(.dark) .pos-root .pos-header .text-emerald-200 { color: #a7f3d0; }
+html:not(.dark) .pos-root .pos-header .text-emerald-300 { color: #6ee7b7; }
+html:not(.dark) .pos-root .pos-header .text-emerald-400 { color: #34d399; }
+html:not(.dark) .pos-root .pos-header .text-red-100 { color: #fee2e2; }
+html:not(.dark) .pos-root .pos-header .text-red-200 { color: #fecaca; }
+html:not(.dark) .pos-root .pos-header .text-red-300 { color: #fca5a5; }
+html:not(.dark) .pos-root .pos-header .text-red-400 { color: #f87171; }
+html:not(.dark) .pos-root .pos-header .text-rose-100 { color: #ffe4e6; }
+html:not(.dark) .pos-root .pos-header .text-rose-200 { color: #fecdd3; }
+html:not(.dark) .pos-root .pos-header .text-rose-300 { color: #fda4af; }
+html:not(.dark) .pos-root .pos-header .text-rose-400 { color: #fb7185; }
+html:not(.dark) .pos-root .pos-header .text-blue-100 { color: #dbeafe; }
+html:not(.dark) .pos-root .pos-header .text-blue-200 { color: #bfdbfe; }
+html:not(.dark) .pos-root .pos-header .text-blue-300 { color: #93c5fd; }
+html:not(.dark) .pos-root .pos-header .text-blue-400 { color: #60a5fa; }
+html:not(.dark) .pos-root .pos-header .text-cyan-100 { color: #cffafe; }
+html:not(.dark) .pos-root .pos-header .text-cyan-200 { color: #a5f3fc; }
+html:not(.dark) .pos-root .pos-header .text-cyan-300 { color: #67e8f9; }
+html:not(.dark) .pos-root .pos-header .text-cyan-400 { color: #22d3ee; }
+html:not(.dark) .pos-root .pos-header .text-violet-100 { color: #ede9fe; }
+html:not(.dark) .pos-root .pos-header .text-violet-200 { color: #ddd6fe; }
+html:not(.dark) .pos-root .pos-header .text-violet-300 { color: #c4b5fd; }
+html:not(.dark) .pos-root .pos-header .text-violet-400 { color: #a78bfa; }
 
 } /* end @layer utilities (POS light overrides) */
 

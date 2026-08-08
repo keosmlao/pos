@@ -4,6 +4,7 @@ import pool from '@/lib/db';
 import { fail, handle, ok } from '@/lib/api';
 import { ensurePurchaseReturnsSchema } from '@/lib/migrations';
 import { publishEvent } from '@/lib/appEvents';
+import { recalcProductCosts } from '@/lib/productCost';
 
 // ຍົກເລີກໃບສົ່ງຄືນ — ສິນຄ້າກັບເຂົ້າສາງ ແລະ ຍ້ອນຜົນທາງບັນຊີຄືນ
 export const DELETE = handle(async (_request, { params }) => {
@@ -51,6 +52,8 @@ export const DELETE = handle(async (_request, { params }) => {
     }
 
     await client.query('DELETE FROM purchase_returns WHERE id = $1', [returnId]);
+    // ຍົກເລີກໃບສົ່ງຄືນແລ້ວ ຕົ້ນທຶນຕ້ອງກັບໄປຕາມເອກະສານທີ່ຍັງເຫຼືອ
+    await recalcProductCosts(client, itemsRes.rows.map(i => i.product_id));
     await client.query('COMMIT');
 
     publishEvent('purchase.return_void', { id: returnId, return_number: ret.return_number }).catch(() => {});

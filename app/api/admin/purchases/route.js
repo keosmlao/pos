@@ -6,6 +6,7 @@ import { ensureCompanyProfileSchema, ensurePendingInvoicesSchema } from '@/lib/m
 import { allocateDocumentNumber } from '@/lib/billNumber';
 import { extractActor } from '@/lib/audit';
 import { publishEvent } from '@/lib/appEvents';
+import { recalcProductCosts } from '@/lib/productCost';
 
 export const GET = handle(async () => {
   await ensurePendingInvoicesSchema();
@@ -97,11 +98,13 @@ export const POST = handle(async (request) => {
           'INSERT INTO purchase_items (purchase_id, product_id, quantity, cost_price) VALUES ($1, $2, $3, $4)',
           [purchase.id, item.product_id, item.quantity, item.cost_price]
         );
+        // ຕົ້ນທຶນບໍ່ຂຽນທັບດ້ວຍລາຄາໃບນີ້ດື້ໆ — ຄຳນວນຄືນຈາກເອກະສານທັງໝົດຢູ່ລຸ່ມ
         await client.query(
-          'UPDATE products SET qty_on_hand = qty_on_hand + $1, cost_price = $2, supplier_name = COALESCE($4, supplier_name) WHERE id = $3',
-          [item.quantity, item.cost_price, item.product_id, supplierName]
+          'UPDATE products SET qty_on_hand = qty_on_hand + $1, supplier_name = COALESCE($3, supplier_name) WHERE id = $2',
+          [item.quantity, item.product_id, supplierName]
         );
       }
+      await recalcProductCosts(client, items.map(i => i.product_id));
     }
 
     await client.query('COMMIT');

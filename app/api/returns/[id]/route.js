@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { fail, handle, ok } from '@/lib/api';
 import { ensureReturnsSchema } from '@/lib/migrations';
+import { recalcProductCosts } from '@/lib/productCost';
 
 export const DELETE = handle(async (_request, { params }) => {
   await ensureReturnsSchema();
@@ -52,6 +53,7 @@ export const DELETE = handle(async (_request, { params }) => {
     }
 
     await client.query('DELETE FROM returns WHERE id = $1', [returnId]);
+    await recalcProductCosts(client, itemsRes.rows.map(i => i.product_id));
     await client.query('COMMIT');
     return ok({ id: returnId, return_number: retRes.rows[0].return_number });
   } catch (error) {

@@ -35,6 +35,8 @@ const emptyForm = {
   display_name: '',
   password: '',
   role: 'cashier',
+  commission_rate: 0,
+  sales_target: 0,
   permissions: normalizePermissions({}),
 };
 
@@ -64,6 +66,7 @@ export default function UsersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
 
@@ -141,6 +144,7 @@ export default function UsersPage() {
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyForm);
+    setShowPassword(false);
     setShowForm(true);
   };
 
@@ -151,8 +155,11 @@ export default function UsersPage() {
       display_name: u.display_name,
       password: '',
       role: u.role || 'cashier',
+      commission_rate: Number(u.commission_rate) || 0,
+      sales_target: Number(u.sales_target) || 0,
       permissions: u.role === 'admin' ? createFullPermissions() : normalizePermissions(u.permissions),
     });
+    setShowPassword(false);
     setShowForm(true);
   };
 
@@ -375,9 +382,32 @@ export default function UsersPage() {
                   <label className="block text-[11px] font-bold text-slate-600 mb-1">
                     ລະຫັດຜ່ານ {editingId && <span className="font-normal text-slate-400">(ວ່າງໄວ້ຖ້າບໍ່ປ່ຽນ)</span>}
                   </label>
-                  <input type="password" value={form.password} onChange={e => updateForm('password', e.target.value)} required={!editingId}
-                    placeholder={editingId ? '••••••••' : 'ຢ່າງໜ້ອຍ 4 ຕົວອັກສອນ'}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/10" />
+                  <div className="relative">
+                    <input type={showPassword ? 'text' : 'password'} value={form.password}
+                      onChange={e => updateForm('password', e.target.value)} required={!editingId}
+                      placeholder={editingId ? '••••••••' : 'ຢ່າງໜ້ອຍ 4 ຕົວອັກສອນ'}
+                      autoComplete="new-password"
+                      className="w-full pl-3 pr-10 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/10" />
+                    <button type="button" onClick={() => setShowPassword(v => !v)}
+                      tabIndex={-1}
+                      title={showPassword ? 'ເຊື່ອງລະຫັດຜ່ານ' : 'ສະແດງລະຫັດຜ່ານ'}
+                      aria-label={showPassword ? 'ເຊື່ອງລະຫັດຜ່ານ' : 'ສະແດງລະຫັດຜ່ານ'}
+                      aria-pressed={showPassword}
+                      className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-slate-400 hover:text-red-600 transition-colors">
+                      {showPassword ? (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.15 18.15 0 0 0 2 12s3 8 10 8a9.7 9.7 0 0 0 5.39-1.61" />
+                          <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                          <path d="m2 2 20 20" />
+                        </svg>
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M2 12s3-8 10-8 10 8 10 8-3 8-10 8-10-8-10-8Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </section>
 

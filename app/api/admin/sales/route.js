@@ -2,14 +2,22 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok } from '@/lib/api';
-import { ensureReturnsSchema } from '@/lib/migrations';
+import { ensureOrdersSchema, ensureReturnsSchema, ensureBranchesSchema } from '@/lib/migrations';
 
 export const GET = handle(async (request) => {
+  await ensureOrdersSchema();     // ຄົ້ນຫາອີງ o.bill_number ຈຶ່ງຕ້ອງແນ່ໃຈວ່າມີຖັນນີ້
   await ensureReturnsSchema();
+  await ensureBranchesSchema();   // ຄິວຣີ JOIN branches — ຖ້າຍັງບໍ່ມີຕາຕະລາງຈະ 500
   const sp = request.nextUrl.searchParams;
   const start = sp.get('start');
   const end = sp.get('end');
   const branchId = sp.get('branch_id');
+  const search = String(sp.get('search') || '').trim().toLowerCase();
+  const rowLimit = Math.max(50, Math.min(5000, Number(sp.get('limit')) || 3000));
+
+  // ຄົ້ນຫາເລກບິນ ຄົ້ນທົ່ວປະຫວັດ ບໍ່ຈຳກັດຊ່ວງວັນທີ — ຄົນຄົ້ນເລກບິນ
+  // ມັກບໍ່ຮູ້ວ່າບິນນັ້ນຢູ່ວັນທີໃດ ຖ້າຍັງກອງວັນທີຢູ່ຈະຫາບໍ່ພົບ
+  const searchAllHistory = search.length > 0;
 
   let query = `
     WITH order_refunds AS (
@@ -43,11 +51,11 @@ export const GET = handle(async (request) => {
   const params = [];
   const conditions = [];
 
-  if (start) {
+  if (start && !searchAllHistory) {
     params.push(start);
     conditions.push(`o.created_at::date >= $${params.length}`);
   }
-  if (end) {
+  if (end && !searchAllHistory) {
     params.push(end);
     conditions.push(`o.created_at::date <= $${params.length}`);
   }
@@ -55,12 +63,30 @@ export const GET = handle(async (request) => {
     params.push(Number(branchId));
     conditions.push(`o.branch_id = $${params.length}`);
   }
+  if (searchAllHistory) {
+    params.push(`%${search}%`);
+    const n = params.length;
+    conditions.push(`(
+      LOWER(COALESCE(o.bill_number, '')) LIKE $${n}
+      OR CAST(o.id AS text) LIKE $${n}
+      OR LOWER(COALESCE(o.customer_name, '')) LIKE $${n}
+      OR LOWER(COALESCE(o.customer_phone, '')) LIKE $${n}
+      OR LOWER(COALESCE(o.note, '')) LIKE $${n}
+      OR EXISTS (
+        SELECT 1 FROM order_items oi2
+        JOIN products p2 ON p2.id = oi2.product_id
+        WHERE oi2.order_id = o.id AND LOWER(p2.product_name) LIKE $${n}
+      )
+    )`);
+  }
 
   if (conditions.length > 0) {
     query += ' WHERE ' + conditions.join(' AND ');
   }
 
-  query += ' GROUP BY o.id, b.name, orf.refund_total ORDER BY o.created_at DESC';
+  query += ` GROUP BY o.id, b.name, orf.refund_total
+             ORDER BY o.created_at DESC
+             LIMIT ${rowLimit}`;
 
   const result = await pool.query(query, params);
   return ok(result.rows);

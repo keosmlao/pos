@@ -5,6 +5,7 @@ import { fail, handle, ok, readJson } from '@/lib/api';
 import { ensureReturnsSchema, ensureCompanyProfileSchema } from '@/lib/migrations';
 import { allocateReturnNumber } from '@/lib/billNumber';
 import { applyRounding, ROUNDING_MODES } from '@/lib/rounding';
+import { recalcProductCosts } from '@/lib/productCost';
 
 // ຂັ້ນປັດເສດທີ່ອະນຸຍາດ — 100 = ປັດ 2 ຫຼັກ, 1,000 = 3 ຫຼັກ, 10,000 = 4 ຫຼັກ
 const ALLOWED_ROUNDING_STEPS = new Set([0, 10, 50, 100, 500, 1000, 5000, 10000]);
@@ -224,6 +225,9 @@ export const POST = handle(async (request) => {
       );
       await client.query('UPDATE products SET qty_on_hand = qty_on_hand + $1 WHERE id = $2', [item.quantity, item.product_id]);
     }
+
+    // ສິນຄ້າກັບເຂົ້າສາງດ້ວຍຕົ້ນທຶນຕອນຂາຍ — ອາດຕ່າງຈາກສະເລ່ຍປັດຈຸບັນ
+    await recalcProductCosts(client, normalized.map(i => i.product_id));
 
     const itemsRes = await client.query(
       `SELECT ri.*, p.product_name

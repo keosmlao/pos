@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { handle, ok, getQuery } from '@/lib/api';
 import { ensureOrdersSchema } from '@/lib/migrations';
+import { lineRevenueCTE } from '@/lib/salesRevenueSql';
 
 // Per-line cost source: oi.cost_price (snapshot ณ ເວລາຂາຍ, ເລີ່ມເກັບ v1.7.0);
 // ບິນເກົ່າກ່ອນມີ snapshot ຈະ fallback ໃສ່ products.cost_price ປັດຈຸບັນ.
@@ -23,51 +24,7 @@ export const GET = handle(async (request) => {
   if (to) { params.push(to); where.push(`o.created_at::date <= $${params.length}`); }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-  const baseCTE = `
-    WITH order_totals AS (
-      SELECT o.id, o.created_at,
-             COALESCE(SUM(oi.quantity * oi.price), 0) AS gross,
-             COALESCE(o.discount, 0) AS discount,
-             COALESCE(o.vat_amount, 0) AS vat_amount,
-             o.vat_mode
-      FROM orders o
-      LEFT JOIN order_items oi ON oi.order_id = o.id
-      ${whereSql}
-      GROUP BY o.id, o.created_at, o.discount, o.vat_amount, o.vat_mode
-    ),
-    line_items AS (
-      SELECT oi.order_id,
-             oi.product_id,
-             oi.quantity,
-             oi.price,
-             p.product_name,
-             p.cost_price,
-             p.category AS category_name,
-             (oi.quantity * oi.price) AS line_gross,
-             (oi.quantity * COALESCE(oi.cost_price, p.cost_price, 0)) AS line_cost,
-             ot.gross AS order_gross,
-             ot.discount AS order_discount,
-             ot.vat_amount AS order_vat,
-             ot.vat_mode,
-             ot.created_at,
-             CASE WHEN ot.gross > 0
-               THEN (oi.quantity * oi.price) / ot.gross
-               ELSE 0
-             END AS line_share
-      FROM order_items oi
-      JOIN order_totals ot ON ot.id = oi.order_id
-      LEFT JOIN products p ON p.id = oi.product_id
-    ),
-    line_net AS (
-      SELECT *,
-             (line_gross - line_share * order_discount) AS line_revenue_inc_vat,
-             CASE WHEN vat_mode = 'inclusive'
-               THEN (line_gross - line_share * order_discount) - line_share * order_vat
-               ELSE (line_gross - line_share * order_discount)
-             END AS line_revenue_ex_vat
-      FROM line_items
-    )
-  `;
+  const baseCTE = `WITH ${lineRevenueCTE(whereSql)}`;
 
   const summaryRes = await pool.query(
     `${baseCTE}

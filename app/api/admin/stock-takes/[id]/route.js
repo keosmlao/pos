@@ -4,6 +4,7 @@ import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureStockTakesSchema, ensureStockAdjustmentsSchema } from '@/lib/migrations';
 import { extractActor } from '@/lib/audit';
+import { recalcProductCosts } from '@/lib/productCost';
 
 export const GET = handle(async (_request, { params }) => {
   await ensureStockTakesSchema();
@@ -83,6 +84,8 @@ export const PUT = handle(async (request, { params }) => {
         `UPDATE stock_takes SET status = 'completed', completed_at = NOW() WHERE id = $1`,
         [tid]
       );
+      // ຈຳນວນຄົງເຫຼືອປ່ຽນ → ຕົ້ນທຶນສະເລ່ຍຕ້ອງອີງເອກະສານທີ່ມີຢູ່ຈິງຄືນ
+      await recalcProductCosts(client, variancesRes.rows.map(v => v.product_id));
     }
 
     await client.query('COMMIT');

@@ -11,8 +11,8 @@
     "test": "node --test tests/*.test.mjs",
     "backup:verify": "node scripts/verify-backups.mjs",
     "db:sync-test": "bash scripts/sync-test-db.sh",
-    "build:win": "bash windows-app/build.sh standalone",
-    "build:win:small": "bash windows-app/build.sh",
+    "build:win": "node windows-app/build.mjs standalone",
+    "build:win:small": "node windows-app/build.mjs",
     "backup:restore-rehearsal": "node --env-file=.env scripts/restore-rehearsal.mjs"
   },
   "dependencies": {

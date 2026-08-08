@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { handle, ok, fail } from '@/lib/api';
 import { ensureLaybysSchema } from '@/lib/migrations';
+import { recalcProductCosts } from '@/lib/productCost';
 
 export const GET = handle(async (_request, { params }) => {
   await ensureLaybysSchema();
@@ -61,7 +62,10 @@ export const DELETE = handle(async (_request, { params }) => {
     }
 
     // layby_items / layby_payments have ON DELETE CASCADE
+    const allItems = await client.query(`SELECT product_id FROM layby_items WHERE layby_id = $1`, [lid]);
     await client.query(`DELETE FROM laybys WHERE id = $1`, [lid]);
+    // ຖອດໃບຝາກຂາຍອອກຈາກປະຫວັດ → ນ້ຳໜັກຂອງໃບຮັບເຂົ້າຫຼັງຈາກນັ້ນປ່ຽນ
+    await recalcProductCosts(client, allItems.rows.map(i => i.product_id));
     await client.query('COMMIT');
     return ok({ deleted: lid, deposit_to_refund: Number(layby.paid) || 0 });
   } catch (e) {

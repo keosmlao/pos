@@ -5,8 +5,17 @@ import { useState, useEffect, useMemo } from 'react'
 import { AdminHero } from '@/components/admin/ui/AdminHero'
 import { usePagePermission } from '@/utils/adminPermissions'
 import { formatDate, formatDateTime } from '@/utils/formatDate';
+import { downloadWorkbookMulti } from '@/utils/excelClient'
+import { printReportA4 } from '@/utils/reportPrint'
 
 const API = '/api'
+// ວັນທີແບບທ້ອງຖິ່ນ — toISOString() ຈະແປງເປັນ UTC ແລ້ວບິນຕອນແລງຈະຕົກໄປວັນກ່ອນໜ້າ
+const dateKey = (v) => {
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 const fmtPrice = n => new Intl.NumberFormat('lo-LA').format(Math.round(n || 0)) + ' ກີບ'
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0)
 const fmtCompact = n => {
@@ -40,42 +49,68 @@ export default function Sales() {
   const [perPage, setPerPage] = useState(50)
   const [page, setPage] = useState(1)
   const [deletingId, setDeletingId] = useState(null)
+  const [company, setCompany] = useState({})
+  // ຄຳຄົ້ນທີ່ "ສົ່ງໄປເຊີບເວີແລ້ວ" — ວ່າງ = ກຳລັງເບິ່ງຕາມຊ່ວງວັນທີປົກກະຕິ
+  const [serverSearch, setServerSearch] = useState('')
 
-  const load = async () => {
+  // ຮັບຄ່າຊັດເຈນເຂົ້າມາໄດ້ — ຖ້າອາໄສ state ຢ່າງດຽວ ປຸ່ມຊ່ວງດ່ວນຈະໃຊ້ຄ່າເກົ່າ
+  // ເພາະ setFrom/setTo ຍັງບໍ່ທັນມີຜົນຕອນເອີ້ນ load
+  const load = async (opts = {}) => {
+    const q = opts.search !== undefined ? opts.search : serverSearch
+    const f = opts.from !== undefined ? opts.from : from
+    const t = opts.to !== undefined ? opts.to : to
     setLoading(true)
     try {
       const params = new URLSearchParams()
-      if (from) params.set('start', from)
-      if (to) params.set('end', to)
+      // ຄົ້ນຫາເລກບິນ = ຄົ້ນທົ່ວປະຫວັດ ຈຶ່ງບໍ່ສົ່ງຊ່ວງວັນທີໄປ
+      if (q) params.set('search', q)
+      else {
+        if (f) params.set('start', f)
+        if (t) params.set('end', t)
+      }
       if (branchFilter) params.set('branch_id', branchFilter)
       const res = await fetch(`${API}/admin/sales?${params}`)
-      setOrders(await res.json())
+      const data = await res.json()
+      setOrders(Array.isArray(data) ? data : [])
       setPage(1)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
   useEffect(() => {
     fetch(`${API}/admin/branches`).then(r => r.json()).then(d => setBranches(Array.isArray(d) ? d : [])).catch(() => {})
+    fetch(`${API}/company`).then(r => r.json()).then(setCompany).catch(() => {})
   }, [])
   useEffect(() => { load() }, [branchFilter])
 
+  // ຄົ້ນຫາເລກບິນທົ່ວປະຫວັດ (ຂ້າມຕົວກອງວັນທີ)
+  const runBillSearch = () => {
+    const q = search.trim()
+    setServerSearch(q)
+    load({ search: q })
+  }
+  const clearBillSearch = () => {
+    setSearch('')
+    setServerSearch('')
+    load({ search: '' })
+  }
+
+  // ເລືອກຊ່ວງວັນທີ = ອອກຈາກໂໝດຄົ້ນຫາເລກບິນ
+  const applyRange = (start, end) => {
+    setFrom(start); setTo(end)
+    setSearch(''); setServerSearch('')
+    load({ from: start, to: end, search: '' })
+  }
   const quickRange = (days) => {
     const d = new Date()
-    const end = d.toISOString().split('T')[0]
-    const start = new Date(d.getTime() - (days - 1) * 86400000).toISOString().split('T')[0]
-    setFrom(start); setTo(end); setTimeout(load, 0)
+    applyRange(dateKey(new Date(d.getTime() - (days - 1) * 86400000)), dateKey(d))
   }
   const thisMonth = () => {
     const d = new Date()
-    const start = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0]
-    const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0]
-    setFrom(start); setTo(end); setTimeout(load, 0)
+    applyRange(dateKey(new Date(d.getFullYear(), d.getMonth(), 1)), dateKey(new Date(d.getFullYear(), d.getMonth() + 1, 0)))
   }
   const lastMonth = () => {
     const d = new Date()
-    const start = new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().split('T')[0]
-    const end = new Date(d.getFullYear(), d.getMonth(), 0).toISOString().split('T')[0]
-    setFrom(start); setTo(end); setTimeout(load, 0)
+    applyRange(dateKey(new Date(d.getFullYear(), d.getMonth() - 1, 1)), dateKey(new Date(d.getFullYear(), d.getMonth(), 0)))
   }
 
   const filtered = useMemo(() => {
@@ -83,7 +118,8 @@ export default function Sales() {
       const q = search.toLowerCase().trim()
       if (q) {
         const items = Array.isArray(o.items) ? o.items : []
-        const hay = `${o.id} ${items.map(i => i?.product_name || '').join(' ')} ${o.note || ''} ${o.customer_name || ''} ${o.customer_phone || ''}`.toLowerCase()
+        // ຕ້ອງມີ bill_number ນຳ — ບໍ່ດັ່ງນັ້ນຄົ້ນຫາດ້ວຍເລກບິນຈະບໍ່ພົບ
+        const hay = `${o.bill_number || ''} ${o.id} ${items.map(i => i?.product_name || '').join(' ')} ${o.note || ''} ${o.customer_name || ''} ${o.customer_phone || ''}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
       if (methodFilter && o.payment_method !== methodFilter) return false
@@ -131,14 +167,30 @@ export default function Sales() {
       .slice(0, 10)
   }, [filtered])
 
-  // Daily breakdown (net of returns by sale date)
+  // ສະຫຼຸບຕໍ່ວັນ (ສຸດທິຫຼັງຫັກຮັບຄືນ) — ໃຊ້ທັງກຣາຟ ແລະ ລາຍງານປະຈຳວັນ
   const dailyBreakdown = useMemo(() => {
     const by = {}
     for (const o of filtered) {
-      const d = new Date(o.created_at).toISOString().split('T')[0]
-      if (!by[d]) by[d] = { date: d, count: 0, total: 0 }
-      by[d].count++
-      by[d].total += netTotalOf(o)
+      const d = dateKey(o.created_at)
+      if (!d) continue
+      if (!by[d]) by[d] = {
+        date: d, count: 0, total: 0, gross: 0, discount: 0, refund: 0, qty: 0,
+        cash: 0, transfer: 0, qr: 0, mixed: 0, credit: 0, creditRemaining: 0,
+      }
+      const row = by[d]
+      const net = netTotalOf(o)
+      row.count++
+      row.total += net
+      row.gross += Number(o.total) || 0
+      row.discount += Number(o.discount) || 0
+      row.refund += Number(o.refund_total) || 0
+      row.qty += (Array.isArray(o.items) ? o.items.reduce((s, it) => s + netQtyOf(it), 0) : 0)
+      const method = o.payment_method || 'cash'
+      if (row[method] !== undefined) row[method] += net
+      if (method === 'credit') {
+        row.creditRemaining += Math.max(0,
+          (Number(o.total) || 0) - (Number(o.amount_paid) || 0) - (Number(o.refund_total) || 0))
+      }
     }
     return Object.values(by).sort((a, b) => a.date.localeCompare(b.date))
   }, [filtered])
@@ -193,6 +245,184 @@ export default function Sales() {
     URL.revokeObjectURL(url)
   }
 
+  // ── ລາຍງານການຂາຍປະຈຳວັນ ────────────────────────────────────────────────────
+  const rangeLabel = serverSearch
+    ? `ຄົ້ນຫາ “${serverSearch}” (ທົ່ວປະຫວັດ)`
+    : (from || to ? `${from || 'ເລີ່ມຕົ້ນ'} ຫາ ${to || 'ປັດຈຸບັນ'}` : 'ທຸກຊ່ວງເວລາ')
+  const branchLabel = branchFilter
+    ? (branches.find(b => String(b.id) === String(branchFilter))?.name || '—')
+    : 'ທຸກສາຂາ'
+  const fileStamp = `${from || 'all'}_${to || 'now'}`
+
+  const exportDailyExcel = async () => {
+    const num = { numFmt: '#,##0' }
+    await downloadWorkbookMulti({
+      fileName: `sales_daily_${fileStamp}.xlsx`,
+      sheets: [
+        {
+          name: 'ສະຫຼຸບປະຈຳວັນ',
+          title: `ລາຍງານການຂາຍປະຈຳວັນ · ${rangeLabel} · ${branchLabel}`,
+          columns: [
+            { header: 'ວັນທີ', key: 'date', width: 14 },
+            { header: 'ຈຳນວນບິນ', key: 'count', width: 12, ...num },
+            { header: 'ຈຳນວນຊິ້ນ', key: 'qty', width: 12, ...num },
+            { header: 'ຍອດກ່ອນຫຼຸດ', key: 'gross', width: 16, ...num },
+            { header: 'ສ່ວນຫຼຸດ', key: 'discount', width: 14, ...num },
+            { header: 'ຮັບຄືນ', key: 'refund', width: 14, ...num },
+            { header: 'ລາຍຮັບສຸດທິ', key: 'total', width: 16, ...num },
+            { header: '💵 ສົດ', key: 'cash', width: 14, ...num },
+            { header: '🏦 ໂອນ', key: 'transfer', width: 14, ...num },
+            { header: '📱 QR', key: 'qr', width: 14, ...num },
+            { header: '🎯 ປະສົມ', key: 'mixed', width: 14, ...num },
+            { header: '🧾 ຕິດໜີ້', key: 'credit', width: 14, ...num },
+            { header: 'ຍອດຄ້າງຕິດໜີ້', key: 'creditRemaining', width: 16, ...num },
+            { header: 'ສະເລ່ຍ/ບິນ', key: 'avg', width: 14, ...num },
+          ],
+          rows: [
+            ...dailyBreakdown.map(d => ({
+              date: formatDate(d.date), count: d.count, qty: Math.round(d.qty),
+              gross: Math.round(d.gross), discount: Math.round(d.discount), refund: Math.round(d.refund),
+              total: Math.round(d.total), cash: Math.round(d.cash), transfer: Math.round(d.transfer),
+              qr: Math.round(d.qr), mixed: Math.round(d.mixed), credit: Math.round(d.credit),
+              creditRemaining: Math.round(d.creditRemaining),
+              avg: d.count > 0 ? Math.round(d.total / d.count) : 0,
+            })),
+            {
+              date: 'ລວມທັງໝົດ',
+              count: stats.count, qty: Math.round(stats.itemsCount),
+              gross: Math.round(stats.total + stats.discount + stats.refundTotal),
+              discount: Math.round(stats.discount), refund: Math.round(stats.refundTotal),
+              total: Math.round(stats.total),
+              cash: Math.round(stats.methods.cash.total), transfer: Math.round(stats.methods.transfer.total),
+              qr: Math.round(stats.methods.qr.total), mixed: Math.round(stats.methods.mixed.total),
+              credit: Math.round(stats.methods.credit.total),
+              creditRemaining: Math.round(stats.creditRemaining),
+              avg: Math.round(stats.avg),
+            },
+          ],
+        },
+        {
+          name: 'ລາຍລະອຽດບິນ',
+          title: `ລາຍລະອຽດບິນຂາຍ · ${rangeLabel}`,
+          columns: [
+            { header: 'ເລກບິນ', key: 'bill', width: 20 },
+            { header: 'ວັນທີ/ເວລາ', key: 'dt', width: 20 },
+            { header: 'ວິທີຊຳລະ', key: 'method', width: 12 },
+            { header: 'ລູກຄ້າ', key: 'customer', width: 24 },
+            { header: 'ເບີໂທ', key: 'phone', width: 14 },
+            { header: 'ຈຳນວນຊິ້ນ', key: 'qty', width: 12, ...num },
+            { header: 'ຍອດກ່ອນຫຼຸດ', key: 'gross', width: 16, ...num },
+            { header: 'ສ່ວນຫຼຸດ', key: 'discount', width: 14, ...num },
+            { header: 'ຮັບຄືນ', key: 'refund', width: 14, ...num },
+            { header: 'ຍອດສຸດທິ', key: 'net', width: 16, ...num },
+            { header: 'ຮັບເງິນ', key: 'paid', width: 14, ...num },
+            { header: 'ທອນ', key: 'change', width: 12, ...num },
+            { header: 'ຍອດຄ້າງ', key: 'due', width: 14, ...num },
+            { header: 'ໝາຍເຫດ', key: 'note', width: 28 },
+          ],
+          rows: filtered.map(o => {
+            const refund = Number(o.refund_total) || 0
+            const gross = Number(o.total) || 0
+            return {
+              bill: o.bill_number || `#${o.id}`,
+              dt: formatDateTime(o.created_at),
+              method: (methodMeta[o.payment_method || 'cash'] || methodMeta.cash).label,
+              customer: o.customer_name || '', phone: o.customer_phone || '',
+              qty: Math.round((o.items || []).reduce((s, it) => s + netQtyOf(it), 0)),
+              gross: Math.round(gross + (Number(o.discount) || 0)),
+              discount: Math.round(Number(o.discount) || 0),
+              refund: Math.round(refund),
+              net: Math.round(netTotalOf(o)),
+              paid: Math.round(Number(o.amount_paid) || 0),
+              change: Math.round(Number(o.change_amount) || 0),
+              due: o.payment_method === 'credit'
+                ? Math.round(Math.max(0, gross - (Number(o.amount_paid) || 0) - refund)) : 0,
+              note: o.note || '',
+            }
+          }),
+        },
+        {
+          name: 'ສິນຄ້າຂາຍດີ',
+          title: `ສິນຄ້າຂາຍດີ · ${rangeLabel}`,
+          columns: [
+            { header: 'ອັນດັບ', key: 'rank', width: 10 },
+            { header: 'ຊື່ສິນຄ້າ', key: 'name', width: 42 },
+            { header: 'ຈຳນວນ (ສຸດທິ)', key: 'qty', width: 16, ...num },
+            { header: 'ລາຍຮັບ', key: 'revenue', width: 18, ...num },
+          ],
+          rows: topProducts.map((p, i) => ({
+            rank: i + 1, name: p.name, qty: Math.round(p.qty), revenue: Math.round(p.revenue),
+          })),
+        },
+      ],
+    })
+  }
+
+  const exportDailyPdf = () => {
+    const dailyTable = {
+      title: `ສະຫຼຸບຕໍ່ວັນ (${dailyBreakdown.length} ວັນ)`,
+      columns: [
+        { header: 'ວັນທີ', align: 'left', width: '10%' },
+        { header: 'ບິນ', align: 'right', width: '6%' },
+        { header: 'ຊິ້ນ', align: 'right', width: '6%' },
+        { header: 'ຍອດກ່ອນຫຼຸດ', align: 'right' },
+        { header: 'ສ່ວນຫຼຸດ', align: 'right' },
+        { header: 'ຮັບຄືນ', align: 'right' },
+        { header: '💵 ສົດ', align: 'right' },
+        { header: '🏦 ໂອນ', align: 'right' },
+        { header: '📱 QR', align: 'right' },
+        { header: '🧾 ຕິດໜີ້', align: 'right' },
+        { header: 'ລາຍຮັບສຸດທິ', align: 'right' },
+      ],
+      rows: dailyBreakdown.map(d => [
+        formatDate(d.date), fmtNum(d.count), fmtNum(Math.round(d.qty)),
+        fmtNum(Math.round(d.gross)), fmtNum(Math.round(d.discount)), fmtNum(Math.round(d.refund)),
+        fmtNum(Math.round(d.cash)), fmtNum(Math.round(d.transfer)), fmtNum(Math.round(d.qr)),
+        fmtNum(Math.round(d.credit)), fmtNum(Math.round(d.total)),
+      ]),
+      totals: dailyBreakdown.length ? [
+        'ລວມ', fmtNum(stats.count), fmtNum(Math.round(stats.itemsCount)),
+        fmtNum(Math.round(stats.total + stats.discount + stats.refundTotal)),
+        fmtNum(Math.round(stats.discount)), fmtNum(Math.round(stats.refundTotal)),
+        fmtNum(Math.round(stats.methods.cash.total)), fmtNum(Math.round(stats.methods.transfer.total)),
+        fmtNum(Math.round(stats.methods.qr.total)), fmtNum(Math.round(stats.methods.credit.total)),
+        fmtNum(Math.round(stats.total)),
+      ] : null,
+    }
+    const topTable = {
+      title: `ສິນຄ້າຂາຍດີ (Top ${topProducts.length})`,
+      columns: [
+        { header: 'ອັນດັບ', align: 'left', width: '8%' },
+        { header: 'ຊື່ສິນຄ້າ', align: 'left' },
+        { header: 'ຈຳນວນ (ສຸດທິ)', align: 'right', width: '18%' },
+        { header: 'ລາຍຮັບ', align: 'right', width: '20%' },
+      ],
+      rows: topProducts.map((p, i) => [
+        String(i + 1), p.name, fmtNum(Math.round(p.qty)), fmtNum(Math.round(p.revenue)),
+      ]),
+    }
+    printReportA4({
+      company,
+      landscape: true,
+      title: 'ລາຍງານການຂາຍປະຈຳວັນ',
+      subtitle: 'ຍອດສຸດທິຫຼັງຫັກສ່ວນຫຼຸດ ແລະ ການຮັບຄືນສິນຄ້າ',
+      meta: [
+        { label: 'ຊ່ວງວັນທີ', value: rangeLabel },
+        { label: 'ສາຂາ', value: branchLabel },
+        { label: 'ຈຳນວນບິນ', value: `${fmtNum(stats.count)} ບິນ` },
+        ...(methodFilter ? [{ label: 'ວິທີຊຳລະ', value: (methodMeta[methodFilter] || {}).label || methodFilter }] : []),
+      ],
+      kpis: [
+        { label: 'ຈຳນວນບິນ', value: fmtNum(stats.count) },
+        { label: 'ລາຍຮັບສຸດທິ', value: fmtNum(Math.round(stats.total)), accent: 'emerald' },
+        { label: 'ສະເລ່ຍ/ບິນ', value: fmtNum(Math.round(stats.avg)), accent: 'cyan' },
+        { label: 'ສ່ວນຫຼຸດ', value: fmtNum(Math.round(stats.discount)), accent: 'amber' },
+        { label: 'ຮັບຄືນ', value: fmtNum(Math.round(stats.refundTotal)), accent: 'rose' },
+      ],
+      tables: topProducts.length ? [dailyTable, topTable] : [dailyTable],
+    })
+  }
+
   const handleDelete = async (order) => {
     if (!confirm(`ລົບບິນ ${order.bill_number || `#${order.id}`}?\nສະຕ໊ອກສິນຄ້າໃນບິນນີ້ຈະຖືກຄືນ.`)) return
     setDeletingId(order.id)
@@ -217,12 +447,22 @@ export default function Sales() {
         title="📋 ປະຫວັດການຂາຍ"
         subtitle={from || to ? `${from || '...'} → ${to || '...'} · ${fmtNum(filtered.length)} ບິນ` : `ທຸກຊ່ວງເວລາ · ${fmtNum(filtered.length)} ບິນ`}
         action={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={exportDailyExcel} disabled={filtered.length === 0}
+              className="rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-emerald-950/20"
+              title="ລາຍງານການຂາຍປະຈຳວັນ (Excel)">
+              ⬇ Excel
+            </button>
+            <button onClick={exportDailyPdf} disabled={filtered.length === 0}
+              className="rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-rose-950/20"
+              title="ລາຍງານການຂາຍປະຈຳວັນ (PDF)">
+              🖨 PDF
+            </button>
             <button onClick={exportCSV} disabled={filtered.length === 0}
               className="rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 disabled:opacity-50 px-4 py-3 text-sm font-extrabold text-white">
-              📥 Export CSV
+              📥 CSV
             </button>
-            <button onClick={load}
+            <button onClick={() => load()}
               className="rounded-xl bg-red-600 hover:bg-red-700 px-4 py-3 text-sm font-extrabold text-white shadow-lg shadow-red-950/20">
               ↻ ໂຫຼດໃໝ່
             </button>
@@ -250,7 +490,7 @@ export default function Sales() {
           <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">ຫາ</label>
           <input type="date" value={to} onChange={e => setTo(e.target.value)}
             className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs outline-none focus:border-red-500" />
-          <button onClick={load}
+          <button onClick={() => applyRange(from, to)}
             className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-[11px] font-bold">
             ຄົ້ນຫາ
           </button>
@@ -263,13 +503,23 @@ export default function Sales() {
           <button onClick={lastMonth} className="px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-white border-l border-slate-200">ເດືອນກ່ອນ</button>
         </div>
         {(from || to) && (
-          <button onClick={() => { setFrom(''); setTo(''); setTimeout(load, 0) }}
+          <button onClick={() => applyRange('', '')}
             className="text-[11px] text-slate-400 hover:text-rose-500 flex items-center gap-1">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
             ລ້າງ
           </button>
         )}
       </div>
+
+      {serverSearch && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
+          🔎 ກຳລັງຄົ້ນຫາ “{serverSearch}” ທົ່ວປະຫວັດການຂາຍ (ບໍ່ຈຳກັດຊ່ວງວັນທີ) · ພົບ {fmtNum(filtered.length)} ບິນ
+          <button onClick={clearBillSearch}
+            className="ml-auto px-2 py-1 rounded bg-white border border-amber-200 hover:bg-amber-100 text-amber-700">
+            ✕ ອອກຈາກການຄົ້ນຫາ
+          </button>
+        </div>
+      )}
 
       {/* Daily chart + top products */}
       {filtered.length > 0 && (
@@ -330,11 +580,20 @@ export default function Sales() {
 
       {/* Toolbar */}
       <div className="bg-white border border-slate-200 rounded-lg p-2 mb-3 flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[240px]">
-          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          <input type="text" placeholder="ຄົ້ນຫາ ID, ຊື່ສິນຄ້າ, ລູກຄ້າ, ໝາຍເຫດ..." value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs outline-none focus:border-red-500" />
+        <div className="relative flex-1 min-w-[300px] flex items-center gap-1.5">
+          <div className="relative flex-1">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" placeholder="ຄົ້ນຫາເລກບິນ, ID, ຊື່ສິນຄ້າ, ລູກຄ້າ, ໝາຍເຫດ... (ກົດ Enter ຄົ້ນທົ່ວປະຫວັດ)"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') runBillSearch() }}
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs outline-none focus:border-red-500" />
+          </div>
+          <button onClick={runBillSearch} disabled={loading}
+            className="shrink-0 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-md text-[11px] font-bold"
+            title="ຄົ້ນຫາທົ່ວປະຫວັດ ບໍ່ຈຳກັດຊ່ວງວັນທີ">
+            ຄົ້ນທົ່ວປະຫວັດ
+          </button>
         </div>
         <div className="flex bg-slate-50 border border-slate-200 rounded-md overflow-hidden">
           {[

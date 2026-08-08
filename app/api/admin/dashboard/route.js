@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok } from '@/lib/api';
+import { lineRevenueCTE, THIS_MONTH_WHERE } from '@/lib/salesRevenueSql';
 
 export const GET = handle(async () => {
   // Basic counts
@@ -52,14 +53,13 @@ export const GET = handle(async () => {
 
   // Top products (this month)
   const topProductsRes = await pool.query(`
-    SELECT p.product_name, p.product_code,
-      SUM(oi.quantity)::int AS total_sold,
-      SUM(oi.quantity * oi.price)::float AS total_revenue
-    FROM order_items oi
-    JOIN orders o ON o.id = oi.order_id
-    JOIN products p ON oi.product_id = p.id
-    WHERE o.created_at >= DATE_TRUNC('month', CURRENT_DATE)
-    GROUP BY p.id, p.product_name, p.product_code
+    WITH ${lineRevenueCTE(THIS_MONTH_WHERE)}
+    SELECT product_name, product_code,
+      SUM(quantity)::int AS total_sold,
+      COALESCE(SUM(line_revenue_ex_vat), 0)::float AS total_revenue
+    FROM line_net
+    WHERE product_id IS NOT NULL
+    GROUP BY product_id, product_name, product_code
     ORDER BY total_revenue DESC
     LIMIT 8
   `);
@@ -135,27 +135,24 @@ export const GET = handle(async () => {
     FROM orders ORDER BY created_at DESC LIMIT 8
   `);
 
-  // Gross profit (this month) = revenue - cost from order_items joined with products
+  // ກຳໄລຂັ້ນຕົ້ນ (ເດືອນນີ້) — ສູດດຽວກັນກັບໜ້າລາຍງານກຳໄລ/COGS:
+  // ລາຍຮັບຫຼັງຫັກສ່ວນຫຼຸດ + VAT ບໍ່ແມ່ນລາຄາປ້າຍເຕັມ
   const profitRes = await pool.query(`
+    WITH ${lineRevenueCTE(THIS_MONTH_WHERE)}
     SELECT
-      COALESCE(SUM(oi.quantity * oi.price), 0)::float AS revenue,
-      COALESCE(SUM(oi.quantity * COALESCE(oi.cost_price, p.cost_price, 0)), 0)::float AS cogs
-    FROM order_items oi
-    JOIN orders o ON o.id = oi.order_id
-    LEFT JOIN products p ON p.id = oi.product_id
-    WHERE o.created_at >= DATE_TRUNC('month', CURRENT_DATE)
+      COALESCE(SUM(line_revenue_ex_vat), 0)::float AS revenue,
+      COALESCE(SUM(line_cost), 0)::float AS cogs
+    FROM line_net
   `);
 
   // Sales by category (this month)
   const categoryRes = await pool.query(`
-    SELECT COALESCE(p.category, 'ບໍ່ມີໝວດ') AS category,
-      SUM(oi.quantity)::int AS qty,
-      SUM(oi.quantity * oi.price)::float AS revenue
-    FROM order_items oi
-    JOIN orders o ON o.id = oi.order_id
-    LEFT JOIN products p ON p.id = oi.product_id
-    WHERE o.created_at >= DATE_TRUNC('month', CURRENT_DATE)
-    GROUP BY COALESCE(p.category, 'ບໍ່ມີໝວດ')
+    WITH ${lineRevenueCTE(THIS_MONTH_WHERE)}
+    SELECT COALESCE(category_name, 'ບໍ່ມີໝວດ') AS category,
+      SUM(quantity)::int AS qty,
+      COALESCE(SUM(line_revenue_ex_vat), 0)::float AS revenue
+    FROM line_net
+    GROUP BY COALESCE(category_name, 'ບໍ່ມີໝວດ')
     ORDER BY revenue DESC
     LIMIT 8
   `);

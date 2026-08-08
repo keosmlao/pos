@@ -17,3 +17,7 @@ windows-app/bin/
 windows-app/obj/
 windows-app/out/
 windows-app/out-standalone/
+
+
+
+.scratch/

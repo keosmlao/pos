@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { usePagePermission } from '@/utils/adminPermissions';
+import { notifyLocationsChanged } from '@/utils/useLocations';
 
 const API = '/api';
 
@@ -28,7 +30,9 @@ export default function LocationsPage() {
   const [villageName, setVillageName] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [toast, setToast] = useState(null);
+  const perm = usePagePermission('/admin/locations');
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -62,6 +66,7 @@ export default function LocationsPage() {
 
   const updateLocations = (next, nextProvince = selectedProvince, nextDistrict = selectedDistrict) => {
     setLocations(next);
+    setDirty(true);
     setSelectedProvince(nextProvince || firstKey(next));
     const province = nextProvince || firstKey(next);
     setSelectedDistrict(nextDistrict || firstKey(next[province]));
@@ -151,6 +156,29 @@ export default function LocationsPage() {
     updateLocations(next, selectedProvince, selectedDistrict);
   };
 
+  // ບັນທຶກລົງຖານຂໍ້ມູນ — PUT /api/admin/locations ຮັບ { locations }
+  const save = async () => {
+    if (!Object.keys(locations).length) return showToast('ຍັງບໍ່ມີຂໍ້ມູນໃຫ້ບັນທຶກ', 'error');
+    setSaving(true);
+    try {
+      const res = await fetch(`${API}/admin/locations`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locations }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return showToast(data.error || 'ບັນທຶກບໍ່ສຳເລັດ', 'error');
+      setLocations(data.locations || locations);
+      setDirty(false);
+      notifyLocationsChanged();
+      showToast('ບັນທຶກສຳເລັດ');
+    } catch {
+      showToast('ບັນທຶກບໍ່ສຳເລັດ', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const migrateDefaults = async () => {
     if (!confirm('ນີ້ຈະຍ້າຍຂໍ້ມູນຕົ້ນຕໍຂອງສະຖານທີ່ລາວໄປເກັບໄວ້ໃນຖານຂໍ້ມູນ. ຕົກລົງບໍ?')) return;
     setSaving(true);
@@ -162,6 +190,8 @@ export default function LocationsPage() {
       const locRes = await fetch(`${API}/admin/locations`);
       const locData = await locRes.json();
       setLocations(locData.locations || {});
+      setDirty(false);
+      notifyLocationsChanged();
       showToast('ຍ້າຍຂໍ້ມູນສຳເລັດ');
     } catch {
       showToast('ຍ້າຍຂໍ້ມູນບໍ່ສຳເລັດ', 'error');
@@ -179,16 +209,23 @@ export default function LocationsPage() {
         title="📍 ກຳນົດ ແຂວງ / ເມືອງ / ບ້ານ"
         subtitle="ໃຊ້ກັບຟອມສະມາຊິກ, POS ແລະ ຜູ້ສະໜອງ"
         action={
-          <div className="flex gap-2">
-            <button onClick={migrateDefaults} disabled={saving}
-              className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-blue-950/20 disabled:opacity-50">
-              {saving ? 'ກຳລັງຍ້າຍ...' : '📥 ຍ້າຍຂໍ້ມູນຕົ້ນຕໍ'}
-            </button>
-            <button onClick={save} disabled={saving}
-              className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20 disabled:opacity-50">
-              {saving ? 'ກຳລັງບັນທຶກ...' : '💾 ບັນທຶກ'}
-            </button>
-          </div>
+          perm.edit ? (
+            <div className="flex items-center gap-2">
+              {dirty && (
+                <span className="rounded-lg bg-amber-100 px-2.5 py-1 text-[11px] font-extrabold text-amber-800">
+                  ຍັງບໍ່ໄດ້ບັນທຶກ
+                </span>
+              )}
+              <button onClick={migrateDefaults} disabled={saving}
+                className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-blue-950/20 disabled:opacity-50">
+                {saving ? 'ກຳລັງຍ້າຍ...' : '📥 ຍ້າຍຂໍ້ມູນຕົ້ນຕໍ'}
+              </button>
+              <button onClick={save} disabled={saving || !dirty}
+                className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20 disabled:opacity-50">
+                {saving ? 'ກຳລັງບັນທຶກ...' : '💾 ບັນທຶກ'}
+              </button>
+            </div>
+          ) : null
         }
       />
 

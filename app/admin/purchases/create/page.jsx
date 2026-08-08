@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import SearchSelect from '@/components/SearchSelect'
 import { generateAndPrintPurchaseA4 } from '@/utils/receiptPdfGenerator'
 import { formatDate } from '@/utils/formatDate';
+import { fileUrl } from '@/utils/fileUrl';
 
 const API = '/api'
 
@@ -232,7 +233,8 @@ export default function PurchaseCreate() {
     })
     if (res.ok) {
       const data = await res.json()
-      setInvoiceFile(data.filename)
+      // ເກັບ path ເຕັມ (/uploads/xxx) — ເກັບຊື່ໄຟລ໌ລ້າໆຈະເປີດເບິ່ງບໍ່ໄດ້ພາຍຫຼັງ
+      setInvoiceFile(data.path || `/uploads/${data.filename}`)
     } else {
       const err = await res.json().catch(() => ({}))
       alert('ອັບໂຫຼດບໍ່ສຳເລັດ: ' + (err.error || res.status))
@@ -421,7 +423,7 @@ export default function PurchaseCreate() {
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1.5">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 <span className="text-[12px] text-slate-700 flex-1 truncate">{invoiceName}</span>
-                <a href={`/uploads/${invoiceFile}`} target="_blank" rel="noreferrer" className="text-[11px] text-red-600 hover:underline">ເປີດ</a>
+                <a href={fileUrl(invoiceFile)} target="_blank" rel="noreferrer" className="text-[11px] text-red-600 hover:underline">ເປີດ</a>
                 <button onClick={() => { setInvoiceFile(null); setInvoiceName('') }} className="text-slate-400 hover:text-red-500">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>

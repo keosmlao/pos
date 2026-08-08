@@ -2,13 +2,20 @@ export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
 import { handle, ok, fail } from '@/lib/api';
-import { ensureMembersSchema, ensureOrdersSchema } from '@/lib/migrations';
+import {
+  ensureMembersSchema, ensureOrdersSchema,
+  ensureQuotationsSchema, ensureLaybysSchema,
+} from '@/lib/migrations';
 import { extractActor } from '@/lib/audit';
 import { publishEvent } from '@/lib/appEvents';
+import { recalcProductCosts } from '@/lib/productCost';
 
 export const DELETE = handle(async (request, { params }) => {
   await ensureOrdersSchema();
   await ensureMembersSchema();
+  // ການລົບບິນຍັງຄືນສະຖານະໃບສະເໜີລາຄາ ແລະ ໃບຝາກຂາຍນຳ — ຕ້ອງແນ່ໃຈວ່າມີຕາຕະລາງ
+  await ensureQuotationsSchema();
+  await ensureLaybysSchema();
   const { id } = await params;
   const numericId = Number(id);
   if (!Number.isInteger(numericId) || numericId <= 0) return fail(400, 'Invalid order id');
@@ -88,6 +95,9 @@ export const DELETE = handle(async (request, { params }) => {
 
     await client.query('DELETE FROM order_items WHERE order_id = $1', [numericId]);
     await client.query('DELETE FROM orders WHERE id = $1', [numericId]);
+    // ລົບບິນຂາຍທີ່ຢູ່ກາງປະຫວັດ ເຮັດໃຫ້ນ້ຳໜັກຂອງໃບຮັບເຂົ້າຫຼັງຈາກນັ້ນປ່ຽນ
+    // → ຕົ້ນທຶນສະເລ່ຍຕ້ອງຄຳນວນຄືນ
+    await recalcProductCosts(client, items.rows.map(i => i.product_id));
     await client.query('COMMIT');
     const actor = extractActor(request);
     publishEvent({

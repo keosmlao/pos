@@ -5,6 +5,7 @@ import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensurePurchaseRequestsSchema, ensureCompanyProfileSchema } from '@/lib/migrations';
 import { allocateDocumentNumber } from '@/lib/billNumber';
 import { extractActor } from '@/lib/audit';
+import { recalcProductCosts } from '@/lib/productCost';
 
 // Convert an approved Purchase Request into an actual Purchase entry
 // (ບີນຊື້ເຂົ້າ) in the `purchases` table — same flow as /admin/purchases POST.
@@ -78,11 +79,12 @@ export const POST = handle(async (request, { params }) => {
         [purchase.id, it.product_id, it.quantity, it.cost_price]
       );
       await client.query(
-        `UPDATE products SET qty_on_hand = qty_on_hand + $1, cost_price = $2,
-           supplier_name = COALESCE($4, supplier_name) WHERE id = $3`,
-        [it.quantity, it.cost_price, it.product_id, supplierName]
+        `UPDATE products SET qty_on_hand = qty_on_hand + $1,
+           supplier_name = COALESCE($3, supplier_name) WHERE id = $2`,
+        [it.quantity, it.product_id, supplierName]
       );
     }
+    await recalcProductCosts(client, itemsRes.rows.map(i => i.product_id));
 
     // Mark PR converted
     await client.query(

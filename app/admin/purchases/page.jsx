@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { generateAndPrintPurchaseA4, generateAndPrintPaymentReceipt } from '@/utils/receiptPdfGenerator'
 import { usePagePermission } from '@/utils/adminPermissions'
 import { formatDate, formatDateTime } from '@/utils/formatDate';
+import { fileUrl, isImageFile, isPdfFile } from '@/utils/fileUrl';
 
 const API = '/api'
 
@@ -108,7 +109,11 @@ function PurchaseRow({ purchase: p, handlePrint, handleDelete, setViewDetail, op
             <span className="text-[11px] font-mono font-bold text-red-600">#{p.id}</span>
             {p.ref_number && <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1 rounded">{p.ref_number}</span>}
             {p.sml_doc_no && <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">SML {p.sml_doc_no}</span>}
-            {p.invoice_file && <span className="text-[10px]" title="ມີເອກະສານແນບ">📎</span>}
+            {p.invoice_file && (
+              <a href={fileUrl(p.invoice_file)} target="_blank" rel="noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="text-[10px] hover:opacity-70" title="ເປີດເອກະສານແນບ">📎</a>
+            )}
           </div>
         </td>
         <td className="py-2 px-3 text-[11px] text-slate-500 font-mono whitespace-nowrap">
@@ -901,18 +906,30 @@ export default function Purchases() {
               {/* Attached invoice image / document */}
               {viewDetail.invoice_file && (
                 <div>
-                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">📎 ເອກະສານແນບ</div>
-                  {/\.(png|jpe?g|gif|webp|bmp|heic)(\?|$)/i.test(viewDetail.invoice_file) ? (
-                    <a href={viewDetail.invoice_file} target="_blank" rel="noreferrer"
+                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center justify-between">
+                    <span>📎 ເອກະສານແນບ</span>
+                    <a href={fileUrl(viewDetail.invoice_file)} target="_blank" rel="noreferrer"
+                      className="text-[10px] font-bold text-red-600 hover:underline normal-case tracking-normal">
+                      ເປີດເຕັມຈໍ ↗
+                    </a>
+                  </div>
+                  {isImageFile(viewDetail.invoice_file) ? (
+                    <a href={fileUrl(viewDetail.invoice_file)} target="_blank" rel="noreferrer"
                       className="block border border-slate-200 rounded-md overflow-hidden hover:border-red-300 transition"
                       title="ກົດເພື່ອເບິ່ງເຕັມຈໍ">
-                      <img src={viewDetail.invoice_file} alt="ເອກະສານແນບ" className="w-full max-h-56 object-contain bg-slate-50" />
+                      <img src={fileUrl(viewDetail.invoice_file)} alt="ເອກະສານແນບ"
+                        className="w-full max-h-72 object-contain bg-slate-50" />
                     </a>
+                  ) : isPdfFile(viewDetail.invoice_file) ? (
+                    <div className="border border-slate-200 rounded-md overflow-hidden bg-slate-50">
+                      <iframe src={fileUrl(viewDetail.invoice_file)} title="ເອກະສານແນບ"
+                        className="w-full h-72 bg-white" />
+                    </div>
                   ) : (
-                    <a href={viewDetail.invoice_file} target="_blank" rel="noreferrer"
+                    <a href={fileUrl(viewDetail.invoice_file)} target="_blank" rel="noreferrer"
                       className="flex items-center gap-2 p-2.5 border border-slate-200 rounded-md text-[12px] font-semibold text-slate-700 hover:bg-slate-50 hover:border-red-300 transition">
                       📄 ເປີດເອກະສານແນບ
-                      <span className="text-[10px] text-slate-400 font-mono truncate">{viewDetail.invoice_file.split('/').pop()}</span>
+                      <span className="text-[10px] text-slate-400 font-mono truncate">{String(viewDetail.invoice_file).split('/').pop()}</span>
                     </a>
                   )}
                 </div>
@@ -951,7 +968,7 @@ export default function Purchases() {
                               <span>{formatDate(pay.payment_date || pay.created_at)}{isForeign && ` • 1 ${paySym} = ${new Intl.NumberFormat('lo-LA').format(payRate)} ₭`}</span>
                               <div className="flex items-center gap-1">
                                 {pay.note && <span className="truncate max-w-[120px]">📝 {pay.note}</span>}
-                                {pay.attachment && <a href={pay.attachment} target="_blank" rel="noreferrer" className="text-red-500 hover:underline">📎</a>}
+                                {pay.attachment && <a href={fileUrl(pay.attachment)} target="_blank" rel="noreferrer" className="text-red-500 hover:underline" title="ເປີດໃບຮັບເງິນ">📎</a>}
                                 <button onClick={() => generateAndPrintPaymentReceipt(pay, viewDetail)} className="w-5 h-5 text-red-500 hover:bg-red-50 rounded flex items-center justify-center" title="ພິມ">
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                                 </button>

@@ -418,7 +418,8 @@ export default function POS({ user, onLogout }) {
   const canMakeReturn = returnsPerm.edit
   const canVoidReturn = returnsPerm.delete
   const canVoidOrder = salesPerm.delete
-  const laoLocations = useLocations()
+  const laybyPerm = getPagePermission(user, '/admin/laybys')
+  const canUseLayby = laybyPerm.edit
   const { branches, activeBranch, activeBranchId, setActiveBranchId } = useBranches()
   const initialDraftRef = useRef(null)
   if (initialDraftRef.current === null) initialDraftRef.current = readPosDraft() || {}
@@ -461,6 +462,8 @@ export default function POS({ user, onLogout }) {
   const [memberForm, setMemberForm] = useState({ name: '', phone: '', province: '', district: '', village: '' })
   const [creatingMember, setCreatingMember] = useState(false)
   const [showMemberModal, setShowMemberModal] = useState(false)
+  // ດຶງ ແຂວງ/ເມືອງ/ບ້ານ ໃໝ່ທຸກຄັ້ງທີ່ເປີດຟອມເພີ່ມລູກຄ້າ — ຈະເຫັນຂໍ້ມູນທີ່ຫຼັງບ້ານຫາກໍ່ເພີ່ມ
+  const laoLocations = useLocations(showMemberModal)
   const [showCatalog, setShowCatalog] = useState(false)
   const [showPromoList, setShowPromoList] = useState(false)
   const [lastScan, setLastScan] = useState(null)
@@ -3329,10 +3332,12 @@ export default function POS({ user, onLogout }) {
                       )}
                     </div>
                   ) : (
-                    <button type="button" onClick={openLaybyPickerForPay}
-                      className="flex-1 rounded-lg border-2 border-dashed border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50/50 px-2.5 py-1.5 text-emerald-700 text-[11px] font-extrabold transition">
-                      💰 ໃຊ້ມັດຈຳ (Layby)
-                    </button>
+                    canUseLayby && (
+                      <button type="button" onClick={openLaybyPickerForPay}
+                        className="flex-1 rounded-lg border-2 border-dashed border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50/50 px-2.5 py-1.5 text-emerald-700 text-[11px] font-extrabold transition">
+                        💰 ໃຊ້ມັດຈຳ (Layby)
+                      </button>
+                    )
                   )}
                 </div>
               )}
@@ -3730,7 +3735,7 @@ export default function POS({ user, onLogout }) {
                 </button>
                 <button onClick={() => printReceiptsSummary(todayReceipts, user, company)}
                   disabled={todayReceipts.rows.length === 0}
-                  className="px-2.5 py-1.5 rounded-md bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 text-white text-[11px] font-bold flex items-center gap-1">
+                  className="px-2.5 py-1.5 rounded-md bg-slate-700 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-500 text-white text-[11px] font-bold flex items-center gap-1">
                   🖨️ ພິມ
                 </button>
                 <button
@@ -4031,7 +4036,7 @@ export default function POS({ user, onLogout }) {
                   onClick={() => setReceiptSize(s.key)}
                   className={`flex-1 rounded-md py-1.5 text-center text-xs font-bold transition ${
                     receiptSize === s.key
-                      ? 'bg-red-600 text-white shadow'
+                      ? 'no-theme-flip bg-red-600 text-white shadow'
                       : 'text-slate-600 hover:bg-white'
                   }`}
                 >
@@ -4546,7 +4551,7 @@ export default function POS({ user, onLogout }) {
                 </div>
 
                 {/* Sticky summary bar */}
-                <div className="sticky bottom-0 z-10 rounded-xl border-2 border-blue-500 bg-gradient-to-r from-blue-600 to-blue-700 p-3 shadow-xl shadow-blue-500/20">
+                <div className="no-theme-flip sticky bottom-0 z-10 rounded-xl border-2 border-blue-500 bg-gradient-to-r from-blue-600 to-blue-700 p-3 shadow-xl shadow-blue-500/20">
                   <div className="flex items-center justify-between gap-3 text-white">
                     <div>
                       <div className="text-[10px] font-extrabold uppercase tracking-widest text-blue-100">ຍອດຕ້ອງຄືນເງິນ</div>

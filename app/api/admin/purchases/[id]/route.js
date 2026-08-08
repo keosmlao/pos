@@ -4,6 +4,7 @@ import pool from '@/lib/db';
 import { handle, ok, fail } from '@/lib/api';
 import { extractActor } from '@/lib/audit';
 import { publishEvent } from '@/lib/appEvents';
+import { recalcProductCosts } from '@/lib/productCost';
 
 export const DELETE = handle(async (request, { params }) => {
   const { id } = await params;
@@ -39,6 +40,8 @@ export const DELETE = handle(async (request, { params }) => {
 
     await client.query('DELETE FROM debt_payments WHERE purchase_id = $1', [id]);
     await client.query('DELETE FROM purchase_items WHERE purchase_id = $1', [id]);
+    // ລົບໃບຮັບເຂົ້າແລ້ວ ຕົ້ນທຶນຕ້ອງກັບໄປຕາມເອກະສານທີ່ຍັງເຫຼືອ
+    await recalcProductCosts(client, items.rows.map(i => i.product_id));
     await client.query('UPDATE pending_invoices SET purchase_id = NULL WHERE purchase_id = $1', [id]);
     await client.query('DELETE FROM purchases WHERE id = $1', [id]);
 

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { adminMenuSections, isMenuItemActive, normalizePermissions } from '@/utils/adminPermissions';
+import { adminMenuSections, isMenuItemActive } from '@/utils/adminPermissions';
+import { effectivePermissions } from '@/lib/permissions';
 import ThemeToggle from '@/components/admin/ThemeToggle';
 import * as LucideIcons from 'lucide-react';
 
@@ -52,7 +53,7 @@ function HighlightText({ text, query }) {
 
 // ── Main component ─────────────────────────────────────────────────
 export default function AdminSidebar({ company, pathname, user, onClose, onBackToPos, collapsed = false, onToggleCollapse }) {
-  const permissions = useMemo(() => normalizePermissions(user?.permissions), [user?.permissions]);
+  const permissions = useMemo(() => effectivePermissions(user), [user]);
   const visibleSections = useMemo(() => {
     if (user?.role === 'admin') return adminMenuSections;
     return adminMenuSections

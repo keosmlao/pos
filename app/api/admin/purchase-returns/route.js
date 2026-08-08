@@ -5,6 +5,7 @@ import { fail, handle, ok, readJson } from '@/lib/api';
 import { ensurePurchaseReturnsSchema, ensureCompanyProfileSchema } from '@/lib/migrations';
 import { allocateDocumentNumber } from '@/lib/billNumber';
 import { publishEvent } from '@/lib/appEvents';
+import { recalcProductCosts } from '@/lib/productCost';
 
 // ສົ່ງເຄື່ອງຄືນໃຫ້ຜູ້ສະໜອງ — ອ້າງອີງບິນຊື້ເຂົ້າ, ຄືນບາງສ່ວນ ຫຼື ເຕັມຈຳນວນ
 //
@@ -192,6 +193,9 @@ export const POST = handle(async (request) => {
         [ret.id, it.purchase_item_id, it.product_id, it.quantity, it.cost_price, it.net_price, it.amount]
       );
     }
+
+    // ສົ່ງຄືນຜູ້ສະໜອງເປັນການຈ່າຍອອກຕາມລາຄາຊື້ຈິງ — ຕົ້ນທຶນສະເລ່ຍຈຶ່ງປ່ຽນ
+    await recalcProductCosts(client, normalized.map(i => i.product_id));
 
     // ຫັກອອກຈາກໜີ້ຄ້າງ — ຖືເປັນການຊຳລະລ່ວງໜ້າໃສ່ບິນນັ້ນ (ໜ້າໜີ້ຜູ້ສະໜອງຄິດ total − paid)
     if (settleMode === 'debt') {

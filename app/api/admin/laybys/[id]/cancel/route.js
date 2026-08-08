@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { handle, ok, fail } from '@/lib/api';
 import { ensureLaybysSchema } from '@/lib/migrations';
+import { recalcProductCosts } from '@/lib/productCost';
 
 // Cancel layby: return stock; deposit refund tracked but the actual cash refund
 // is handled separately (admin records via cash transactions).
@@ -32,6 +33,7 @@ export const POST = handle(async (_request, { params }) => {
       `UPDATE laybys SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW() WHERE id = $1`,
       [lid]
     );
+    await recalcProductCosts(client, itemsRes.rows.map(i => i.product_id));
     await client.query('COMMIT');
     return ok({ cancelled: lid, deposit_to_refund: Number(layby.paid) });
   } catch (e) {

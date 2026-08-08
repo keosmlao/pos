@@ -23,8 +23,12 @@ export const PUT = handle(async (request, { params }) => {
   const cleanDisplayName = String(display_name || '').trim();
   const cleanRole = validRoles.has(role) ? role : 'cashier';
   const cleanPermissions = normalizePermissions(permissions, cleanRole);
-  const commission = Math.max(0, Math.min(100, Number(commission_rate) || 0));
-  const target = Math.max(0, Number(sales_target) || 0);
+  // ຟິວທີ່ບໍ່ໄດ້ສົ່ງມາ = ບໍ່ປ່ຽນ (ບໍ່ດັ່ງນັ້ນການແກ້ສິດຈະລ້າງ ຄ່າຄອມ/ເປົ້າ/ສາຂາ ຖິ້ມ)
+  const commission = commission_rate === undefined || commission_rate === null
+    ? null : Math.max(0, Math.min(100, Number(commission_rate) || 0));
+  const target = sales_target === undefined || sales_target === null
+    ? null : Math.max(0, Number(sales_target) || 0);
+  const branchProvided = branch_id !== undefined;
   const branch = Number(branch_id) || null;
   if (!cleanUsername) return fail(400, 'ກະລຸນາປ້ອນ username');
   if (!cleanDisplayName) return fail(400, 'ກະລຸນາປ້ອນຊື່ສະແດງ');
@@ -43,11 +47,13 @@ export const PUT = handle(async (request, { params }) => {
       return fail(400, 'ບໍ່ສາມາດປ່ຽນ admin ຄົນສຸດທ້າຍໄດ້');
     }
 
-    const values = [cleanUsername, cleanDisplayName, cleanRole, JSON.stringify(cleanPermissions), commission, target, branch, numericId];
+    const values = [cleanUsername, cleanDisplayName, cleanRole, JSON.stringify(cleanPermissions), commission, target, branch, numericId, branchProvided];
     let query = `
       UPDATE users
       SET username = $1, display_name = $2, role = $3, permissions = $4::jsonb,
-          commission_rate = $5, sales_target = $6, branch_id = $7
+          commission_rate = COALESCE($5, commission_rate),
+          sales_target = COALESCE($6, sales_target),
+          branch_id = CASE WHEN $9::boolean THEN $7 ELSE branch_id END
       WHERE id = $8
       RETURNING id, username, display_name, role, permissions, commission_rate, sales_target, branch_id, created_at
     `;
