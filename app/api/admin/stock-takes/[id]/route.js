@@ -47,12 +47,14 @@ export const PUT = handle(async (request, { params }) => {
       for (const it of body.items) {
         const counted = it.counted === '' || it.counted == null ? null : Number(it.counted);
         await client.query(
+          // ຕ້ອງ cast $1 ໃຫ້ຊັດເຈນ — ຢູ່ໃນ CASE WHEN $1 IS NULL ຝ່າຍດຽວ
+          // Postgres ຫາປະເພດຂໍ້ມູນບໍ່ໄດ້ ແລ້ວຈະ error ທຸກເທື່ອທີ່ບັນທຶກ
           `UPDATE stock_take_items
-           SET counted = $1,
-               delta = CASE WHEN $1 IS NULL THEN NULL ELSE $1 - expected END,
-               note = $2,
-               counted_at = CASE WHEN $1 IS NULL THEN NULL ELSE NOW() END
-           WHERE id = $3 AND stock_take_id = $4`,
+           SET counted = $1::numeric,
+               delta = CASE WHEN $1::numeric IS NULL THEN NULL ELSE $1::numeric - expected END,
+               note = $2::text,
+               counted_at = CASE WHEN $1::numeric IS NULL THEN NULL ELSE NOW() END
+           WHERE id = $3::int AND stock_take_id = $4::int`,
           [counted, it.note || null, Number(it.id), tid]
         );
       }
