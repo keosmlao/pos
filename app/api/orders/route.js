@@ -9,6 +9,7 @@ import { applyRounding } from '@/lib/rounding';
 import { extractActor, logAudit } from '@/lib/audit';
 import { publishEvent } from '@/lib/appEvents';
 import { runSchemaMigrations } from '@/lib/schemaMigrations';
+import { earnWindowState, redeemWindowState } from '@/lib/loyaltyWindow';
 
 export const GET = handle(async () => {
   await ensureOrdersSchema();
@@ -89,7 +90,11 @@ export const POST = handle(async (request) => {
               bill_number_seq_reset, bill_number_start,
               vat_enabled, vat_rate, vat_mode, vat_label,
               rounding_mode, rounding_step,
-              points_lifetime_months
+              points_lifetime_months,
+              to_char(points_earn_start, 'YYYY-MM-DD') AS points_earn_start,
+              to_char(points_earn_end, 'YYYY-MM-DD') AS points_earn_end,
+              to_char(points_redeem_deadline, 'YYYY-MM-DD') AS points_redeem_deadline,
+              to_char(CURRENT_DATE, 'YYYY-MM-DD') AS server_date
        FROM company_profile WHERE id = 1`
     );
     const settings = settingsRes.rows[0] || {};
@@ -195,6 +200,20 @@ export const POST = handle(async (request) => {
     const goldT = Number(settings.tier_gold_threshold) || 20000000;
     const platinumT = Number(settings.tier_platinum_threshold) || 50000000;
 
+    const today = settings.server_date || null;
+    const lifetimeMonths = Math.max(0, Number(settings.points_lifetime_months) || 0);
+
+    // ລ້າງແຕ້ມທີ່ໝົດອາຍຸ *ກ່ອນ* ກວດຍອດ — ບໍ່ດັ່ງນັ້ນລູກຄ້າຈະໃຊ້ແຕ້ມທີ່ໝົດອາຍຸແລ້ວໄດ້
+    if (member && lifetimeMonths > 0) {
+      const expired = await client.query(
+        `UPDATE members SET points = 0, updated_at = NOW()
+         WHERE id = $1 AND points_expires_at IS NOT NULL AND points_expires_at < CURRENT_DATE
+         RETURNING id`,
+        [member.id]
+      );
+      if (expired.rowCount > 0) member.points = 0;
+    }
+
     let pointsUsedNum = Math.max(0, parseInt(points_used, 10) || 0);
     if (pointsUsedNum > 0) {
       if (!loyaltyEnabled || redeemValue <= 0) {
@@ -204,6 +223,11 @@ export const POST = handle(async (request) => {
       if (!member) {
         await client.query('ROLLBACK');
         return fail(400, 'points_used requires a member');
+      }
+      const redeemWin = redeemWindowState(settings, member, today);
+      if (!redeemWin.open) {
+        await client.query('ROLLBACK');
+        return fail(400, redeemWin.reason);
       }
       if (pointsUsedNum > (Number(member.points) || 0)) {
         await client.query('ROLLBACK');
@@ -215,7 +239,9 @@ export const POST = handle(async (request) => {
       }
     }
     const pointsDiscount = pointsUsedNum * redeemValue;
-    const pointsEarned = (member && loyaltyEnabled) ? Math.floor(totalNum / perAmount) : 0;
+    // ໄດ້ແຕ້ມສະເພາະບິນທີ່ຢູ່ໃນຊ່ວງນັບສະສົມທີ່ຕັ້ງໄວ້
+    const earnWin = earnWindowState(settings, today);
+    const pointsEarned = (member && loyaltyEnabled && earnWin.open) ? Math.floor(totalNum / perAmount) : 0;
 
     const orderResult = await client.query(
       `INSERT INTO orders (
@@ -303,19 +329,7 @@ export const POST = handle(async (request) => {
 
     if (member) {
       const pointsDelta = pointsEarned - pointsUsedNum;
-      const lifetimeMonths = Math.max(0, Number(settings.points_lifetime_months) || 0);
-      // First zero expired points (if any), then apply delta and refresh expiry
-      // when new points are granted.
-      if (lifetimeMonths > 0) {
-        await client.query(
-          `UPDATE members
-           SET points = 0
-           WHERE id = $1
-             AND points_expires_at IS NOT NULL
-             AND points_expires_at < CURRENT_DATE`,
-          [member.id]
-        );
-      }
+      // ແຕ້ມທີ່ໝົດອາຍຸຖືກລ້າງໄປແລ້ວກ່ອນກວດຍອດຂ້າງເທິງ
       await client.query(
         `UPDATE members
          SET points = GREATEST(0, points + $1),

@@ -6,6 +6,27 @@ import { usePagePermission } from '@/utils/adminPermissions';
 import { formatDateTime } from '@/utils/formatDate';
 
 const API = '/api';
+
+// ຂັ້ນປັດເສດ — ຕົວເລກ = ຈຳນວນ 0 ທ້າຍ (100 = 2 ຫຼັກ, 1,000 = 3 ຫຼັກ)
+const ROUND_STEPS = [
+  { step: 0, label: 'ບໍ່ປັດ', hint: 'ຄືນເຕັມຈຳນວນ' },
+  { step: 100, label: '100', hint: '2 ຫຼັກ' },
+  { step: 1000, label: '1,000', hint: '3 ຫຼັກ' },
+  { step: 10000, label: '10,000', hint: '4 ຫຼັກ' },
+];
+const ROUND_MODES = [
+  { key: 'nearest', label: 'ໃກ້ສຸດ' },
+  { key: 'down', label: 'ປັດລົງ' },
+  { key: 'up', label: 'ປັດຂຶ້ນ' },
+];
+const roundAmount = (amount, mode, step) => {
+  const v = Number(amount) || 0;
+  const st = Math.max(0, Number(step) || 0);
+  if (st <= 0 || mode === 'none') return v;
+  if (mode === 'up') return Math.ceil(v / st) * st;
+  if (mode === 'down') return Math.floor(v / st) * st;
+  return Math.round(v / st) * st;
+};
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Number(n) || 0);
 const fmtPrice = n => `${fmtNum(Math.round(Number(n) || 0))} ₭`;
 const fmtDate = s => s ? formatDateTime(s) : '—';
@@ -23,6 +44,9 @@ export default function ReturnsPage() {
   const [lookup, setLookup] = useState(null);
   const [qty, setQty] = useState({});
   const [refundMethod, setRefundMethod] = useState('cash');
+  const [extraDeduction, setExtraDeduction] = useState(0);
+  const [roundStep, setRoundStep] = useState(0);
+  const [roundMode, setRoundMode] = useState('nearest');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -112,7 +136,13 @@ export default function ReturnsPage() {
     <thead><tr><th>#</th><th>ສິນຄ້າ</th><th class="right">ຈຳນວນຄືນ</th><th class="right">ລາຄາ</th><th class="right">ລວມ</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="5">ບໍ່ມີລາຍການ</td></tr>'}</tbody>
   </table>
-  <div class="total"><div class="row"><span>ຍອດຄືນເງິນ</span><span class="money">${fmtPrice(ret.refund_amount)}</span></div></div>
+  <div class="total">
+    ${Number(ret.discount_amount) > 0 ? `<div class="row" style="background:#f8fafc;color:#334155;font-size:12px;font-weight:700"><span>ມູນຄ່າສິນຄ້າ</span><span class="money">${fmtPrice(ret.gross_amount)}</span></div>
+    <div class="row" style="background:#f8fafc;color:#334155;font-size:12px;font-weight:700"><span>ຫັກສ່ວນຫຼຸດຕາມບິນຂາຍ</span><span class="money">−${fmtPrice(ret.discount_amount)}</span></div>` : ''}
+    ${Number(ret.extra_deduction) > 0 ? `<div class="row" style="background:#f8fafc;color:#334155;font-size:12px;font-weight:700"><span>ຫັກເພີ່ມ</span><span class="money">−${fmtPrice(ret.extra_deduction)}</span></div>` : ''}
+    ${Number(ret.rounding_adjustment) !== 0 ? `<div class="row" style="background:#f8fafc;color:#334155;font-size:12px;font-weight:700"><span>ປັດເສດ</span><span class="money">${Number(ret.rounding_adjustment) > 0 ? '+' : '−'}${fmtPrice(Math.abs(Number(ret.rounding_adjustment)))}</span></div>` : ''}
+    <div class="row"><span>ຍອດຄືນເງິນ</span><span class="money">${fmtPrice(ret.refund_amount)}</span></div>
+  </div>
   ${ret.note ? `<div class="note"><b>ໝາຍເຫດ:</b> ${esc(ret.note)}</div>` : ''}
   <div class="sign">
     <div><div class="line"></div>ຜູ້ຮັບຄືນ</div>
@@ -163,6 +193,10 @@ export default function ReturnsPage() {
       }
       setLookup(data);
       setQty({});
+      setExtraDeduction(0);
+      const r = data?.rounding || {};
+      setRoundStep(Number(r.step) || 0);
+      setRoundMode(r.mode && r.mode !== 'none' ? r.mode : 'nearest');
     } finally {
       setLoading(false);
     }
@@ -179,7 +213,15 @@ export default function ReturnsPage() {
       .map(it => ({ ...it, quantity: Math.max(0, Number(qty[it.order_item_id]) || 0) }))
       .filter(it => it.quantity > 0);
   }, [lookup, qty]);
-  const refundTotal = selectedItems.reduce((s, it) => s + it.quantity * Number(it.price || 0), 0);
+  const pricing = lookup?.pricing || {};
+  const netPriceOf = (it) => (it.net_price != null ? Number(it.net_price) : Number(it.price || 0));
+  const grossTotal = selectedItems.reduce((s, it) => s + it.quantity * Number(it.price || 0), 0);
+  const netTotal = Math.round(selectedItems.reduce((s, it) => s + it.quantity * netPriceOf(it), 0));
+  const billDiscount = Math.max(0, Math.round(grossTotal) - netTotal);
+  const deduction = Math.max(0, Math.min(netTotal, Math.round(Number(extraDeduction) || 0)));
+  const afterDeduction = Math.max(0, netTotal - deduction);
+  const refundTotal = Math.max(0, Math.round(roundAmount(afterDeduction, roundStep > 0 ? roundMode : 'none', roundStep)));
+  const roundingAdj = refundTotal - afterDeduction;
 
   const submitReturn = async () => {
     if (!lookup?.order?.id || selectedItems.length === 0) return showToast('ກະລຸນາເລືອກສິນຄ້າທີ່ຈະຮັບຄືນ', 'error');
@@ -193,6 +235,9 @@ export default function ReturnsPage() {
           refund_method: refundMethod,
           note,
           created_by: 'admin',
+          extra_deduction: deduction,
+          rounding_step: roundStep,
+          rounding_mode: roundStep > 0 ? roundMode : 'none',
           items: selectedItems.map(it => ({ order_item_id: it.order_item_id, quantity: it.quantity })),
         }),
       });
@@ -206,7 +251,7 @@ export default function ReturnsPage() {
         customer_phone: lookup.order.customer_phone,
       });
       showToast(`ຮັບຄືນສຳເລັດ ${data.return_number}`);
-      setLookup(null); setQty({}); setNote('');
+      setLookup(null); setQty({}); setNote(''); setExtraDeduction(0);
       await loadReturns();
     } finally {
       setSaving(false);
@@ -312,12 +357,21 @@ export default function ReturnsPage() {
                             {it.returned_qty > 0 && <span>ຄືນແລ້ວ <b className="text-amber-600">{fmtNum(it.returned_qty)}</b></span>}
                             <span>ຄືນໄດ້ <b className="text-emerald-600">{fmtNum(it.returnable_qty)}</b></span>
                             <span className="text-slate-300">·</span>
-                            <span>ລາຄາ <b className="text-slate-700 font-mono">{fmtNum(it.price)}</b> ₭</span>
+                            {netPriceOf(it) < Number(it.price || 0) - 0.5 ? (
+                              <span>
+                                ລາຄາ <b className="text-slate-400 font-mono line-through">{fmtNum(it.price)}</b>
+                                {' → '}
+                                <b className="text-emerald-700 font-mono">{fmtNum(netPriceOf(it))}</b> ₭
+                                <span className="ml-1 text-[10px] text-emerald-600">(ຫຼັງຫຼຸດ)</span>
+                              </span>
+                            ) : (
+                              <span>ລາຄາ <b className="text-slate-700 font-mono">{fmtNum(it.price)}</b> ₭</span>
+                            )}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">
                           <div className={`font-mono text-base font-extrabold ${isSelected ? 'text-red-700' : 'text-slate-300'}`}>
-                            {fmtPrice(val * Number(it.price || 0))}
+                            {fmtPrice(val * netPriceOf(it))}
                           </div>
                         </div>
                       </div>
@@ -368,6 +422,53 @@ export default function ReturnsPage() {
                 </div>
               </div>
               <div>
+                <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">
+                  ປັດເສດຍອດຄືນເງິນ
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {ROUND_STEPS.map((r) => (
+                    <button key={r.step} type="button" onClick={() => setRoundStep(r.step)}
+                      className={`rounded-lg border-2 py-2 transition ${
+                        roundStep === r.step ? 'border-red-500 bg-red-50' : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}>
+                      <div className={`text-xs font-extrabold ${roundStep === r.step ? 'text-red-700' : 'text-slate-700'}`}>{r.label}</div>
+                      <div className="text-[9px] text-slate-400">{r.hint}</div>
+                    </button>
+                  ))}
+                </div>
+                {roundStep > 0 && (
+                  <div className="mt-1.5 flex gap-1.5">
+                    {ROUND_MODES.map((m) => (
+                      <button key={m.key} type="button" onClick={() => setRoundMode(m.key)}
+                        className={`flex-1 rounded-lg border py-1.5 text-[11px] font-extrabold transition ${
+                          roundMode === m.key ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        }`}>
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {roundStep > 0 && roundingAdj !== 0 && (
+                  <div className={`mt-1 text-[10px] font-bold ${roundingAdj > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    {roundingAdj > 0 ? `ຈ່າຍເພີ່ມ +${fmtNum(roundingAdj)} ₭` : `ຫຼຸດລົງ ${fmtNum(roundingAdj)} ₭`} ຈາກການປັດເສດ
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">
+                  ຫັກເພີ່ມ (ຄ່າທຳນຽມ / ສິນຄ້າເສຍຫາຍ)
+                </div>
+                <div className="relative">
+                  <input
+                    type="number" min="0" max={netTotal} value={extraDeduction || ''}
+                    onChange={(e) => setExtraDeduction(Math.max(0, Math.min(netTotal, Number(e.target.value) || 0)))}
+                    placeholder="0"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 pr-10 text-sm font-mono font-bold text-right outline-none focus:border-red-400 focus:ring-2 focus:ring-red-500/10" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">₭</span>
+                </div>
+                <div className="mt-1 text-[10px] text-slate-400">ວ່າງໄວ້ = ບໍ່ຫັກ · ຄືນເຕັມຕາມທີ່ລູກຄ້າຈ່າຍຈິງ</div>
+              </div>
+              <div>
                 <div className="text-[10px] font-extrabold uppercase tracking-widest text-slate-500 mb-1.5">ໝາຍເຫດ / ເຫດຜົນ</div>
                 <textarea value={note} onChange={e => setNote(e.target.value)}
                   placeholder="ສິນຄ້າຊຳລຸດ, ບໍ່ຖືກໃຈ, ສິນຄ້າຜິດ..."
@@ -385,6 +486,14 @@ export default function ReturnsPage() {
                   <div className="text-[11px] font-bold text-blue-200 mt-0.5">
                     {totalItemsCount > 0 ? `${fmtNum(totalItemsCount)} ຊິ້ນ · ${selectedItems.length} ລາຍການ` : 'ຍັງບໍ່ໄດ້ເລືອກສິນຄ້າ'}
                   </div>
+                  {(billDiscount > 0 || deduction > 0 || roundingAdj !== 0) && (
+                    <div className="mt-1 text-[11px] font-mono text-blue-100 space-y-0.5">
+                      <div>ມູນຄ່າສິນຄ້າ {fmtPrice(grossTotal)}</div>
+                      {billDiscount > 0 && <div>− ສ່ວນຫຼຸດຕາມບິນຂາຍ {fmtPrice(billDiscount)}</div>}
+                      {deduction > 0 && <div>− ຫັກເພີ່ມ {fmtPrice(deduction)}</div>}
+                      {roundingAdj !== 0 && <div>{roundingAdj > 0 ? '+' : '−'} ປັດເສດ {fmtPrice(Math.abs(roundingAdj))}</div>}
+                    </div>
+                  )}
                 </div>
                 {perm.edit && (
                 <button onClick={submitReturn} disabled={saving || refundTotal <= 0}

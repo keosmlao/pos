@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import pool from '@/lib/db';
-import { handle, ok } from '@/lib/api';
+import { handle, ok, fail } from '@/lib/api';
 import { extractActor } from '@/lib/audit';
 import { publishEvent } from '@/lib/appEvents';
 
@@ -19,6 +19,15 @@ export const DELETE = handle(async (request, { params }) => {
       [id]
     );
     const purchase = purchaseRes.rows[0];
+
+    // ບິນທີ່ມີໃບສົ່ງຄືນຜູ້ສະໜອງແລ້ວ ລົບບໍ່ໄດ້ — ຕ້ອງຍົກເລີກໃບສົ່ງຄືນກ່ອນ
+    const prCount = await client.query(
+      `SELECT COUNT(*)::int AS n FROM purchase_returns WHERE purchase_id = $1`, [id]
+    ).catch(() => ({ rows: [{ n: 0 }] }));
+    if (Number(prCount.rows[0]?.n) > 0) {
+      await client.query('ROLLBACK');
+      return fail(400, 'ບິນນີ້ມີໃບສົ່ງຄືນຜູ້ສະໜອງແລ້ວ — ກະລຸນາຍົກເລີກໃບສົ່ງຄືນກ່ອນ');
+    }
 
     const items = await client.query('SELECT * FROM purchase_items WHERE purchase_id = $1', [id]);
     for (const item of items.rows) {

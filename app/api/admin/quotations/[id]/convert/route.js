@@ -4,6 +4,7 @@ import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureQuotationsSchema, ensureOrdersSchema, ensureMembersSchema, ensureCompanyProfileSchema } from '@/lib/migrations';
 import { allocateBillNumber } from '@/lib/billNumber';
+import { earnWindowState } from '@/lib/loyaltyWindow';
 
 /**
  * Convert a quotation into a credit order (ບິນຂາຍຕິດໜີ້).
@@ -93,8 +94,11 @@ export const POST = handle(async (request, { params }) => {
     const settingsRes = await client.query(
       `SELECT bill_number_template, bill_number_prefix, bill_number_seq_digits,
               bill_number_seq_reset, bill_number_start,
-              loyalty_enabled, points_per_amount,
-              tier_silver_threshold, tier_gold_threshold, tier_platinum_threshold
+              loyalty_enabled, points_per_amount, points_lifetime_months,
+              tier_silver_threshold, tier_gold_threshold, tier_platinum_threshold,
+              to_char(points_earn_start, 'YYYY-MM-DD') AS points_earn_start,
+              to_char(points_earn_end, 'YYYY-MM-DD') AS points_earn_end,
+              to_char(CURRENT_DATE, 'YYYY-MM-DD') AS server_date
        FROM company_profile WHERE id = 1`
     );
     const settings = settingsRes.rows[0] || {};
@@ -102,7 +106,9 @@ export const POST = handle(async (request, { params }) => {
 
     const loyaltyEnabled = settings.loyalty_enabled !== false;
     const perAmount = Math.max(1, Number(settings.points_per_amount) || 10000);
-    const pointsEarned = (member && loyaltyEnabled) ? Math.floor(total / perAmount) : 0;
+    // ຕ້ອງຢູ່ໃນຊ່ວງນັບສະສົມຄືກັນກັບບິນ POS
+    const earnWin = earnWindowState(settings, settings.server_date || null);
+    const pointsEarned = (member && loyaltyEnabled && earnWin.open) ? Math.floor(total / perAmount) : 0;
 
     // Create the credit order (carry VAT fields from quotation)
     const orderRes = await client.query(
@@ -148,6 +154,15 @@ export const POST = handle(async (request, { params }) => {
       const silverT = Number(settings.tier_silver_threshold) || 5000000;
       const goldT = Number(settings.tier_gold_threshold) || 20000000;
       const platinumT = Number(settings.tier_platinum_threshold) || 50000000;
+      const lifetimeMonths = Math.max(0, Number(settings.points_lifetime_months) || 0);
+      // ລ້າງແຕ້ມໝົດອາຍຸກ່ອນບວກແຕ້ມໃໝ່ ຄືກັບເສັ້ນທາງ POS
+      if (lifetimeMonths > 0) {
+        await client.query(
+          `UPDATE members SET points = 0, updated_at = NOW()
+           WHERE id = $1 AND points_expires_at IS NOT NULL AND points_expires_at < CURRENT_DATE`,
+          [member.id]
+        );
+      }
       await client.query(
         `UPDATE members SET
            points = GREATEST(0, points + $1),
@@ -158,9 +173,13 @@ export const POST = handle(async (request, { params }) => {
              WHEN total_spent + $2 >= $6 THEN 'silver'
              ELSE tier
            END,
+           points_expires_at = CASE
+             WHEN $7 > 0 AND $1 > 0 THEN (CURRENT_DATE + ($7 || ' months')::interval)::date
+             ELSE points_expires_at
+           END,
            updated_at = NOW()
          WHERE id = $3`,
-        [pointsEarned, total, member.id, platinumT, goldT, silverT]
+        [pointsEarned, total, member.id, platinumT, goldT, silverT, lifetimeMonths]
       );
     }
 

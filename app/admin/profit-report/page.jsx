@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { downloadWorkbookMulti } from '@/utils/excelClient';
+import { printReportA4 } from '@/utils/reportPrint';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(Math.round(Number(n) || 0));
 const fmtPrice = n => `${fmtNum(n)} ₭`;
+const round = n => Math.round(Number(n) || 0);
 
 const QUICK_RANGES = [
   { key: 'today', label: 'ມື້ນີ້' },
@@ -16,9 +19,11 @@ const QUICK_RANGES = [
   { key: 'ytd', label: 'ປີນີ້' },
 ];
 
+// ວັນທີແບບ local — ຫ້າມໃຊ້ toISOString() ເພາະມັນປ່ຽນເປັນ UTC ແລ້ວວັນເລື່ອນ 1 ວັນ (ລາວ = UTC+7)
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 function getRange(key) {
   const today = new Date();
-  const iso = d => d.toISOString().slice(0, 10);
   if (key === 'today') return { from: iso(today), to: iso(today) };
   if (key === '7d') { const from = new Date(today); from.setDate(today.getDate() - 6); return { from: iso(from), to: iso(today) }; }
   if (key === 'month') { const from = new Date(today.getFullYear(), today.getMonth(), 1); return { from: iso(from), to: iso(today) }; }
@@ -38,32 +43,185 @@ export default function ProfitReportPage() {
   const initial = getRange('month');
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
+  const [query, setQuery] = useState(initial);   // ຊ່ວງທີ່ຄົ້ນຫາໄປແລ້ວຈິງ
+  const [search, setSearch] = useState('');
   const [tab, setTab] = useState('products');
   const [data, setData] = useState(null);
+  const [company, setCompany] = useState({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const params = new URLSearchParams();
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
+      if (query.from) params.set('from', query.from);
+      if (query.to) params.set('to', query.to);
+      params.set('limit', 'all');
       const res = await fetch(`${API}/admin/profit-report?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
-    } catch {
+    } catch (e) {
       setData(null);
+      setError(`ດຶງຂໍ້ມູນບໍ່ໄດ້: ${e.message}`);
     }
     setLoading(false);
+  }, [query]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    fetch(`${API}/company`).then(r => r.json()).then(setCompany).catch(() => {});
+  }, []);
+
+  const runSearch = () => {
+    if (from && to && from > to) { setError('ວັນທີເລີ່ມຕ້ອງບໍ່ຫຼັງວັນທີສິ້ນສຸດ'); return; }
+    setQuery({ from, to });
+  };
+  const applyRange = (r) => { setFrom(r.from); setTo(r.to); setQuery(r); };
+  const pickMonth = (value) => {
+    const [y, m] = String(value).split('-').map(Number);
+    if (!y || !m) return;
+    const last = new Date(y, m, 0).getDate();
+    applyRange({ from: `${value}-01`, to: `${value}-${String(last).padStart(2, '0')}` });
   };
 
-  useEffect(() => { load(); }, [from, to]);
+  const dirty = from !== query.from || to !== query.to;
+  const monthValue = from && to && from.slice(0, 7) === to.slice(0, 7) ? from.slice(0, 7) : '';
 
   const summary = data?.summary || {};
-  const products = data?.products || [];
-  const categories = data?.categories || [];
   const daily = data?.daily || [];
-
   const margin = useMemo(() => marginPct(summary.revenue, summary.profit), [summary]);
+
+  const term = search.trim().toLowerCase();
+  const products = useMemo(() => {
+    const rows = data?.products || [];
+    return term ? rows.filter(r => String(r.product_name || '').toLowerCase().includes(term)) : rows;
+  }, [data, term]);
+  const categories = useMemo(() => {
+    const rows = data?.categories || [];
+    return term ? rows.filter(r => String(r.category_name || '').toLowerCase().includes(term)) : rows;
+  }, [data, term]);
+
+  const rangeLabel = `${query.from || '—'} ຫາ ${query.to || '—'}`;
+  const fileStamp = `${query.from || 'all'}_${query.to || 'all'}`;
+
+  const sumOf = (rows, key) => rows.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
+  const totalsOf = (rows) => ({
+    qty: sumOf(rows, 'qty'), revenue: sumOf(rows, 'revenue'),
+    cost: sumOf(rows, 'cost'), profit: sumOf(rows, 'profit'),
+  });
+
+  const exportExcel = async () => {
+    const money = { numFmt: '#,##0' };
+    const pct = { numFmt: '0.0"%"' };
+    const pt = totalsOf(products);
+    const ct = totalsOf(categories);
+    await downloadWorkbookMulti({
+      fileName: `profit_cogs_${fileStamp}.xlsx`,
+      sheets: [
+        {
+          name: 'ສະຫຼຸບ',
+          title: `ລາຍງານກຳໄລ / COGS · ${rangeLabel}`,
+          columns: [{ header: 'ລາຍການ', key: 'k', width: 26 }, { header: 'ມູນຄ່າ', key: 'v', width: 22, ...money }],
+          rows: [
+            { k: 'ຊ່ວງວັນທີ', v: rangeLabel },
+            { k: 'ຈຳນວນບິນຂາຍ', v: round(summary.orders) },
+            { k: 'ລາຍຮັບ (ex-VAT)', v: round(summary.revenue) },
+            { k: 'ຕົ້ນທຶນສິນຄ້າ (COGS)', v: round(summary.cost) },
+            { k: 'ກຳໄລຂັ້ນຕົ້ນ', v: round(summary.profit) },
+            { k: 'Margin %', v: Number(margin.toFixed(1)) },
+            { k: 'ຈຳນວນສິນຄ້າ', v: products.length },
+            { k: 'ຈຳນວນໝວດໝູ່', v: categories.length },
+          ],
+        },
+        {
+          name: 'ຕາມສິນຄ້າ',
+          title: `ກຳໄລ / COGS ຕາມສິນຄ້າ · ${rangeLabel}`,
+          columns: [
+            { header: '#', key: 'no', width: 6 },
+            { header: 'ສິນຄ້າ', key: 'name', width: 40 },
+            { header: 'ຈຳນວນຂາຍ', key: 'qty', width: 14, ...money },
+            { header: 'ລາຍຮັບ', key: 'revenue', width: 18, ...money },
+            { header: 'ຕົ້ນທຶນ', key: 'cost', width: 18, ...money },
+            { header: 'ກຳໄລ', key: 'profit', width: 18, ...money },
+            { header: 'Margin %', key: 'margin', width: 12, ...pct },
+          ],
+          rows: [
+            ...products.map((r, i) => ({
+              no: i + 1, name: r.product_name, qty: round(r.qty), revenue: round(r.revenue),
+              cost: round(r.cost), profit: round(r.profit), margin: Number(marginPct(r.revenue, r.profit).toFixed(1)),
+            })),
+            { no: '', name: 'ລວມທັງໝົດ', qty: round(pt.qty), revenue: round(pt.revenue), cost: round(pt.cost), profit: round(pt.profit), margin: Number(marginPct(pt.revenue, pt.profit).toFixed(1)) },
+          ],
+        },
+        {
+          name: 'ຕາມໝວດໝູ່',
+          title: `ກຳໄລ / COGS ຕາມໝວດໝູ່ · ${rangeLabel}`,
+          columns: [
+            { header: '#', key: 'no', width: 6 },
+            { header: 'ໝວດໝູ່', key: 'name', width: 32 },
+            { header: 'ຈຳນວນຂາຍ', key: 'qty', width: 14, ...money },
+            { header: 'ລາຍຮັບ', key: 'revenue', width: 18, ...money },
+            { header: 'ຕົ້ນທຶນ', key: 'cost', width: 18, ...money },
+            { header: 'ກຳໄລ', key: 'profit', width: 18, ...money },
+            { header: 'Margin %', key: 'margin', width: 12, ...pct },
+          ],
+          rows: [
+            ...categories.map((r, i) => ({
+              no: i + 1, name: r.category_name, qty: round(r.qty), revenue: round(r.revenue),
+              cost: round(r.cost), profit: round(r.profit), margin: Number(marginPct(r.revenue, r.profit).toFixed(1)),
+            })),
+            { no: '', name: 'ລວມທັງໝົດ', qty: round(ct.qty), revenue: round(ct.revenue), cost: round(ct.cost), profit: round(ct.profit), margin: Number(marginPct(ct.revenue, ct.profit).toFixed(1)) },
+          ],
+        },
+      ],
+    });
+  };
+
+  const exportPdf = () => {
+    const cols = (firstHeader) => [
+      { header: '#', align: 'right', width: '5%' },
+      { header: firstHeader, align: 'left' },
+      { header: 'ຈຳນວນ', align: 'right', width: '10%' },
+      { header: 'ລາຍຮັບ', align: 'right', width: '15%' },
+      { header: 'ຕົ້ນທຶນ', align: 'right', width: '15%' },
+      { header: 'ກຳໄລ', align: 'right', width: '15%' },
+      { header: 'Margin', align: 'right', width: '9%' },
+    ];
+    const body = (rows, nameKey) => rows.map((r, i) => [
+      String(i + 1), r[nameKey] || '—', fmtNum(r.qty), fmtPrice(r.revenue),
+      fmtPrice(r.cost), fmtPrice(r.profit), `${marginPct(r.revenue, r.profit).toFixed(1)}%`,
+    ]);
+    const totalRow = (rows) => {
+      const t = totalsOf(rows);
+      return ['', 'ລວມທັງໝົດ', fmtNum(t.qty), fmtPrice(t.revenue), fmtPrice(t.cost), fmtPrice(t.profit), `${marginPct(t.revenue, t.profit).toFixed(1)}%`];
+    };
+    printReportA4({
+      company,
+      title: 'ລາຍງານກຳໄລ / COGS',
+      subtitle: 'ກຳໄລ = ລາຍຮັບ (ບໍ່ລວມ VAT) − ຕົ້ນທຶນສິນຄ້າ',
+      meta: [
+        { label: 'ຊ່ວງວັນທີ', value: rangeLabel },
+        { label: 'ບິນຂາຍ', value: fmtNum(summary.orders) },
+        ...(term ? [{ label: 'ຄົ້ນຫາ', value: search.trim() }] : []),
+      ],
+      kpis: [
+        { label: 'ບິນຂາຍ', value: fmtNum(summary.orders) },
+        { label: 'ລາຍຮັບ (ex-VAT)', value: fmtPrice(summary.revenue), accent: 'cyan' },
+        { label: 'ຕົ້ນທຶນ (COGS)', value: fmtPrice(summary.cost), accent: 'amber' },
+        { label: 'ກຳໄລ', value: fmtPrice(summary.profit), accent: 'emerald' },
+        { label: 'Margin %', value: `${margin.toFixed(1)}%`, accent: margin >= 20 ? 'emerald' : margin >= 10 ? 'amber' : 'rose' },
+      ],
+      tables: [
+        { title: `ກຳໄລ / COGS ຕາມສິນຄ້າ (${products.length})`, columns: cols('ສິນຄ້າ'), rows: body(products, 'product_name'), totals: products.length ? totalRow(products) : null },
+        { title: `ກຳໄລ / COGS ຕາມໝວດໝູ່ (${categories.length})`, columns: cols('ໝວດໝູ່'), rows: body(categories, 'category_name'), totals: categories.length ? totalRow(categories) : null },
+      ],
+    });
+  };
+
+  const hasRows = products.length > 0 || categories.length > 0;
 
   return (
     <div className="space-y-4 pb-6">
@@ -74,35 +232,63 @@ export default function ProfitReportPage() {
       />
 
       {/* Filters */}
-      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex flex-wrap items-end gap-3">
-        <div>
-          <label className="block text-xs font-bold text-slate-600 mb-1">ຈາກວັນທີ</label>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 space-y-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1">ຈາກວັນທີ</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && runSearch()}
+              className="px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1">ຫາວັນທີ</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && runSearch()}
+              className="px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1">ເລືອກເດືອນ</label>
+            <input type="month" value={monthValue} onChange={e => pickMonth(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+          <button onClick={runSearch} disabled={loading}
+            className={`px-5 py-2 rounded-lg text-sm font-bold text-white transition disabled:opacity-50 ${dirty ? 'bg-red-600 hover:bg-red-700 ring-2 ring-red-200' : 'bg-slate-700 hover:bg-slate-800'}`}>
+            {loading ? 'ກຳລັງຄົ້ນຫາ...' : '🔍 ຄົ້ນຫາ'}
+          </button>
+          <div className="flex-1" />
+          <div className="flex gap-2">
+            <button onClick={exportExcel} disabled={!hasRows || loading}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold transition disabled:opacity-40">
+              ⬇ Excel
+            </button>
+            <button onClick={exportPdf} disabled={!hasRows || loading}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold transition disabled:opacity-40">
+              🖨 PDF
+            </button>
+          </div>
         </div>
-        <div>
-          <label className="block text-xs font-bold text-slate-600 mb-1">ຫາວັນທີ</label>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap gap-1.5">
+            {QUICK_RANGES.map(r => (
+              <button key={r.key} onClick={() => applyRange(getRange(r.key))}
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold transition">{r.label}</button>
+            ))}
+          </div>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="ຄົ້ນຫາຊື່ສິນຄ້າ / ໝວດໝູ່ ໃນລາຍງານ..."
+            className="px-3 py-2 border border-slate-200 rounded-lg text-sm min-w-[240px] flex-1"
+          />
         </div>
-        <div>
-          <label className="block text-xs font-bold text-slate-600 mb-1">ເລືອກເດືອນ</label>
-          <input type="month" value={from && from.slice(0, 7) === to?.slice(0, 7) ? from.slice(0, 7) : ''}
-            onChange={e => {
-              const [y, m] = e.target.value.split('-').map(Number);
-              if (!y || !m) return;
-              const last = new Date(y, m, 0).getDate();
-              setFrom(`${e.target.value}-01`);
-              setTo(`${e.target.value}-${String(last).padStart(2, '0')}`);
-            }}
-            className="px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+
+        <div className="text-xs text-slate-500">
+          ກຳລັງສະແດງ: <b className="text-slate-800">{rangeLabel}</b>
+          {dirty && <span className="ml-2 text-red-600 font-bold">· ວັນທີປ່ຽນແລ້ວ ກົດ “ຄົ້ນຫາ” ເພື່ອອັບເດດ</span>}
+          {term && <span className="ml-2">· ກັ່ນຕອງ “{search.trim()}”</span>}
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {QUICK_RANGES.map(r => (
-            <button key={r.key} onClick={() => { const { from: f, to: t } = getRange(r.key); setFrom(f); setTo(t); }}
-              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold transition">{r.label}</button>
-          ))}
-        </div>
+        {error && <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</div>}
       </div>
 
       {/* KPIs */}
@@ -163,6 +349,25 @@ export default function ProfitReportPage() {
                 );
               })}
             </tbody>
+            {(tab === 'products' ? products : categories).length > 0 && (
+              <tfoot className="sticky bottom-0">
+                <tr className="bg-slate-100 border-t-2 border-slate-300 font-extrabold">
+                  {(() => {
+                    const t = totalsOf(tab === 'products' ? products : categories);
+                    return (
+                      <>
+                        <td className="px-3 py-2">ລວມທັງໝົດ</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmtNum(t.qty)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmtPrice(t.revenue)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-amber-700">{fmtPrice(t.cost)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-emerald-700">{fmtPrice(t.profit)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{marginPct(t.revenue, t.profit).toFixed(1)}%</td>
+                      </>
+                    );
+                  })()}
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>

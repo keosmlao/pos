@@ -11,6 +11,7 @@ import { firstAccessibleAdminPath, getPagePermission } from '../utils/adminPermi
 import { queueOrder, queueCount, syncQueue, cacheProducts, getCachedProducts, applyQueuedStock } from '../utils/offlineQueue'
 import { normalizeVatSettings, applyVat } from '../lib/vat'
 import { applyRounding } from '../lib/rounding'
+import { earnWindowState, redeemWindowState, todayLocal, fmtLaoDate } from '../lib/loyaltyWindow'
 import SearchSelect from './SearchSelect'
 import ThemeToggle from './admin/ThemeToggle'
 import { formatDate, formatDateTime, formatTime } from '@/utils/formatDate';
@@ -485,6 +486,9 @@ export default function POS({ user, onLogout }) {
     points_per_amount: 10000,
     points_redeem_value: 0,
     min_points_to_redeem: 0,
+    points_earn_start: null,
+    points_earn_end: null,
+    points_redeem_deadline: null,
   })
   const [pointsToRedeem, setPointsToRedeem] = useState(() => Number(initialDraft.pointsToRedeem) || 0)
   const [activeCurrencyCode, setActiveCurrencyCode] = useState('LAK')
@@ -1063,7 +1067,11 @@ export default function POS({ user, onLogout }) {
   const redeemValue = Math.max(0, Number(loyaltySettings.points_redeem_value) || 0)
   const memberPointsAvail = Number(selectedMember?.points) || 0
   const maxRedeemByPrice = redeemValue > 0 ? Math.floor(afterManualDisc / redeemValue) : 0
-  const maxRedeemable = Math.min(memberPointsAvail, maxRedeemByPrice)
+  // ເງື່ອນໄຂຊ່ວງເວລາ (ຕັ້ງຢູ່ໜ້າ ຕັ້ງຄ່າແຕ້ມສະສົມ) — server ກວດຊ້ຳອີກເທື່ອຕອນບັນທຶກບິນ
+  const loyaltyToday = todayLocal()
+  const redeemWindow = redeemWindowState(loyaltySettings, selectedMember, loyaltyToday)
+  const earnWindow = earnWindowState(loyaltySettings, loyaltyToday)
+  const maxRedeemable = redeemWindow.open ? Math.min(memberPointsAvail, maxRedeemByPrice) : 0
   const pointsUsed = Math.max(0, Math.min(Number(pointsToRedeem) || 0, maxRedeemable))
   const pointsDiscountAmount = pointsUsed * redeemValue
   const discountAmount = manualDiscountAmount + promoTotalDisc + pointsDiscountAmount
@@ -1898,8 +1906,18 @@ export default function POS({ user, onLogout }) {
     <style>
       @page { size: ${isA4 ? 'A4' : 'A5'} portrait; margin: ${isA4 ? '12mm' : '8mm'} }
       * { box-sizing: border-box; font-family: 'Noto Sans Lao','Phetsarath OT',system-ui,sans-serif; }
-      html, body { margin: 0; padding: 0; color: #111; font-size: ${isA4 ? '12px' : '11px'}; line-height: 1.45 }
-      .receipt { width: 100% }
+      html, body { margin: 0; padding: 0; color: #111; font-size: ${isA4 ? '12px' : '11px'}; line-height: 1.45; -webkit-print-color-adjust: exact; print-color-adjust: exact }
+      .receipt { width: 100%; min-height: ${isA4 ? '273mm' : '194mm'}; display: flex; flex-direction: column }
+      .spacer { flex: 1 1 auto; min-height: ${isA4 ? '16px' : '10px'} }
+      .closing { break-inside: avoid; page-break-inside: avoid }
+      .sheet { height: ${isA4 ? '273mm' : '194mm'}; display: flex; flex-direction: column; overflow: hidden; break-after: page; page-break-after: always }
+      .sheet:last-child { break-after: auto; page-break-after: auto }
+      .sheet.measuring { height: auto; overflow: visible }
+      .sheet header.top { margin-bottom: ${isA4 ? '12px' : '8px'} }
+      .pagefoot { margin-top: 6px; padding-top: 4px; border-top: 1px dotted #cbd5e1; text-align: right; font-size: ${isA4 ? '10px' : '9px'}; color: #94a3b8 }
+      .pagefoot:empty { display: none }
+      .carried { font-weight: 700; color: #b45309 }
+      table.items tr.filler td { color: transparent; border-bottom: 1px solid #eef2f7 }
       header.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 12px }
       .brand { display: flex; align-items: center; gap: 12px; min-width: 0 }
       .brand img { max-height: ${isA4 ? '64px' : '52px'}; max-width: ${isA4 ? '120px' : '90px'}; object-fit: contain }
@@ -1916,29 +1934,32 @@ export default function POS({ user, onLogout }) {
       table.items { width: 100%; border-collapse: collapse; margin: 8px 0 }
       table.items thead th { background: #111; color: #fff; padding: 6px 8px; font-size: ${isA4 ? '11px' : '10px'}; font-weight: 700; text-align: left; letter-spacing: .3px }
       table.items thead th.qty, table.items thead th.money { text-align: right }
-      table.items tbody td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; font-size: ${isA4 ? '12px' : '11px'} }
+      table.items thead { display: table-header-group }
+      table.items tbody tr { break-inside: avoid; page-break-inside: avoid }
+      table.items tbody td { padding: ${isA4 ? '8px' : '6px'} 8px; border-bottom: 1px solid #e5e7eb; font-size: ${isA4 ? '12px' : '11px'} }
       table.items td.num { width: 28px; color: #64748b; font-variant-numeric: tabular-nums }
       table.items td.prod { font-weight: 600 }
       table.items td.qty, table.items td.money { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
-      .totals { display: grid; grid-template-columns: 1fr ${isA4 ? '220px' : '180px'}; gap: 16px; margin-top: 10px }
+      .totals { display: grid; grid-template-columns: 1fr ${isA4 ? '220px' : '180px'}; gap: 16px; margin-top: 10px; break-inside: avoid; page-break-inside: avoid }
       .totals .left { font-size: ${isA4 ? '11px' : '10px'}; color: #475569 }
       .totals .bank b { color: #111 }
-      .totals .right { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden }
+      .totals .right { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; break-inside: avoid; page-break-inside: avoid }
       .totals .right .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; font-size: ${isA4 ? '12px' : '11px'} }
       .totals .right .row + .row { border-top: 1px dashed #e2e8f0 }
       .totals .right .row .v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
       .totals .right .grand { background: #fef2f2; color: #991b1b; font-weight: 900; font-size: ${isA4 ? '14px' : '13px'}; border-top: 2px solid #fca5a5 }
       .totals .right .outstanding { background: #fffbeb; color: #92400e; font-weight: 800 }
       .totals .right .change { background: #f0fdf4; color: #166534; font-weight: 800 }
-      .payments { margin-top: 12px; font-size: ${isA4 ? '11px' : '10px'} }
+      .payments { margin-top: 12px; font-size: ${isA4 ? '11px' : '10px'}; break-inside: avoid; page-break-inside: avoid }
       .payments h4 { margin: 0 0 6px; font-size: ${isA4 ? '11px' : '10px'}; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: .5px }
       .payments table { width: 100%; border-collapse: collapse }
       .payments td { padding: 4px 8px; border-bottom: 1px dotted #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
       .payments td.money { text-align: right }
       .note { margin-top: 12px; padding: 8px 12px; border: 1px dashed #94a3b8; border-radius: 6px; font-size: ${isA4 ? '11px' : '10px'}; color: #334155 }
-      .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: ${isA4 ? '40px' : '30px'} }
-      .sign .box { text-align: center; font-size: ${isA4 ? '11px' : '10px'}; color: #475569 }
-      .sign .line { margin-bottom: 6px; height: 28px; border-bottom: 1px solid #94a3b8 }
+      .sign { display: grid; grid-template-columns: repeat(5, 1fr); gap: ${isA4 ? '12px' : '8px'}; margin-top: ${isA4 ? '22px' : '14px'}; page-break-inside: avoid; break-inside: avoid }
+      .sign .box { text-align: center; font-size: ${isA4 ? '10px' : '8px'}; color: #475569; white-space: nowrap }
+      .sign .name { font-weight: 700; color: #334155 }
+      .sign .line { margin-top: 4px; height: ${isA4 ? '34px' : '26px'}; border-bottom: 1px solid #94a3b8 }
       footer.bottom { margin-top: ${isA4 ? '24px' : '16px'}; padding-top: 8px; border-top: 1px solid #cbd5e1; text-align: center; font-size: ${isA4 ? '11px' : '10px'}; color: #475569 }
     </style></head><body>
       <div class="receipt">
@@ -1985,6 +2006,9 @@ export default function POS({ user, onLogout }) {
           </tbody>
         </table>
 
+        <div class="spacer"></div>
+
+        <div class="closing">
         <div class="totals">
           <div class="left">
             ${order.member_id && Number(order.member_points_used) > 0 ? `<div>ໃຊ້ແຕ້ມ: <b>−${formatNumber(order.member_points_used)}</b> (${formatPrice(order.member_points_discount || 0)})</div>` : ''}
@@ -2020,17 +2044,142 @@ export default function POS({ user, onLogout }) {
 
         ${order.note ? `<div class="note"><b>ໝາຍເຫດ:</b> ${order.note}</div>` : ''}
 
-        ${isA4 ? `
-          <div class="sign">
-            <div class="box"><div class="line"></div>ລາຍເຊັນຜູ້ຮັບເງິນ</div>
-            <div class="box"><div class="line"></div>ລາຍເຊັນລູກຄ້າ</div>
-          </div>
-        ` : ''}
+        <div class="sign">
+          ${['ຜູ້ຈ່າຍເງິນ', 'ຜູ້ຮັບສິນຄ້າ', 'ຜູ້ຮັບເງິນ', 'ຜູ້ສົ່ງສິນຄ້າ', 'ບັນຊີສາງ']
+            .map(label => `<div class="box"><div class="name">${label}</div><div class="line"></div></div>`)
+            .join('')}
+        </div>
 
         <footer class="bottom">★ ຂໍຂອບໃຈທີ່ໃຊ້ບໍລິການ ★ · ກະລຸນາຮັກສາໃບບິນໄວ້ເພື່ອປ່ຽນ/ຄືນສິນຄ້າ</footer>
+        </div>
       </div>
       <script>
-        window.onload = () => { window.print(); setTimeout(() => window.close(), 400); }
+        function paginate() {
+          var probe = document.createElement('div')
+          probe.style.cssText = 'position:absolute;visibility:hidden;height:100mm'
+          document.body.appendChild(probe)
+          var pxPerMm = probe.offsetHeight / 100
+          probe.parentNode.removeChild(probe)
+          var PAGE_H = ${isA4 ? 273 : 194} * pxPerMm
+
+          var src = document.querySelector('.receipt')
+          var table = src.querySelector('table.items')
+          if (!src || !table) return
+
+          // freeze the logo box so cloned headers measure identically
+          var logo = src.querySelector('.brand img')
+          if (logo && logo.offsetHeight) {
+            logo.style.height = logo.offsetHeight + 'px'
+            logo.style.width = logo.offsetWidth + 'px'
+          }
+
+          var headerHTML = src.querySelector('header.top').outerHTML
+          var metaEl = src.querySelector('.meta-grid')
+          var metaHTML = metaEl ? metaEl.outerHTML : ''
+          var theadHTML = table.querySelector('thead').outerHTML
+          var closingHTML = src.querySelector('.closing').outerHTML
+          var rows = []
+          var trs = table.querySelectorAll('tbody > tr')
+          for (var r = 0; r < trs.length; r++) rows.push(trs[r].outerHTML)
+
+          var wrap = document.createElement('div')
+          document.body.appendChild(wrap)
+          src.style.display = 'none'
+
+          function newSheet(isFirst) {
+            var sh = document.createElement('section')
+            sh.className = 'sheet measuring'
+            sh.innerHTML = headerHTML + (isFirst ? metaHTML : '') +
+              '<table class="items">' + theadHTML + '<tbody></tbody></table>' +
+              '<div class="spacer"></div><div class="pagefoot">&nbsp;</div>'
+            wrap.appendChild(sh)
+            return sh
+          }
+          function fits(sh) { return sh.scrollHeight <= PAGE_H }
+          // ruled blank lines fill the leftover space: no dead gaps, and no
+          // room for anyone to add a line after the bill is signed
+          function fillRuled(sh) {
+            var tb = sh.querySelector('table.items > tbody')
+            for (var g = 0; g < 200; g++) {
+              tb.insertAdjacentHTML('beforeend', '<tr class="filler"><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>')
+              if (!fits(sh)) { tb.removeChild(tb.lastElementChild); break }
+            }
+          }
+
+          function attachClosing(sh) {
+            sh.querySelector('.pagefoot').insertAdjacentHTML('beforebegin', closingHTML)
+          }
+
+          // fast path: if the whole bill fits on one sheet there is no page
+          // footer to reserve room for
+          var single = newSheet(true)
+          single.querySelector('.pagefoot').innerHTML = ''
+          var singleBody = single.querySelector('table.items > tbody')
+          for (var z = 0; z < rows.length; z++) singleBody.insertAdjacentHTML('beforeend', rows[z])
+          attachClosing(single)
+          if (fits(single)) {
+            fillRuled(single)
+            single.className = 'sheet'
+            src.parentNode.removeChild(src)
+            return
+          }
+          wrap.removeChild(single)
+
+          var sheets = []
+          var i = 0
+          while (i < rows.length) {
+            var sh = newSheet(sheets.length === 0)
+            sheets.push(sh)
+            var tb = sh.querySelector('table.items > tbody')
+            var added = 0
+            while (i < rows.length) {
+              tb.insertAdjacentHTML('beforeend', rows[i])
+              if (!fits(sh) && added > 0) { tb.removeChild(tb.lastElementChild); break }
+              i++; added++
+              if (!fits(sh)) break
+            }
+          }
+          if (sheets.length === 0) sheets.push(newSheet(true))
+
+          var last = sheets[sheets.length - 1]
+          attachClosing(last)
+          if (!fits(last)) {
+            var stale = last.querySelector('.closing')
+            stale.parentNode.removeChild(stale)
+            last = newSheet(false)
+            sheets.push(last)
+            attachClosing(last)
+          }
+          // even out the final two pages: the signature page must never be a
+          // bare totals-only sheet, and the page before it must not look empty
+          if (sheets.length > 1) {
+            var prevBody = sheets[sheets.length - 2].querySelector('table.items > tbody')
+            var lastBody = last.querySelector('table.items > tbody')
+            while (prevBody.children.length > 1 && lastBody.children.length < prevBody.children.length) {
+              var moved = prevBody.lastElementChild
+              lastBody.insertBefore(moved, lastBody.firstChild)
+              if (!fits(last)) { prevBody.appendChild(moved); break }
+            }
+          }
+
+          var total = sheets.length
+          for (var k = 0; k < total; k++) {
+            var pf = sheets[k].querySelector('.pagefoot')
+            var parts = []
+            if (total > 1) parts.push('ໜ້າ ' + (k + 1) + ' / ' + total)
+            if (k < total - 1) parts.push('<span class="carried">ຍົກໄປໜ້າຖັດໄປ →</span>')
+            pf.innerHTML = parts.join(' · ')
+          }
+          for (var f = 0; f < total; f++) {
+            fillRuled(sheets[f])
+            sheets[f].className = 'sheet'
+          }
+          src.parentNode.removeChild(src)
+        }
+        window.onload = () => {
+          try { paginate() } catch (e) { console.error(e) }
+          window.print(); setTimeout(() => window.close(), 400);
+        }
       </script>
     </body></html>`
   }
@@ -2676,7 +2825,19 @@ export default function POS({ user, onLogout }) {
                   <span className="font-mono">{roundingAdjustment > 0 ? '+' : ''}{formatPrice(roundingAdjustment)}</span>
                 </div>
               )}
-              {loyaltySettings.loyalty_enabled !== false && redeemValue > 0 && !selectedMember?.isDefault && memberPointsAvail > 0 && (
+              {!selectedMember?.isDefault && selectedMember && !earnWindow.open && (
+                <div className="rounded-lg border border-slate-600/50 bg-slate-800/60 px-2 py-1.5 text-[10px] font-bold text-slate-300">
+                  ⚠ ບິນນີ້ຈະບໍ່ໄດ້ແຕ້ມ — {earnWindow.reason}
+                </div>
+              )}
+              {!selectedMember?.isDefault && memberPointsAvail > 0 && !redeemWindow.open && (
+                <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-2 py-1.5 space-y-0.5">
+                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-rose-300">⭐ ໃຊ້ແຕ້ມບໍ່ໄດ້</div>
+                  <div className="text-[10px] text-rose-200">{redeemWindow.reason}</div>
+                  <div className="text-[10px] text-slate-400">ມີ {formatNumber(memberPointsAvail)} ແຕ້ມ</div>
+                </div>
+              )}
+              {loyaltySettings.loyalty_enabled !== false && redeemValue > 0 && !selectedMember?.isDefault && memberPointsAvail > 0 && redeemWindow.open && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 space-y-1.5">
                   <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-amber-300">
                     <span>⭐ ໃຊ້ແຕ້ມສະສົມ</span>
@@ -2701,6 +2862,9 @@ export default function POS({ user, onLogout }) {
                     <span className="text-amber-400/80">1 ແຕ້ມ = {formatPrice(redeemValue)}</span>
                     <span className="text-rose-400 font-mono-t font-extrabold">{pointsDiscountAmount > 0 ? `−${formatPrice(pointsDiscountAmount)}` : '0 ₭'}</span>
                   </div>
+                  {redeemWindow.deadline && (
+                    <div className="text-[10px] text-amber-400/70">ໃຊ້ໄດ້ຮອດ {fmtLaoDate(redeemWindow.deadline)}</div>
+                  )}
                   {Number(loyaltySettings.min_points_to_redeem) > 0 && pointsUsed > 0 && pointsUsed < Number(loyaltySettings.min_points_to_redeem) && (
                     <div className="text-[10px] text-rose-400">ຂັ້ນຕ່ຳ {formatNumber(loyaltySettings.min_points_to_redeem)} ແຕ້ມ</div>
                   )}

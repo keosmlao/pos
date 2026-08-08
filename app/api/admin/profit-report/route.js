@@ -12,7 +12,11 @@ import { ensureOrdersSchema } from '@/lib/migrations';
 
 export const GET = handle(async (request) => {
   await ensureOrdersSchema();
-  const { from, to } = getQuery(request);
+  const { from, to, limit } = getQuery(request);
+  // limit=all lifts the top-N cap so exports carry every product / category
+  const unlimited = String(limit || '').toLowerCase() === 'all';
+  const productLimit = unlimited ? '' : `LIMIT ${Math.min(Math.max(Number(limit) || 50, 1), 1000)}`;
+  const categoryLimit = unlimited ? '' : 'LIMIT 30';
   const params = [];
   const where = [];
   if (from) { params.push(from); where.push(`o.created_at::date >= $${params.length}`); }
@@ -100,7 +104,7 @@ export const GET = handle(async (request) => {
      FROM line_net
      GROUP BY product_id, product_name
      ORDER BY profit DESC
-     LIMIT 50`,
+     ${productLimit}`,
     params
   );
 
@@ -114,11 +118,12 @@ export const GET = handle(async (request) => {
      FROM line_net
      GROUP BY category_name
      ORDER BY profit DESC
-     LIMIT 30`,
+     ${categoryLimit}`,
     params
   );
 
   return ok({
+    range: { from: from || null, to: to || null },
     summary: summaryRes.rows[0],
     daily: dailyRes.rows,
     products: productsRes.rows,

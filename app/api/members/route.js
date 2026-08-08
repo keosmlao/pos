@@ -17,13 +17,16 @@ export const GET = handle(async (request) => {
   await ensureMembersSchema();
   const q = normalizeText(request.nextUrl.searchParams.get('search')).toLowerCase();
   const params = [];
-  let where = `WHERE active IS NOT FALSE`;
+  let where = `WHERE m.active IS NOT FALSE`;
   if (q) {
     params.push(`%${q}%`);
-    where += ` AND (LOWER(member_code) LIKE $1 OR LOWER(name) LIKE $1 OR LOWER(COALESCE(phone, '')) LIKE $1)`;
+    where += ` AND (LOWER(m.member_code) LIKE $1 OR LOWER(m.name) LIKE $1 OR LOWER(COALESCE(m.phone, '')) LIKE $1)`;
   }
+  // points_expires_at ຕ້ອງອອກເປັນ 'YYYY-MM-DD' — ຖ້າປ່ອຍເປັນ Date ມັນຈະຖືກແປງເປັນ
+  // UTC ຕອນ JSON ແລ້ວວັນເລື່ອນ 1 ວັນ (ລາວ = UTC+7)
   const result = await pool.query(
-    `SELECT * FROM members ${where} ORDER BY updated_at DESC, id DESC LIMIT 30`,
+    `SELECT m.*, to_char(m.points_expires_at, 'YYYY-MM-DD') AS points_expires_at
+     FROM members m ${where} ORDER BY m.updated_at DESC, m.id DESC LIMIT 30`,
     params
   );
   return ok(result.rows);

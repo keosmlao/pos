@@ -179,6 +179,38 @@ export const GET = handle(async (request) => {
     });
   }
 
+  // 4b. ສົ່ງເຄື່ອງຄືນຜູ້ສະໜອງ — ເງິນເຂົ້າ (ສະເພາະທີ່ຮັບເງິນຄືນຈິງ ບໍ່ນັບອັນທີ່ຫັກຈາກໜີ້)
+  const purRetRes = await pool.query(
+    `SELECT pr.id, pr.return_number, pr.created_at, pr.refund_amount, pr.settle_mode, pr.payments,
+            p.ref_number, s.name AS supplier_name
+     FROM purchase_returns pr
+     LEFT JOIN purchases p ON p.id = pr.purchase_id
+     LEFT JOIN suppliers s ON s.id = COALESCE(pr.supplier_id, p.supplier_id)
+     WHERE DATE(pr.created_at) BETWEEN $1 AND $2 AND pr.settle_mode <> 'debt'`,
+    [start, end]
+  ).catch(() => ({ rows: [] }));
+  for (const r of purRetRes.rows) {
+    const splits = Array.isArray(r.payments) && r.payments.length > 0
+      ? r.payments
+      : [{ method: 'cash', amount: Number(r.refund_amount) || 0 }];
+    for (const sp of splits) {
+      const amount = Number(sp.amount) || 0;
+      if (amount <= 0) continue;
+      transactions.push({
+        source: 'supplier_return',
+        source_id: r.id,
+        source_label: r.return_number || `#${r.id}`,
+        ref: r.ref_number || null,
+        date: r.created_at,
+        txn_type: 'income',
+        description: `ຮັບເງິນຄືນຈາກຜູ້ສະໜອງ${r.supplier_name ? ` · ${r.supplier_name}` : ''}`,
+        amount, currency: 'LAK', exchange_rate: 1, amount_lak: amount,
+        payment_method: sp.method || 'cash',
+        account: accountFromMethod(sp.method),
+      });
+    }
+  }
+
   // 5. Cash transactions (manual income/expense)
   const ctxnRes = await pool.query(
     `SELECT * FROM cash_transactions WHERE txn_date BETWEEN $1 AND $2`,

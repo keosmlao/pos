@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
+import { LOYALTY_DATE_FIELDS, earnWindowState, redeemWindowState, todayLocal, fmtLaoDate } from '@/lib/loyaltyWindow';
 
 const API = '/api';
 
@@ -14,6 +15,16 @@ const blank = {
   tier_gold_threshold: 20000000,
   tier_platinum_threshold: 50000000,
   points_lifetime_months: 0,
+  points_earn_start: '',
+  points_earn_end: '',
+  points_redeem_deadline: '',
+};
+
+// API ສົ່ງ null ມາເມື່ອບໍ່ໄດ້ຕັ້ງ — input ຕ້ອງການ '' ບໍ່ແມ່ນ null
+const normalizeDates = (obj) => {
+  const out = { ...obj };
+  for (const f of LOYALTY_DATE_FIELDS) out[f] = out[f] || '';
+  return out;
 };
 
 const fmtNum = (n) => new Intl.NumberFormat('lo-LA').format(Number(n) || 0);
@@ -49,7 +60,7 @@ export default function LoyaltySettingsPage() {
       .then((r) => r.json())
       .then((data) => {
         if (data && typeof data === 'object') {
-          const merged = { ...blank, ...data, loyalty_enabled: data.loyalty_enabled !== false };
+          const merged = normalizeDates({ ...blank, ...data, loyalty_enabled: data.loyalty_enabled !== false });
           setForm(merged);
           setOriginal(merged);
         }
@@ -62,6 +73,17 @@ export default function LoyaltySettingsPage() {
 
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(original), [form, original]);
 
+  const dateError = useMemo(() => {
+    const a = form.points_earn_start;
+    const b = form.points_earn_end;
+    if (a && b && a > b) return 'ວັນເລີ່ມນັບແຕ້ມຕ້ອງບໍ່ຫຼັງວັນສິ້ນສຸດ';
+    return null;
+  }, [form.points_earn_start, form.points_earn_end]);
+
+  const today = todayLocal();
+  const earnWin = useMemo(() => earnWindowState(form, today), [form, today]);
+  const redeemWin = useMemo(() => redeemWindowState(form, null, today), [form, today]);
+
   const tierError = useMemo(() => {
     const s = Number(form.tier_silver_threshold);
     const g = Number(form.tier_gold_threshold);
@@ -72,6 +94,7 @@ export default function LoyaltySettingsPage() {
 
   const save = async () => {
     if (tierError) { showToast(tierError, 'error'); return; }
+    if (dateError) { showToast(dateError, 'error'); return; }
     setSaving(true);
     try {
       const res = await fetch(`${API}/admin/loyalty`, {
@@ -81,7 +104,7 @@ export default function LoyaltySettingsPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        const merged = { ...blank, ...data, loyalty_enabled: data.loyalty_enabled !== false };
+        const merged = normalizeDates({ ...blank, ...data, loyalty_enabled: data.loyalty_enabled !== false });
         setForm(merged);
         setOriginal(merged);
         const promoted = Number(data.tiers_recomputed) || 0;
@@ -97,6 +120,30 @@ export default function LoyaltySettingsPage() {
   };
 
   const reset = () => setForm(original);
+
+  // ── ຄິດໄລ່ແຕ້ມຄືນຍ້ອນຫຼັງ ────────────────────────────────────────────────
+  const [recalc, setRecalc] = useState(null);   // { loading, applying, data }
+  const runRecalc = async (apply) => {
+    setRecalc((r) => ({ ...(r || {}), loading: !apply, applying: apply, data: apply ? r?.data : null }));
+    try {
+      const res = await fetch(`${API}/admin/loyalty/recalculate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apply }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      if (apply) {
+        setRecalc(null);
+        showToast(`ອັບເດດແຕ້ມ ${data.members_changed} ຄົນ (ລວມ ${data.points_delta >= 0 ? '+' : ''}${fmtNum(data.points_delta)} ແຕ້ມ)`);
+      } else {
+        setRecalc({ loading: false, applying: false, data });
+      }
+    } catch (e) {
+      setRecalc(null);
+      showToast(`ຄິດໄລ່ບໍ່ສຳເລັດ: ${e.message}`, 'error');
+    }
+  };
 
   if (loading) {
     return (
@@ -290,6 +337,81 @@ export default function LoyaltySettingsPage() {
               )}
             </PreviewBox>
           </Section>
+
+          <Section icon="📅" title="ຊ່ວງນັບສະສົມແຕ້ມ" desc="ບິນທີ່ຂາຍນອກຊ່ວງນີ້ຈະບໍ່ໄດ້ແຕ້ມ — ວ່າງໄວ້ = ບໍ່ຈຳກັດ">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">ເລີ່ມນັບ</label>
+                <input type="date" value={form.points_earn_start}
+                  onChange={(e) => upd('points_earn_start', e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-red-500" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">ສິ້ນສຸດ</label>
+                <input type="date" value={form.points_earn_end}
+                  onChange={(e) => upd('points_earn_end', e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-red-500" />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => { upd('points_earn_start', ''); upd('points_earn_end', ''); }}
+                className="px-3 py-1 rounded-full text-[11px] font-bold border bg-white text-slate-600 border-slate-200 hover:bg-slate-50">
+                ບໍ່ຈຳກັດຊ່ວງ
+              </button>
+              <button onClick={() => {
+                  const d = new Date();
+                  const p2 = (n) => String(n).padStart(2, '0');
+                  const first = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-01`;
+                  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+                  upd('points_earn_start', first);
+                  upd('points_earn_end', `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(lastDay)}`);
+                }}
+                className="px-3 py-1 rounded-full text-[11px] font-bold border bg-white text-slate-600 border-slate-200 hover:bg-slate-50">
+                ເດືອນນີ້
+              </button>
+            </div>
+            {dateError && <div className="text-[11px] font-bold text-rose-600">⚠ {dateError}</div>}
+            <PreviewBox tone={earnWin.open ? 'emerald' : 'amber'} label={`ມື້ນີ້ ${fmtLaoDate(today)}`}>
+              {earnWin.open ? (
+                <div className="text-sm font-bold text-emerald-700">
+                  ✓ ກຳລັງນັບແຕ້ມຢູ່
+                  {(form.points_earn_start || form.points_earn_end) && (
+                    <span className="ml-1 font-normal text-slate-600">
+                      ({fmtLaoDate(form.points_earn_start)} → {fmtLaoDate(form.points_earn_end)})
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm font-bold text-amber-700">✕ {earnWin.reason}</div>
+              )}
+            </PreviewBox>
+          </Section>
+
+          <Section icon="⛔" title="ກຳນົດໃຊ້ແຕ້ມ" desc="ວັນສຸດທ້າຍທີ່ລູກຄ້າໃຊ້ແຕ້ມຫຼຸດລາຄາໄດ້ — ວ່າງໄວ້ = ບໍ່ຈຳກັດ">
+            <div className="flex items-center gap-2">
+              <input type="date" value={form.points_redeem_deadline}
+                onChange={(e) => upd('points_redeem_deadline', e.target.value)}
+                className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-red-500" />
+              <button onClick={() => upd('points_redeem_deadline', '')}
+                className={`px-3 py-2 rounded-lg text-xs font-extrabold border whitespace-nowrap ${
+                  !form.points_redeem_deadline ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}>
+                ບໍ່ຈຳກັດ
+              </button>
+            </div>
+            <PreviewBox tone={redeemWin.open ? 'emerald' : 'rose'} label="ສະຖານະ">
+              {redeemWin.open ? (
+                <div className="text-sm font-bold text-emerald-700">
+                  ✓ ໃຊ້ແຕ້ມໄດ້
+                  {form.points_redeem_deadline && (
+                    <span className="ml-1 font-normal text-slate-600">ຮອດ {fmtLaoDate(form.points_redeem_deadline)}</span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm font-bold text-rose-700">✕ {redeemWin.reason}</div>
+              )}
+            </PreviewBox>
+          </Section>
         </div>
 
         {/* Tier system */}
@@ -356,7 +478,108 @@ export default function LoyaltySettingsPage() {
             })}
           </div>
         </section>
+
+        {/* ຄິດໄລ່ຄືນຍ້ອນຫຼັງ */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <h2 className="text-base font-extrabold text-slate-900">🔄 ຄິດໄລ່ແຕ້ມຄືນຍ້ອນຫຼັງ</h2>
+              <p className="mt-1 text-xs text-slate-500 max-w-2xl">
+                ຄິດແຕ້ມຂອງລູກຄ້າທຸກຄົນໃໝ່ຈາກປະຫວັດບິນຂາຍ + ໃບຄືນສິນຄ້າ ຕາມກົດເກນທີ່ຕັ້ງໄວ້ຢູ່ໜ້ານີ້
+                (ອັດຕາແຕ້ມ · ຊ່ວງນັບສະສົມ · ອາຍຸແຕ້ມ) — ໃຊ້ຕອນຫາກໍ່ຕັ້ງຊ່ວງນັບແຕ້ມ ຫຼື ປ່ຽນອັດຕາ
+                ແລ້ວຢາກໃຫ້ລູກຄ້າເກົ່າໄດ້ແຕ້ມຍ້ອນຫຼັງ
+              </p>
+            </div>
+            <button
+              onClick={() => runRecalc(false)}
+              disabled={recalc?.loading || dirty}
+              className="px-4 py-2 rounded-lg text-sm font-extrabold text-white bg-slate-800 hover:bg-slate-900 disabled:opacity-40 whitespace-nowrap"
+            >
+              {recalc?.loading ? 'ກຳລັງຄິດໄລ່...' : 'ເບິ່ງຜົນກ່ອນ'}
+            </button>
+          </div>
+          {dirty && (
+            <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] font-bold text-amber-800">
+              ⚠ ບັນທຶກການຕັ້ງຄ່າກ່ອນ ຈຶ່ງຄິດໄລ່ຄືນໄດ້ — ບໍ່ດັ່ງນັ້ນຈະຄິດຕາມຄ່າເກົ່າ
+            </div>
+          )}
+          <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-[11px] font-bold text-rose-800">
+            ⚠ ຄິດຈາກປະຫວັດບິນເທົ່ານັ້ນ — ແຕ້ມທີ່ເຄີຍແກ້ດ້ວຍມືຢູ່ໜ້າສະມາຊິກຈະຖືກທັບ.
+            ກົດ ‘ເບິ່ງຜົນກ່ອນ’ ເພື່ອກວດລາຍການທີ່ຈະປ່ຽນ ກ່ອນຢືນຢັນສະເໝີ
+          </div>
+        </section>
       </div>
+
+      {recalc?.data && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setRecalc(null)}>
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-slate-200 flex items-start justify-between gap-3">
+              <div>
+                <div className="font-extrabold text-slate-900">ຜົນການຄິດໄລ່ຄືນ (ຍັງບໍ່ໄດ້ບັນທຶກ)</div>
+                <div className="text-xs text-slate-500">
+                  ລູກຄ້າທັງໝົດ {fmtNum(recalc.data.members_total)} ຄົນ ·
+                  ຈະປ່ຽນ <b className="text-slate-800">{fmtNum(recalc.data.members_changed)}</b> ຄົນ ·
+                  ແຕ້ມລວມ <b className={recalc.data.points_delta >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
+                    {recalc.data.points_delta >= 0 ? '+' : ''}{fmtNum(recalc.data.points_delta)}
+                  </b>
+                </div>
+              </div>
+              <button onClick={() => setRecalc(null)} className="text-slate-400 hover:text-slate-700 text-xl leading-none">✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 sticky top-0">
+                  <tr className="text-left">
+                    <th className="px-3 py-2 font-bold text-slate-600">ລູກຄ້າ</th>
+                    <th className="px-3 py-2 font-bold text-slate-600 text-right">ບິນ</th>
+                    <th className="px-3 py-2 font-bold text-slate-600 text-right">ໄດ້</th>
+                    <th className="px-3 py-2 font-bold text-slate-600 text-right">ໃຊ້</th>
+                    <th className="px-3 py-2 font-bold text-slate-600 text-right">ຫັກຄືນ</th>
+                    <th className="px-3 py-2 font-bold text-slate-600 text-right">ເກົ່າ</th>
+                    <th className="px-3 py-2 font-bold text-slate-600 text-right">ໃໝ່</th>
+                    <th className="px-3 py-2 font-bold text-slate-600 text-right">ຕ່າງ</th>
+                    <th className="px-3 py-2 font-bold text-slate-600 text-right">ໝົດອາຍຸ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recalc.data.changes.length === 0 ? (
+                    <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">ບໍ່ມີຫຍັງປ່ຽນ — ແຕ້ມຖືກຕ້ອງຢູ່ແລ້ວ</td></tr>
+                  ) : recalc.data.changes.map((c) => (
+                    <tr key={c.member_id} className="border-t border-slate-100">
+                      <td className="px-3 py-1.5">
+                        <div className="font-bold text-slate-900">{c.name}</div>
+                        <div className="text-[10px] text-slate-500">{c.member_code}</div>
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono">{fmtNum(c.orders)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-emerald-700">{fmtNum(c.earned)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-amber-700">{fmtNum(c.used)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-rose-700">{fmtNum(c.reverted)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono text-slate-500">{fmtNum(c.old_points)}</td>
+                      <td className="px-3 py-1.5 text-right font-mono font-extrabold text-slate-900">{fmtNum(c.new_points)}</td>
+                      <td className={`px-3 py-1.5 text-right font-mono font-extrabold ${c.delta >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {c.delta >= 0 ? '+' : ''}{fmtNum(c.delta)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono text-[11px] text-slate-500">
+                        {c.expired ? <span className="text-rose-600 font-bold">ໝົດອາຍຸ</span> : (c.new_expires_at || '—')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button onClick={() => setRecalc(null)} className="px-4 py-2 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-100">ຍົກເລີກ</button>
+              <button
+                onClick={() => runRecalc(true)}
+                disabled={recalc.applying || recalc.data.changes.length === 0}
+                className="px-5 py-2 rounded-lg text-sm font-extrabold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40"
+              >
+                {recalc.applying ? 'ກຳລັງບັນທຶກ...' : `ຢືນຢັນ ອັບເດດ ${fmtNum(recalc.data.members_changed)} ຄົນ`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div
