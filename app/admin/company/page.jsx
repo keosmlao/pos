@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { clearCompanyProfileCache } from '@/utils/useCompanyProfile';
 import { COSTING_METHODS, DEFAULT_COSTING_METHOD } from '@/lib/costingMethods';
+import { applyVat, normalizeVatSettings, vatLineLabel, VAT_LABELS } from '@/lib/vat';
 
 const API = '/api';
 
@@ -19,6 +20,45 @@ const blank = {
   rounding_mode: 'none',
   rounding_step: 0,
 };
+
+const fmtKip = (n) => (Math.round((Number(n) || 0) * 100) / 100)
+  .toLocaleString('en-US', { maximumFractionDigits: 2 });
+
+// ຕົວຢ່າງບິນສົດ — ໃຊ້ສູດ (applyVat) ແລະ ປ້າຍ (vatLineLabel) ຊຸດດຽວກັບບິນ POS A5/A4
+// ຈຶ່ງໝັ້ນໃຈໄດ້ວ່າ ຄ່າທີ່ຕັ້ງໄວ້ບ່ອນນີ້ ຈະອອກມາຄືກັນຕອນພິມ
+function VatBillPreview({ form }) {
+  const SAMPLE_ITEMS = 77000;
+  const SAMPLE_DISCOUNT = 10000;
+  const vat = normalizeVatSettings(form);
+  if (!vat.enabled) return null;
+  // ຄິດແບບດຽວກັບ /api/orders: ຫັກສ່ວນຫຼຸດກ່ອນ ແລ້ວຈຶ່ງຄິດ ອມພ
+  const { subtotalExVat, vatAmount, total } = applyVat(SAMPLE_ITEMS - SAMPLE_DISCOUNT, vat);
+  const rows = [
+    [VAT_LABELS.itemsGross, SAMPLE_ITEMS],
+    [VAT_LABELS.discount, -SAMPLE_DISCOUNT],
+    [VAT_LABELS.beforeVat, subtotalExVat],
+    [vatLineLabel(vat), vatAmount],
+  ];
+  return (
+    <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+      <div className="mb-2 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+        ຕົວຢ່າງບິນ · ລາຄາໃນຕາລາງສິນຄ້າ {fmtKip(SAMPLE_ITEMS)} ກີບ · ສ່ວນຫຼຸດ {fmtKip(SAMPLE_DISCOUNT)} ກີບ
+      </div>
+      <div className="space-y-1 text-[12px]">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-baseline justify-between gap-3">
+            <span className="text-slate-600">{label}</span>
+            <span className="font-mono font-bold text-slate-800">{fmtKip(value)}</span>
+          </div>
+        ))}
+        <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-1.5">
+          <span className="font-extrabold text-red-700">{VAT_LABELS.grandTotal}</span>
+          <span className="font-mono font-extrabold text-red-700">{fmtKip(total)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function CompanyProfilePage() {
   const [form, setForm] = useState(blank);
@@ -365,10 +405,12 @@ export default function CompanyProfilePage() {
                   </Field>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] leading-relaxed text-slate-600">
-              {form.vat_mode === 'inclusive'
-                ? <><b>ລວມໃນ:</b> ລາຄາສິນຄ້າທີ່ສະແດງ = ມີ VAT ແລ້ວ. ບີນຈະແສດງສ່ວນ VAT ທີ່ລວມຢູ່ພາຍໃນ.</>
-                : <><b>ແຍກນອກ:</b> ບີນຈະຄິດ VAT ເພີ່ມຈາກລາຄາສິນຄ້າ. ລາຄາລວມ = subtotal + VAT.</>}
+                  {form.vat_mode === 'inclusive'
+                    ? <><b>ລວມໃນ:</b> ລາຄາສິນຄ້າໃນຕາລາງ = ມີ ອມພ ຢູ່ແລ້ວ. {VAT_LABELS.beforeVat} = (ລວມມູນຄ່າ − ສ່ວນຫຼຸດ) ÷ (1 + ອັດຕາ).</>
+                    : <><b>ແຍກນອກ:</b> ບິນຈະບວກ ອມພ ເພີ່ມຈາກລາຄາສິນຄ້າ. {VAT_LABELS.beforeVat} = ລວມມູນຄ່າ − ສ່ວນຫຼຸດ.</>}
+                  <div className="mt-1">ອມພ = {VAT_LABELS.beforeVat} × ອັດຕາ · {VAT_LABELS.grandTotal} = {VAT_LABELS.beforeVat} + ອມພ</div>
                 </div>
+                <VatBillPreview form={form} />
               </>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm font-bold text-slate-400">

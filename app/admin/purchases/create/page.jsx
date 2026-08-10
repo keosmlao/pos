@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react'
+import { sortInvoiceItems, invoiceItemCode } from '@/lib/pendingInvoice';
 import { useRouter } from 'next/navigation'
 import SearchSelect from '@/components/SearchSelect'
 import { generateAndPrintPurchaseA4 } from '@/utils/receiptPdfGenerator'
@@ -75,6 +76,9 @@ export default function PurchaseCreate() {
   const [editFormat, setEditFormat] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
   const [purchaseData, setPurchaseData] = useState(null)
+  // ສິນຄ້າໃນບິນທີ່ຍັງບໍ່ມີໃນລະບົບ → ຖາມ sync ກ່ອນຮັບເຂົ້າ
+  const [missingItems, setMissingItems] = useState([])
+  const [syncState, setSyncState] = useState({ open: false, busy: false, result: null, error: '' })
 
   useEffect(() => {
     Promise.all([
@@ -97,47 +101,11 @@ export default function PurchaseCreate() {
       setCurrencies(enabledCurrencies.length > 0 ? enabledCurrencies : defaultCurrencies)
 
       if (pendingInvoice) {
-        const pickNum = (obj, keys) => {
-          if (!obj) return 0
-          for (const k of keys) {
-            const v = Number(obj[k])
-            if (!isNaN(v) && v !== 0) return v
-          }
-          return 0
-        }
-        const productByCode = new Map(productsData.map(p => [String(p.product_code || '').trim(), p]))
-        const getLineNo = (it) => {
-          for (const k of ['line_num', 'line_no', 'lineno', 'line_number', 'seq', 'seq_no', 'line', 'order_no', 'sort_order']) {
-            const v = Number(it?.[k])
-            if (!isNaN(v) && v > 0) return v
-          }
-          return Number.MAX_SAFE_INTEGER
-        }
-        const sortedRawItems = (Array.isArray(pendingInvoice.items) ? [...pendingInvoice.items] : [])
-          .map((it, idx) => ({ it, idx, lineNo: getLineNo(it) }))
-          .sort((a, b) => (a.lineNo - b.lineNo) || (a.idx - b.idx))
-          .map(x => x.it)
-        const mappedItems = sortedRawItems
-          .map(it => {
-            const code = String(it.item_code || '').trim()
-            const p = productByCode.get(code)
-            if (!p) return null
-            const qty = pickNum(it, ['qty', 'quantity']) || 1
-            const smlPrice = pickNum(it, ['price', 'unit_price', 'item_price', 'price_2'])
-            const smlLineDiscount = pickNum(it, ['sum_discount', 'discount_amount', 'discount_amt', 'line_discount'])
-            const discPerUnit = qty > 0 && smlLineDiscount > 0 ? Math.round((smlLineDiscount / qty) * 100) / 100 : 0
-            return {
-              product_id: p.id,
-              quantity: qty,
-              cost_price: smlPrice || Number(p.cost_price) || '',
-              unit: p.unit || it.unit_code || '',
-              disc_type: discPerUnit > 0 ? 'fixed' : 'none',
-              disc_value: discPerUnit > 0 ? String(discPerUnit) : ''
-            }
-          })
-          .filter(Boolean)
-
-        if (mappedItems.length > 0) setItems(mappedItems)
+        const { mapped, missing } = mapInvoiceItems(pendingInvoice, productsData)
+        if (mapped.length > 0) setItems(mapped)
+        setMissingItems(missing)
+        // ມີສິນຄ້າໃໝ່ → ເປີດຖາມທັນທີ ບໍ່ຕ້ອງກັບໄປໜ້າຈັດການສິນຄ້າ
+        if (missing.length > 0) setSyncState({ open: true, busy: false, result: null, error: '' })
         const thbRate = enabledCurrencies.find(c => c.value === 'THB')?.rate || 625
         setExchangeRate(thbRate)
         setForm(f => ({
@@ -182,6 +150,71 @@ export default function PurchaseCreate() {
       setLastPrices(map)
     })
   }, [pendingInvoice, pendingRequest])
+
+  // ແປງແຖວບິນ SML → ແຖວສິນຄ້າ · ລຽງຕາມ line_number asc
+  // ຄືນ missing ນຳ ເພື່ອບອກວ່າລະຫັດໃດຍັງບໍ່ມີໃນລະບົບ (ເມື່ອກ່ອນຖືກຖິ້ມງຽບໆ)
+  const mapInvoiceItems = (invoice, productList) => {
+    const pickNum = (obj, keys) => {
+      if (!obj) return 0
+      for (const k of keys) {
+        const v = Number(obj[k])
+        if (!isNaN(v) && v !== 0) return v
+      }
+      return 0
+    }
+    const productByCode = new Map(productList.map(p => [String(p.product_code || '').trim(), p]))
+    const mapped = []
+    const missing = []
+    for (const it of sortInvoiceItems(invoice?.items)) {
+      const code = invoiceItemCode(it)
+      const qty = pickNum(it, ['qty', 'quantity']) || 1
+      const p = productByCode.get(code)
+      if (!p) {
+        missing.push({ code, name: it.item_name || '', qty, unit: it.unit_code || '' })
+        continue
+      }
+      const smlPrice = pickNum(it, ['price', 'unit_price', 'item_price', 'price_2'])
+      const smlLineDiscount = pickNum(it, ['sum_discount', 'discount_amount', 'discount_amt', 'line_discount'])
+      const discPerUnit = qty > 0 && smlLineDiscount > 0 ? Math.round((smlLineDiscount / qty) * 100) / 100 : 0
+      mapped.push({
+        product_id: p.id,
+        quantity: qty,
+        cost_price: smlPrice || Number(p.cost_price) || '',
+        unit: p.unit || it.unit_code || '',
+        disc_type: discPerUnit > 0 ? 'fixed' : 'none',
+        disc_value: discPerUnit > 0 ? String(discPerUnit) : ''
+      })
+    }
+    return { mapped, missing }
+  }
+
+  // Sync ສິນຄ້າຈາກຜູ້ສະໜອງ (ຊຸດດຽວກັບໜ້າຈັດການສິນຄ້າ) ແລ້ວແປງແຖວຄືນ
+  const syncMissingProducts = async () => {
+    setSyncState(s => ({ ...s, busy: true, error: '' }))
+    try {
+      const res = await fetch(`${API}/admin/products/sync-suppliers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pendingInvoice?.supplier_id ? { supplier_id: pendingInvoice.supplier_id } : {}),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+
+      const productsData = await fetch(`${API}/admin/products`).then(r => r.json())
+      setProducts(productsData)
+      const { mapped, missing } = mapInvoiceItems(pendingInvoice, productsData)
+      if (mapped.length > 0) setItems(mapped)
+      setMissingItems(missing)
+      setSyncState({
+        open: true,
+        busy: false,
+        error: '',
+        result: { added: Number(data.inserted_count) || 0, updated: Number(data.updated_count) || 0, stillMissing: missing.length },
+      })
+    } catch (e) {
+      setSyncState(s => ({ ...s, busy: false, error: `Sync ບໍ່ສຳເລັດ: ${e.message}` }))
+    }
+  }
 
   const addItem = () => setItems([...items, { product_id: '', quantity: 1, cost_price: '', unit: '', disc_type: 'none', disc_value: '' }])
   const removeItem = (i) => items.length > 1 && setItems(items.filter((_, idx) => idx !== i))
@@ -330,6 +363,79 @@ export default function PurchaseCreate() {
   const card = "bg-white rounded-lg border border-slate-200"
 
   return (
+    <>
+      {/* ຖາມ sync ສິນຄ້າໃໝ່ກ່ອນຮັບເຂົ້າ — ບໍ່ຕ້ອງກັບໄປໜ້າຈັດການສິນຄ້າ */}
+      {syncState.open && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div className="px-5 py-4 border-b border-slate-200">
+              <div className="text-base font-extrabold text-slate-900">
+                {syncState.result ? 'ຜົນການ Sync ສິນຄ້າ' : `ພົບສິນຄ້າໃໝ່ ${missingItems.length} ລາຍການ`}
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                {syncState.result
+                  ? 'ກວດເບິ່ງຜົນ ແລ້ວສືບຕໍ່ຮັບເຂົ້າໄດ້ເລີຍ'
+                  : `ບິນ ${pendingInvoice?.doc_no || ''} ມີສິນຄ້າທີ່ຍັງບໍ່ມີໃນລະບົບ — Sync ເລີຍບໍ?`}
+              </div>
+            </div>
+
+            {syncState.result ? (
+              <div className="px-5 py-4 space-y-2 text-sm">
+                <div className="flex justify-between"><span className="text-slate-500">ເພີ່ມສິນຄ້າໃໝ່</span><b className="text-emerald-700">{syncState.result.added} ລາຍການ</b></div>
+                <div className="flex justify-between"><span className="text-slate-500">ອັບເດດຂອງເກົ່າ</span><b className="text-slate-700">{syncState.result.updated} ລາຍການ</b></div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">ຍັງບໍ່ພົບໃນລະບົບ</span>
+                  <b className={syncState.result.stillMissing > 0 ? 'text-rose-600' : 'text-emerald-700'}>{syncState.result.stillMissing} ລາຍການ</b>
+                </div>
+                {syncState.result.stillMissing > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">
+                    ລາຍການທີ່ຍັງບໍ່ພົບ ຈະບໍ່ຖືກໃສ່ໃນໃບຮັບເຂົ້າ — ຕ້ອງເພີ່ມສິນຄ້າເອງກ່ອນ
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto px-5 py-3">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr className="text-left text-slate-500">
+                      <th className="px-2 py-1.5 font-bold">ລະຫັດ</th>
+                      <th className="px-2 py-1.5 font-bold">ຊື່ສິນຄ້າ</th>
+                      <th className="px-2 py-1.5 font-bold text-right">ຈຳນວນ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {missingItems.map((it, i) => (
+                      <tr key={`${it.code}-${i}`}>
+                        <td className="px-2 py-1.5 font-mono text-red-600">{it.code || '—'}</td>
+                        <td className="px-2 py-1.5 text-slate-700">{it.name || '—'}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-slate-600">{it.qty} {it.unit}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {syncState.error && (
+              <div className="mx-5 mb-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{syncState.error}</div>
+            )}
+
+            <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+              <button onClick={() => setSyncState({ open: false, busy: false, result: null, error: '' })}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50">
+                {syncState.result ? 'ສືບຕໍ່ຮັບເຂົ້າ' : 'ຂ້າມໄປກ່ອນ'}
+              </button>
+              {!syncState.result && (
+                <button onClick={syncMissingProducts} disabled={syncState.busy}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+                  {syncState.busy ? 'ກຳລັງ Sync...' : `🔄 Sync ສິນຄ້າຈາກຜູ້ສະໜອງ`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     <div className="min-h-screen bg-slate-50 text-slate-800 text-[13px]">
       {/* Top bar */}
       <div className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
@@ -910,5 +1016,6 @@ export default function PurchaseCreate() {
         .animate-pop-in { animation: pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
       `}</style>
     </div>
+    </>
   )
 }

@@ -168,9 +168,10 @@ export default function LocationsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return showToast(data.error || 'ບັນທຶກບໍ່ສຳເລັດ', 'error');
-      setLocations(data.locations || locations);
+      const saved = data.locations || locations;
+      setLocations(saved);
       setDirty(false);
-      notifyLocationsChanged();
+      notifyLocationsChanged(saved);
       showToast('ບັນທຶກສຳເລັດ');
     } catch {
       showToast('ບັນທຶກບໍ່ສຳເລັດ', 'error');
@@ -179,22 +180,26 @@ export default function LocationsPage() {
     }
   };
 
-  const migrateDefaults = async () => {
-    if (!confirm('ນີ້ຈະຍ້າຍຂໍ້ມູນຕົ້ນຕໍຂອງສະຖານທີ່ລາວໄປເກັບໄວ້ໃນຖານຂໍ້ມູນ. ຕົກລົງບໍ?')) return;
+  // ລວມລາຍການຕົ້ນຕໍຂອງລາວເຂົ້າກັບຂໍ້ມູນທີ່ມີ — ບໍ່ລຶບຂອງທີ່ເພີ່ມເອງ
+  const mergeDefaults = async () => {
+    if (dirty && !confirm('ຍັງມີການແກ້ໄຂທີ່ຍັງບໍ່ໄດ້ບັນທຶກ ຈະຫາຍໄປ. ສືບຕໍ່ບໍ?')) return;
+    if (!confirm('ນີ້ຈະເພີ່ມລາຍການ ແຂວງ/ເມືອງ/ບ້ານ ຕົ້ນຕໍຂອງລາວເຂົ້າໄປ (ບໍ່ລຶບຂໍ້ມູນທີ່ທ່ານເພີ່ມເອງ). ຕົກລົງບໍ?')) return;
     setSaving(true);
     try {
       const res = await fetch(`${API}/admin/locations/migrate`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return showToast(data.error || 'ຍ້າຍຂໍ້ມູນບໍ່ສຳເລັດ', 'error');
-      // Reload locations
-      const locRes = await fetch(`${API}/admin/locations`);
-      const locData = await locRes.json();
-      setLocations(locData.locations || {});
+      if (!res.ok) return showToast(data.error || 'ເພີ່ມຂໍ້ມູນຕົ້ນຕໍບໍ່ສຳເລັດ', 'error');
+      const next = data.locations || {};
+      const province = selectedProvince && next[selectedProvince] ? selectedProvince : firstKey(next);
+      const district = selectedDistrict && next[province]?.[selectedDistrict] ? selectedDistrict : firstKey(next[province]);
+      setLocations(next);
+      setSelectedProvince(province);
+      setSelectedDistrict(district);
       setDirty(false);
-      notifyLocationsChanged();
-      showToast('ຍ້າຍຂໍ້ມູນສຳເລັດ');
+      notifyLocationsChanged(next);
+      showToast('ເພີ່ມຂໍ້ມູນຕົ້ນຕໍສຳເລັດ');
     } catch {
-      showToast('ຍ້າຍຂໍ້ມູນບໍ່ສຳເລັດ', 'error');
+      showToast('ເພີ່ມຂໍ້ມູນຕົ້ນຕໍບໍ່ສຳເລັດ', 'error');
     } finally {
       setSaving(false);
     }
@@ -216,9 +221,10 @@ export default function LocationsPage() {
                   ຍັງບໍ່ໄດ້ບັນທຶກ
                 </span>
               )}
-              <button onClick={migrateDefaults} disabled={saving}
-                className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-blue-950/20 disabled:opacity-50">
-                {saving ? 'ກຳລັງຍ້າຍ...' : '📥 ຍ້າຍຂໍ້ມູນຕົ້ນຕໍ'}
+              <button onClick={mergeDefaults} disabled={saving}
+                title="ເພີ່ມລາຍການຕົ້ນຕໍຂອງລາວເຂົ້າໄປ ໂດຍບໍ່ລຶບຂໍ້ມູນທີ່ທ່ານເພີ່ມເອງ"
+                className="rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-4 py-3 text-sm font-extrabold disabled:opacity-50">
+                {saving ? 'ກຳລັງເພີ່ມ...' : '📥 ເພີ່ມລາຍການຕົ້ນຕໍ'}
               </button>
               <button onClick={save} disabled={saving || !dirty}
                 className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-3 text-sm font-extrabold shadow-lg shadow-red-950/20 disabled:opacity-50">

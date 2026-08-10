@@ -7,8 +7,27 @@ import defaultLocations from '@/data/laoLocations';
 // ເພື່ອໃຫ້ໜ້າອື່ນ (POS, ສະມາຊິກ, ຜູ້ສະໜອງ) ດຶງໃໝ່ທັນທີ ບໍ່ຕ້ອງ refresh
 export const LOCATIONS_CHANGED_EVENT = 'pos:locations-changed';
 
-export function notifyLocationsChanged() {
-  try { window.dispatchEvent(new Event(LOCATIONS_CHANGED_EVENT)); } catch { /* SSR */ }
+/**
+ * @param {object} [locations] ຖ້າສົ່ງຕົ້ນໄມ້ໃໝ່ມານຳ ໜ້າອື່ນຈະຮັບຄ່າທັນທີ (ບໍ່ຕ້ອງລໍ fetch)
+ */
+export function notifyLocationsChanged(locations) {
+  try {
+    window.dispatchEvent(new CustomEvent(LOCATIONS_CHANGED_EVENT, { detail: locations || null }));
+  } catch { /* SSR */ }
+}
+
+// ເພີ່ມ ແຂວງ/ເມືອງ/ບ້ານ ຈາກຟອມໃດກໍໄດ້ — ເພີ່ມແລ້ວແຈ້ງໃຫ້ທຸກໜ້າອັບເດດທັນທີ
+// (dispatch ເປັນ synchronous ຈຶ່ງໝັ້ນໃຈວ່າ list ມີຄ່າໃໝ່ກ່ອນ SearchSelect ເລືອກມັນ)
+export async function createLocation({ province, district, village } = {}) {
+  const res = await fetch('/api/locations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ province, district, village }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'ເພີ່ມຂໍ້ມູນບໍ່ສຳເລັດ');
+  notifyLocationsChanged(data.locations);
+  return data.locations;
 }
 
 /**
@@ -34,7 +53,14 @@ export function useLocations(refreshKey) {
     const isAlive = () => alive;
     load(isAlive);
 
-    const onChanged = () => load(isAlive);
+    const onChanged = (event) => {
+      const next = event?.detail;
+      if (next && typeof next === 'object' && Object.keys(next).length) {
+        setLocations(next);
+        return;
+      }
+      load(isAlive);
+    };
     const onFocus = () => load(isAlive);
     const onVisible = () => { if (document.visibilityState === 'visible') load(isAlive); };
 

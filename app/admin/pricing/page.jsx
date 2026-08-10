@@ -24,7 +24,8 @@ const productCostValue = (p) => {
 
 export default function Pricing() {
   // ຄຳນວນຕົ້ນທຶນຄືນຈາກເອກະສານຮັບເຂົ້າ-ຈ່າຍອອກທີ່ມີຢູ່ຈິງ
-  const [recalcState, setRecalcState] = useState({ busy: false, preview: null })
+  const [recalc, setRecalc] = useState({ open: false, busy: false, scope: 'all', codes: '', preview: null, error: '' })
+  const [picked, setPicked] = useState([])   // product_id ທີ່ຕິກໄວ້ວ່າຈະອັບເດດ
   const [products, setProducts] = useState([])
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({ cost_price: '', selling_price: '' })
@@ -249,61 +250,134 @@ export default function Pricing() {
     slate: 'text-slate-700 bg-slate-50 border-slate-200',
   }
 
-  const previewRecalc = async () => {
-    setRecalcState({ busy: true, preview: null })
+  const closeRecalc = () => {
+    setRecalc({ open: false, busy: false, scope: 'all', codes: '', preview: null, error: '' })
+    setPicked([])
+  }
+
+  // ຂັ້ນທີ 1 — ກວດເບິ່ງກ່ອນ (ບໍ່ບັນທຶກ). ຈຳກັດຂອບເຂດຕາມລະຫັດທີ່ລະບຸໄດ້
+  const runPreview = async () => {
+    const codes = recalc.codes.trim()
+    if (recalc.scope === 'codes' && !codes) {
+      setRecalc(s => ({ ...s, error: 'ກະລຸນາລະບຸລະຫັດສິນຄ້າ ຫຼື ບາໂຄດ' }))
+      return
+    }
+    setRecalc(s => ({ ...s, busy: true, error: '', preview: null }))
+    setPicked([])
     try {
-      const res = await fetch(`${API}/admin/products/recalc-cost`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setRecalcState({ busy: false, preview: await res.json() })
+      const q = new URLSearchParams()
+      if (recalc.scope === 'codes') q.set('codes', codes)
+      const res = await fetch(`${API}/admin/products/recalc-cost?${q}`, { cache: 'no-store' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      setRecalc(s => ({ ...s, busy: false, preview: data }))
+      setPicked((data.changes || []).map(c => c.product_id))   // ຕິກໃຫ້ໝົດໄວ້ກ່ອນ
     } catch (e) {
-      setRecalcState({ busy: false, preview: null })
-      alert(`ກວດບໍ່ໄດ້: ${e.message}`)
+      setRecalc(s => ({ ...s, busy: false, error: `ກວດບໍ່ໄດ້: ${e.message}` }))
     }
   }
+
+  const togglePick = (id) => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
+  const toggleAllPicks = () => {
+    const all = (recalc.preview?.changes || []).map(c => c.product_id)
+    setPicked(p => p.length === all.length ? [] : all)
+  }
+
+  // ຂັ້ນທີ 2 — ບັນທຶກສະເພາະລາຍການທີ່ຕິກໄວ້
   const applyRecalc = async () => {
-    setRecalcState(s => ({ ...s, busy: true }))
+    if (picked.length === 0) return
+    setRecalc(s => ({ ...s, busy: true, error: '' }))
     try {
-      const res = await fetch(`${API}/admin/products/recalc-cost`, { method: 'POST' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setRecalcState({ busy: false, preview: null })
+      const res = await fetch(`${API}/admin/products/recalc-cost`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_ids: picked }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      closeRecalc()
       alert(`ອັບເດດຕົ້ນທຶນແລ້ວ ${data.changed} ລາຍການ (ກວດ ${data.scanned} ລາຍການ)`)
       load()
     } catch (e) {
-      setRecalcState(s => ({ ...s, busy: false }))
-      alert(`ອັບເດດບໍ່ໄດ້: ${e.message}`)
+      setRecalc(s => ({ ...s, busy: false, error: `ອັບເດດບໍ່ໄດ້: ${e.message}` }))
     }
   }
 
   return (
     <div className="space-y-4 pb-6">
-      {recalcState.preview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
-          onClick={() => setRecalcState({ busy: false, preview: null })}>
+      {recalc.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={closeRecalc}>
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col"
             onClick={e => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-slate-200">
               <div className="text-base font-extrabold text-slate-900">ກວດຕົ້ນທຶນຈາກເອກະສານ</div>
               <div className="text-xs text-slate-500 mt-0.5">
-                ຄຳນວນຄືນຈາກໃບຮັບເຂົ້າ · ໃບສົ່ງຄືນ · ບິນຂາຍ · ໃບຮັບຄືນ · ໃບປັບປຸງ ທີ່ມີຢູ່ຈິງ
+                ຄຳນວນຄືນຈາກໃບຮັບເຂົ້າ · ໃບສົ່ງຄືນ · ບິນຂາຍ · ໃບຮັບຄືນ · ໃບປັບປຸງ ທີ່ມີຍູ່ຈິງ
                 ຕາມວິທີຄິດຕົ້ນທຶນຂອງແຕ່ລະສິນຄ້າ
               </div>
             </div>
 
-            <div className="px-5 py-3 border-b border-slate-100 flex gap-4 text-xs">
-              <div><span className="text-slate-500">ກວດແລ້ວ</span> <b className="text-slate-900">{fmtNum(recalcState.preview.scanned)}</b> ລາຍການ</div>
-              <div><span className="text-slate-500">ຕ້ອງແກ້</span> <b className={recalcState.preview.changed > 0 ? 'text-rose-600' : 'text-emerald-600'}>{fmtNum(recalcState.preview.changed)}</b> ລາຍການ</div>
+            {/* ຂອບເຂດ — ທັງໝົດ ຫຼື ສະເພາະລະຫັດທີ່ລະບຸ */}
+            <div className="px-5 py-3 border-b border-slate-100 space-y-2">
+              <div className="flex flex-wrap items-center gap-4 text-xs">
+                {[{ k: 'all', l: 'ກວດທັງໝົດ' }, { k: 'codes', l: 'ສະເພາະລະຫັດທີ່ລະບຸ' }].map(o => (
+                  <label key={o.k} className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-slate-700">
+                    <input type="radio" name="recalc-scope" className="accent-red-600"
+                      checked={recalc.scope === o.k}
+                      onChange={() => setRecalc(s => ({ ...s, scope: o.k, preview: null, error: '' }))} />
+                    {o.l}
+                  </label>
+                ))}
+                <div className="flex-1" />
+                <button onClick={runPreview} disabled={recalc.busy}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+                  {recalc.busy ? 'ກຳລັງກວດ...' : '\ud83d\udd0d ກວດເບິ່ງ'}
+                </button>
+              </div>
+              {recalc.scope === 'codes' && (
+                <textarea rows={2} value={recalc.codes}
+                  onChange={e => setRecalc(s => ({ ...s, codes: e.target.value, error: '' }))}
+                  placeholder="ພິມລະຫັດສິນຄ້າ ຫຼື ບາໂຄດ — ຂັ້ນດ້ວຍ ຈຸດ, ຍະຫວ່າງ ຫຼື ຂຶ້ນແຖວໃໝ່  ເຊັ່ນ: P001, P002"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:border-red-500" />
+              )}
+              {recalc.error && (
+                <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{recalc.error}</div>
+              )}
+              {recalc.preview?.not_found?.length > 0 && (
+                <div className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  ບໍ່ພົບລະຫັດ: {recalc.preview.not_found.join(', ')}
+                </div>
+              )}
             </div>
 
+            {recalc.preview && (
+              <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap gap-4 text-xs">
+                <div><span className="text-slate-500">ກວດແລ້ວ</span> <b className="text-slate-900">{fmtNum(recalc.preview.scanned)}</b> ລາຍການ</div>
+                <div><span className="text-slate-500">ຕ້ອງແກ້</span> <b className={recalc.preview.changed > 0 ? 'text-rose-600' : 'text-emerald-600'}>{fmtNum(recalc.preview.changed)}</b> ລາຍການ</div>
+                {recalc.preview.changed > 0 && (
+                  <div><span className="text-slate-500">ຕິກໄວ້</span> <b className="text-red-600">{fmtNum(picked.length)}</b> ລາຍການ</div>
+                )}
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto">
-              {recalcState.preview.changed === 0 ? (
+              {!recalc.preview ? (
+                <div className="py-12 text-center text-sm text-slate-400">
+                  ເລືອກຂອບເຂດແລ້ວກົດ “ກວດເບິ່ງ” — ຍັງບໍ່ທັນບັນທຶກຫຍັງ
+                </div>
+              ) : recalc.preview.changed === 0 ? (
                 <div className="py-12 text-center text-sm text-emerald-700 font-bold">
-                  ✓ ຕົ້ນທຶນທຸກລາຍການກົງກັບເອກະສານແລ້ວ ບໍ່ຕ້ອງແກ້
+                  ✓ ຕົ້ນທຶນທຸກລາຍການທີ່ກວດ ກົງກັບເອກະສານແລ້ວ ບໍ່ຕ້ອງແກ້
                 </div>
               ) : (
                 <table className="w-full text-xs">
                   <thead className="bg-slate-50 sticky top-0">
                     <tr className="text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      <th className="px-3 py-2 w-8">
+                        <input type="checkbox" className="accent-red-600 cursor-pointer"
+                          checked={picked.length === recalc.preview.changes.length}
+                          onChange={toggleAllPicks} title="ຕິກ / ຍົກເລີກທັງໝົດ" />
+                      </th>
                       <th className="px-4 py-2">ລະຫັດ</th>
                       <th className="px-4 py-2">ຊື່ສິນຄ້າ</th>
                       <th className="px-4 py-2">ວິທີ</th>
@@ -313,32 +387,40 @@ export default function Pricing() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {recalcState.preview.changes.map(c => (
-                      <tr key={c.product_id} className="hover:bg-slate-50">
-                        <td className="px-4 py-1.5 font-mono text-slate-500">{c.product_code || '—'}</td>
-                        <td className="px-4 py-1.5 font-bold text-slate-800">{c.product_name || `#${c.product_id}`}</td>
-                        <td className="px-4 py-1.5 text-slate-500">{COSTING_METHOD_LABELS[c.method] || c.method}</td>
-                        <td className="px-4 py-1.5 text-right font-mono text-slate-500">{fmtNum(Math.round(c.before))}</td>
-                        <td className="px-4 py-1.5 text-right font-mono font-extrabold text-slate-900">{fmtNum(Math.round(c.after))}</td>
-                        <td className={`px-4 py-1.5 text-right font-mono font-bold ${c.diff > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                          {c.diff > 0 ? '+' : ''}{fmtNum(Math.round(c.diff))}
-                        </td>
-                      </tr>
-                    ))}
+                    {recalc.preview.changes.map(c => {
+                      const on = picked.includes(c.product_id)
+                      return (
+                        <tr key={c.product_id} onClick={() => togglePick(c.product_id)}
+                          className={`cursor-pointer ${on ? 'bg-red-50/60' : 'hover:bg-slate-50'}`}>
+                          <td className="px-3 py-1.5">
+                            <input type="checkbox" className="accent-red-600 cursor-pointer" checked={on}
+                              onChange={() => togglePick(c.product_id)} onClick={e => e.stopPropagation()} />
+                          </td>
+                          <td className="px-4 py-1.5 font-mono text-slate-500">{c.product_code || '—'}</td>
+                          <td className="px-4 py-1.5 font-bold text-slate-800">{c.product_name || `#${c.product_id}`}</td>
+                          <td className="px-4 py-1.5 text-slate-500">{COSTING_METHOD_LABELS[c.method] || c.method}</td>
+                          <td className="px-4 py-1.5 text-right font-mono text-slate-500">{fmtNum(Math.round(c.before))}</td>
+                          <td className="px-4 py-1.5 text-right font-mono font-extrabold text-slate-900">{fmtNum(Math.round(c.after))}</td>
+                          <td className={`px-4 py-1.5 text-right font-mono font-bold ${c.diff > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                            {c.diff > 0 ? '+' : ''}{fmtNum(Math.round(c.diff))}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               )}
             </div>
 
             <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
-              <button onClick={() => setRecalcState({ busy: false, preview: null })}
+              <button onClick={closeRecalc}
                 className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50">
                 ປິດ
               </button>
-              {recalcState.preview.changed > 0 && (
-                <button onClick={applyRecalc} disabled={recalcState.busy}
+              {recalc.preview?.changed > 0 && (
+                <button onClick={applyRecalc} disabled={recalc.busy || picked.length === 0}
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
-                  {recalcState.busy ? 'ກຳລັງບັນທຶກ...' : `ອັບເດດ ${recalcState.preview.changed} ລາຍການ`}
+                  {recalc.busy ? 'ກຳລັງບັນທຶກ...' : `ອັບເດດ ${fmtNum(picked.length)} ລາຍການທີ່ຕິກ`}
                 </button>
               )}
             </div>
@@ -352,11 +434,11 @@ export default function Pricing() {
         subtitle={`${fmtNum(products.length)} ລາຍການ${stats.missing > 0 ? ` · ${stats.missing} ບໍ່ຄົບ` : ''}${stats.loss > 0 ? ` · ${stats.loss} ຂາດທຶນ` : ''}`}
         action={
         <div className="flex items-center gap-2">
-          <button onClick={previewRecalc} disabled={recalcState.busy}
+          <button onClick={() => setRecalc({ open: true, busy: false, scope: 'all', codes: '', preview: null, error: '' })}
             className="px-3 py-1.5 bg-white hover:bg-cyan-50 hover:text-cyan-600 hover:border-cyan-200 disabled:opacity-50 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
             title="ຄຳນວນຕົ້ນທຶນຄືນຈາກເອກະສານຮັບເຂົ້າ-ຈ່າຍອອກ">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-            {recalcState.busy ? 'ກຳລັງກວດ...' : 'ກວດຕົ້ນທຶນ'}
+            ກວດຕົ້ນທຶນ
           </button>
           <button onClick={openRecent}
             className="px-3 py-1.5 bg-white hover:bg-violet-50 hover:text-violet-600 hover:border-violet-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5">

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { generateAndPrintPurchaseA4, generateAndPrintPaymentReceipt } from '@/utils/receiptPdfGenerator'
+import { sortInvoiceItems } from '@/lib/pendingInvoice';
 import { usePagePermission } from '@/utils/adminPermissions'
 import { formatDate, formatDateTime } from '@/utils/formatDate';
 import { fileUrl, isImageFile, isPdfFile } from '@/utils/fileUrl';
@@ -248,6 +249,12 @@ export default function Purchases() {
   })
   const [uploading, setUploading] = useState(false)
   const [pendingInvoices, setPendingInvoices] = useState([])
+  // ບິນທີ່ຖືກເຊື່ອງ — ເກັບແຖວໄວ້ ບໍ່ລຶບ ບໍ່ດັ່ງນັ້ນ sync ຮອບໜ້າຈະດຶງກັບມາອີກ
+  const [dismissedInvoices, setDismissedInvoices] = useState([])
+  const [showDismissed, setShowDismissed] = useState(false)
+  const [dismissTarget, setDismissTarget] = useState(null)   // { id, doc_no }
+  const [dismissReason, setDismissReason] = useState('')
+  const [dismissBusy, setDismissBusy] = useState(false)
   const [newPendingCount, setNewPendingCount] = useState(0)
 
   useEffect(() => {
@@ -258,6 +265,7 @@ export default function Purchases() {
   const load = () => {
     fetch(`${API}/admin/purchases`).then(r => r.json()).then(setPurchases)
     fetch(`${API}/admin/purchases/pending-invoices`).then(r => r.json()).then(setPendingInvoices)
+    fetch(`${API}/admin/purchases/pending-invoices?dismissed=1`).then(r => r.json()).then(setDismissedInvoices).catch(() => {})
   }
 
   const autoSyncInvoices = async () => {
@@ -271,6 +279,8 @@ export default function Purchases() {
     try {
       const pendingRes = await fetch(`${API}/admin/purchases/pending-invoices`)
       if (pendingRes.ok) setPendingInvoices(await pendingRes.json())
+      const dismissedRes = await fetch(`${API}/admin/purchases/pending-invoices?dismissed=1`)
+      if (dismissedRes.ok) setDismissedInvoices(await dismissedRes.json())
     } catch {}
   }
 
@@ -286,16 +296,43 @@ export default function Purchases() {
     }
   }
 
-  const dismissPending = async (id) => {
+  // ເຊື່ອງບິນອອກຈາກລາຍການ ພ້ອມບັນທຶກເຫດຜົນ (ບໍ່ລຶບ ຈຶ່ງບໍ່ຖືກ sync ດຶງກັບມາອີກ)
+  const confirmDismiss = async () => {
+    const reason = dismissReason.trim()
+    if (!reason || !dismissTarget) return
+    setDismissBusy(true)
+    try {
+      const res = await fetch(`${API}/admin/purchases/pending-invoices/${dismissTarget.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'dismiss', reason }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      setDismissTarget(null)
+      setDismissReason('')
+      await load()
+    } catch (e) {
+      alert(`ບໍ່ສຳເລັດ: ${e.message}`)
+    } finally {
+      setDismissBusy(false)
+    }
+  }
+
+  const restorePending = async (id) => {
     const ok = await confirmDialog({
-      title: 'ລຶບບິນ Pending',
-      message: 'ຕ້ອງການລຶບບິນ pending ນີ້ອອກຈາກລາຍການບໍ?',
-      confirmLabel: 'ລຶບ', variant: 'danger'
+      title: 'ກູ້ບິນຄືນ',
+      message: 'ບິນນີ້ຈະກັບມາສະແດງໃນລາຍການລໍຖ້ານຳເຂົ້າອີກ. ຕົກລົງບໍ?',
+      confirmLabel: 'ກູ້ຄືນ'
     })
     if (!ok) return
-    await withMinLoading('ກຳລັງລຶບບິນ pending...', async () => {
-      await fetch(`${API}/admin/purchases/pending-invoices/${id}`, { method: 'DELETE' })
-      load()
+    await withMinLoading('ກຳລັງກູ້ບິນຄືນ...', async () => {
+      await fetch(`${API}/admin/purchases/pending-invoices/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'restore' }),
+      })
+      await load()
     })
   }
 
@@ -631,9 +668,9 @@ export default function Purchases() {
       </div>
 
       {/* Pending Invoices Modal */}
-      {showPendingModal && pendingInvoices.length > 0 && (() => {
+      {showPendingModal && (pendingInvoices.length > 0 || dismissedInvoices.length > 0) && (() => {
         const thbFmt = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-        const grandTotal = pendingInvoices.reduce((s, inv) => s + getHeaderTotal(inv.header, Array.isArray(inv.items) ? inv.items : []), 0)
+        const grandTotal = pendingInvoices.reduce((s, inv) => s + getHeaderTotal(inv.header, sortInvoiceItems(inv.items)), 0)
         return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowPendingModal(false)}>
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"></div>
@@ -654,6 +691,18 @@ export default function Purchases() {
                       <span className="font-semibold">{pendingInvoices.length}</span> ໃບລໍຖ້ານຳເຂົ້າ
                       {grandTotal > 0 && <span className="ml-2">• ລວມ <span className="font-semibold text-white">฿ {thbFmt.format(grandTotal)}</span></span>}
                     </p>
+                    {dismissedInvoices.length > 0 && (
+                      <div className="mt-2 flex gap-1.5">
+                        <button onClick={() => setShowDismissed(false)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${!showDismissed ? 'bg-white text-orange-600' : 'bg-white/20 text-white hover:bg-white/30'}`}>
+                          ລໍຖ້ານຳເຂົ້າ ({pendingInvoices.length})
+                        </button>
+                        <button onClick={() => setShowDismissed(true)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${showDismissed ? 'bg-white text-orange-600' : 'bg-white/20 text-white hover:bg-white/30'}`}>
+                          ເຊື່ອງໄວ້ ({dismissedInvoices.length})
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <button onClick={() => setShowPendingModal(false)} className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-lg flex items-center justify-center transition active:scale-95">
@@ -662,10 +711,39 @@ export default function Purchases() {
               </div>
             </div>
 
+            {showDismissed ? (
+              <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50">
+                {dismissedInvoices.map(inv => (
+                  <div key={inv.id} className="bg-white rounded-xl border border-slate-200 p-3 flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-400 flex items-center justify-center shrink-0">🚫</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-slate-800 text-[13px]">{inv.doc_no}</span>
+                        <span className="text-[11px] text-slate-400">{formatDate(inv.doc_date)}</span>
+                        <span className="text-[11px] text-slate-400">· {inv.supplier_name || ''}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-slate-600">
+                        <b className="text-slate-500">ເຫດຜົນ:</b> {inv.dismiss_reason || '—'}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        ເຊື່ອງໂດຍ {inv.dismissed_by || '—'} · {formatDateTime(inv.dismissed_at)}
+                      </div>
+                    </div>
+                    {perm.edit && (
+                      <button onClick={() => restorePending(inv.id)}
+                        className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg text-[11px] font-bold text-slate-600 shrink-0">
+                        ↩ ກູ້ຄືນ
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+            <>
             {/* List */}
             <div className="overflow-y-auto flex-1 p-4 space-y-2 bg-gradient-to-b from-amber-50/30 via-slate-50 to-slate-50">
               {pendingInvoices.map(inv => {
-                const items = Array.isArray(inv.items) ? inv.items : []
+                const items = sortInvoiceItems(inv.items)
                 const billTotal = getHeaderTotal(inv.header, items)
                 const billDiscount = getHeaderDiscount(inv.header, items)
                 const isOpen = expandedPendingId === inv.id
@@ -706,8 +784,10 @@ export default function Purchases() {
                         </button>
                         )}
                         {perm.delete && (
-                        <button onClick={() => dismissPending(inv.id)} className="w-7 h-7 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg flex items-center justify-center transition" title="ລຶບ">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        <button onClick={() => { setDismissTarget({ id: inv.id, doc_no: inv.doc_no }); setDismissReason('') }}
+                          className="w-7 h-7 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg flex items-center justify-center transition"
+                          title="ບໍ່ໃຫ້ສະແດງບິນນີ້ (ຕ້ອງລະບຸເຫດຜົນ)">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 10 8 10 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.4 18.4 0 0 0 2 12s3 8 10 8a9.1 9.1 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/></svg>
                         </button>
                         )}
                         <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${isOpen ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
@@ -802,6 +882,8 @@ export default function Purchases() {
                 )
               })}
             </div>
+            </>
+            )}
           </div>
         </div>
         )
@@ -1216,6 +1298,42 @@ export default function Purchases() {
       )}
 
       {/* Confirm dialog */}
+      {/* ຖາມເຫດຜົນກ່ອນເຊື່ອງບິນ */}
+      {dismissTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="px-5 py-4 border-b border-slate-200">
+              <div className="text-base font-extrabold text-slate-900">ບໍ່ໃຫ້ສະແດງບິນນີ້</div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                ບິນ <b className="text-slate-700">{dismissTarget.doc_no}</b> ຈະຫາຍຈາກລາຍການລໍຖ້ານຳເຂົ້າ
+                (ຂໍ້ມູນຍັງເກັບໄວ້ ແລະ sync ຮອບຕໍ່ໄປຈະບໍ່ດຶງກັບມາອີກ)
+              </div>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              <div className="flex flex-wrap gap-1.5">
+                {['ບິນຍົກເລີກ', 'ບິນຊ້ຳ', 'ຮັບເຂົ້າດ້ວຍມືແລ້ວ', 'ບໍ່ແມ່ນຂອງຮ້ານ', 'ບິນທົດສອບ'].map(r => (
+                  <button key={r} onClick={() => setDismissReason(r)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition ${dismissReason === r ? 'border-red-400 bg-red-50 text-red-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                    {r}
+                  </button>
+                ))}
+              </div>
+              <textarea rows={2} value={dismissReason} onChange={e => setDismissReason(e.target.value)}
+                placeholder="ເຫດຜົນ (ຈຳເປັນ)"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-red-500" />
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+              <button onClick={() => { setDismissTarget(null); setDismissReason('') }}
+                className="px-4 py-2 border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50">ຍົກເລີກ</button>
+              <button onClick={confirmDismiss} disabled={dismissBusy || !dismissReason.trim()}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+                {dismissBusy ? 'ກຳລັງບັນທຶກ...' : 'ບໍ່ໃຫ້ສະແດງ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmState && (() => {
         const v = confirmState.variant
         const theme = v === 'danger'

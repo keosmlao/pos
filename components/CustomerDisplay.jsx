@@ -164,7 +164,7 @@ export default function CustomerDisplay() {
 
           <div className="space-y-3 text-base flex-1">
             <div className="flex justify-between text-slate-400 font-mono-t">
-              <span>ລວມຍ່ອຍ</span>
+              <span>ລວມມູນຄ່າສິນຄ້າ</span>
               <span>{fmt(state.subtotal)}</span>
             </div>
             {state.discount > 0 && (

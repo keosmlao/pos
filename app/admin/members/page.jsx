@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import SearchSelect from '@/components/SearchSelect';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
-import { useLocations } from '@/utils/useLocations';
+import { useLocations, createLocation } from '@/utils/useLocations';
 import { usePagePermission } from '@/utils/adminPermissions';
 
 const API = '/api';
@@ -125,6 +125,16 @@ export default function MembersPage() {
   const villages = form.province && form.district ? (laoLocations[form.province]?.[form.district] || []) : [];
   const setProvince = (province) => setForm({ ...form, province, district: '', village: '' });
   const setDistrict = (district) => setForm({ ...form, district, village: '' });
+  // ເພີ່ມ ແຂວງ/ເມືອງ/ບ້ານ ໄດ້ຈາກຟອມນີ້ເລີຍ — ບໍ່ຕ້ອງໄປໜ້າ "ກຳນົດ ແຂວງ/ເມືອງ/ບ້ານ" ກ່ອນ
+  const addLocationOption = async (payload) => {
+    try {
+      await createLocation(payload);
+      return true;
+    } catch (err) {
+      alert(err.message || 'ເພີ່ມຂໍ້ມູນບໍ່ສຳເລັດ');
+      return false;
+    }
+  };
   const totalPages = Math.max(1, Math.ceil(members.length / perPage));
   const safePage = Math.min(page, totalPages);
   const pagedMembers = members.slice((safePage - 1) * perPage, safePage * perPage);
@@ -328,7 +338,8 @@ export default function MembersPage() {
                   <div className="mt-1">
                     <SearchSelect value={form.province} onChange={setProvince}
                       options={provinces.map(p => ({ value: p, label: p }))}
-                      placeholder="-- ເລືອກແຂວງ --" />
+                      placeholder="-- ເລືອກແຂວງ --"
+                      onAdd={name => addLocationOption({ province: name })} />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -337,7 +348,10 @@ export default function MembersPage() {
                     <div className="mt-1">
                       <SearchSelect value={form.district} onChange={setDistrict}
                         options={districts.map(d => ({ value: d, label: d }))}
-                        placeholder={form.province ? '-- ເລືອກເມືອງ --' : 'ເລືອກແຂວງກ່ອນ'} />
+                        placeholder={form.province ? '-- ເລືອກເມືອງ --' : 'ເລືອກແຂວງກ່ອນ'}
+                        onAdd={form.province
+                          ? (name => addLocationOption({ province: form.province, district: name }))
+                          : undefined} />
                     </div>
                   </div>
                   <div>
@@ -345,7 +359,10 @@ export default function MembersPage() {
                     <div className="mt-1">
                       <SearchSelect value={form.village} onChange={village => setForm({ ...form, village })}
                         options={villages.map(v => ({ value: v, label: v }))}
-                        placeholder={form.district ? '-- ເລືອກບ້ານ --' : 'ເລືອກເມືອງກ່ອນ'} />
+                        placeholder={form.district ? '-- ເລືອກບ້ານ --' : 'ເລືອກເມືອງກ່ອນ'}
+                        onAdd={form.province && form.district
+                          ? (name => addLocationOption({ province: form.province, district: form.district, village: name }))
+                          : undefined} />
                     </div>
                   </div>
                 </div>

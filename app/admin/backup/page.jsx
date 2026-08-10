@@ -125,12 +125,18 @@ function AutoBackupSection() {
 }
 
 export default function BackupPage() {
-  const downloadFull = () => {
-    window.location.href = '/api/admin/backup';
+  // data = ຂໍ້ມູນຢ່າງດຽວ · schema = ໂຄງສ້າງຢ່າງດຽວ · all = ທັງສອງ
+  const [sqlMode, setSqlMode] = useState('all');
+
+  const downloadFull = (format) => {
+    if (!format) { window.location.href = '/api/admin/backup'; return; }
+    window.location.href = `/api/admin/backup?format=${format}&mode=${sqlMode}`;
   };
 
-  const downloadTable = (table) => {
-    window.location.href = `/api/admin/backup?table=${encodeURIComponent(table)}`;
+  const downloadTable = (table, format) => {
+    const q = new URLSearchParams({ table });
+    if (format) { q.set('format', format); q.set('mode', sqlMode); }
+    window.location.href = `/api/admin/backup?${q}`;
   };
 
   return (
@@ -146,18 +152,43 @@ export default function BackupPage() {
         <div className="flex items-start gap-4 flex-wrap">
           <div className="text-4xl">💾</div>
           <div className="flex-1 min-w-0">
-            <div className="text-lg font-extrabold">ສຳຮອງທັງໝົດ (JSON)</div>
+            <div className="text-lg font-extrabold">ສຳຮອງທັງໝົດ</div>
             <div className="text-sm text-slate-300 mt-1">
-              ດາວໂຫຼດທຸກຕາຕະລາງເປັນໄຟລ໌ JSON ດຽວ ສຳລັບການສຳຮອງຄົບຖ້ວນ.
-              ໝາຍເຫດ: ໄຟລ໌ນີ້ບໍ່ມີ password ຂອງຜູ້ໃຊ້.
+              ດາວໂຫຼດທຸກຕາຕະລາງເປັນໄຟລ໌ດຽວ. ໝາຍເຫດ: ໄຟລ໌ນີ້ບໍ່ມີ password ຂອງຜູ້ໃຊ້.
+            </div>
+            <ul className="mt-2 text-xs text-slate-400 space-y-0.5">
+              <li><b className="text-slate-200">SQL</b> — ກູ້ຄືນດ້ວຍ <code className="text-slate-200">psql -d ຖານຂໍ້ມູນ -f ໄຟລ໌.sql</code> ໄດ້ໂດຍກົງ</li>
+              <li><b className="text-slate-200">JSON</b> — ສຳລັບນຳໄປອ່ານ/ວິເຄາະຕໍ່ ຫຼື ໃຊ້ກັບເຄື່ອງມືກູ້ຄືນຂອງລະບົບ</li>
+            </ul>
+            <div className="mt-3">
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">ໄຟລ໌ SQL ໃຫ້ມີຫຍັງແດ່</label>
+              <select value={sqlMode} onChange={e => setSqlMode(e.target.value)}
+                className="rounded-lg bg-slate-700 border border-slate-600 px-3 py-2 text-sm font-bold text-white outline-none">
+                <option value="all">ໂຄງສ້າງຕາຕະລາງ + ຂໍ້ມູນ (ຄົບຖ້ວນທີ່ສຸດ)</option>
+                <option value="data">ຂໍ້ມູນຢ່າງດຽວ</option>
+                <option value="schema">ໂຄງສ້າງຕາຕະລາງຢ່າງດຽວ</option>
+              </select>
+              <div className="mt-1 text-[11px] text-slate-400">
+                {sqlMode === 'all' && 'ກູ້ໃສ່ຖານຂໍ້ມູນຫວ່າງໆໄດ້ເລີຍ — ສ້າງຕາຕະລາງ, index, constraint ໃຫ້ເອງ'}
+                {sqlMode === 'data' && 'ຕ້ອງມີຕາຕະລາງຢູ່ກ່ອນ — ໄຟລ໌ນ້ອຍກວ່າ'}
+                {sqlMode === 'schema' && 'ສ້າງແຕ່ຕາຕະລາງ ບໍ່ມີແຖວຂໍ້ມູນ'}
+              </div>
             </div>
           </div>
-          <button
-            onClick={downloadFull}
-            className="px-5 py-2.5 bg-white text-slate-900 hover:bg-slate-100 rounded-lg font-extrabold text-sm shadow"
-          >
-            ⬇ ດາວໂຫຼດ JSON
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => downloadFull('sql')}
+              className="px-5 py-2.5 bg-white text-slate-900 hover:bg-slate-100 rounded-lg font-extrabold text-sm shadow whitespace-nowrap"
+            >
+              ⬇ ດາວໂຫຼດ SQL
+            </button>
+            <button
+              onClick={() => downloadFull()}
+              className="px-5 py-2.5 bg-slate-700 text-white hover:bg-slate-600 rounded-lg font-extrabold text-sm whitespace-nowrap"
+            >
+              ⬇ ດາວໂຫຼດ JSON
+            </button>
+          </div>
         </div>
       </div>
 
@@ -167,7 +198,7 @@ export default function BackupPage() {
       {/* Per-table export */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-200 font-bold text-slate-900">
-          ສົ່ງອອກລາຍຕາຕະລາງ (CSV)
+          ສົ່ງອອກລາຍຕາຕະລາງ (CSV / SQL)
         </div>
         <div className="divide-y divide-slate-100">
           {TABLES.map(t => (
@@ -182,6 +213,12 @@ export default function BackupPage() {
                 className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold transition"
               >
                 CSV
+              </button>
+              <button
+                onClick={() => downloadTable(t.key, 'sql')}
+                className="px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-700 rounded-lg text-xs font-bold transition"
+              >
+                SQL
               </button>
             </div>
           ))}

@@ -149,7 +149,7 @@ export default function DownloadAppPage() {
         ) : (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 font-bold">
             ⚠ ຍັງບໍ່ມີໄຟລ໌ .exe ໃນເຊີເວີ — ໃຫ້ build ໃນເຄື່ອງ Windows ກ່ອນ:
-            double-click <span className="font-mono text-[11px]">electron\build-windows.cmd</span>
+            ແລ່ນ <span className="font-mono text-[11px]">npm run build:win</span>
             {isAdmin ? ' ແລ້ວອັບໄຟລ໌ຂຶ້ນທີ່ນີ້ຂ້າງລຸ່ມ' : ' ແລ້ວແຈ້ງ admin ໃຫ້ອັບຂຶ້ນລະບົບ'}
           </div>
         )}
@@ -181,7 +181,7 @@ export default function DownloadAppPage() {
               <div className="mt-2 text-[11px] font-bold text-red-600">✕ {upload.error}</div>
             )}
             <div className="mt-2 text-[10px] text-slate-500 leading-relaxed">
-              ເອົາໄຟລ໌ຈາກ <span className="font-mono">electron\out\SMLAO-POS-Setup.exe</span> ຂອງເຄື່ອງທີ່ build —
+              ເອົາໄຟລ໌ຈາກ <span className="font-mono">windows-app\out-standalone\SMLAO POS.exe</span> ຂອງເຄື່ອງທີ່ build —
               ອັບແລ້ວທັບໄຟລ໌ເກົ່າໃຫ້ອັດຕະໂນມັດ
             </div>
           </div>

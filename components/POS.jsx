@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation'
 import { calculatePromotions } from '../utils/promotions'
 import { useCompanyProfile } from '../utils/useCompanyProfile'
 import { connectCashDrawer, isCashDrawerSupported, openCashDrawer } from '../utils/cashDrawer'
-import { useLocations } from '../utils/useLocations'
+import { useLocations, createLocation } from '../utils/useLocations'
 import { useBranches } from '../utils/useBranches'
 import { firstAccessibleAdminPath, getPagePermission } from '../utils/adminPermissions'
 import { queueOrder, queueCount, syncQueue, cacheProducts, getCachedProducts, applyQueuedStock } from '../utils/offlineQueue'
-import { normalizeVatSettings, applyVat } from '../lib/vat'
+import { normalizeVatSettings, applyVat, orderVatBreakdown, vatLineLabel, discountSign, VAT_LABELS } from '../lib/vat'
 import { applyRounding } from '../lib/rounding'
 import { earnWindowState, redeemWindowState, todayLocal, fmtLaoDate } from '../lib/loyaltyWindow'
 import SearchSelect from './SearchSelect'
@@ -372,6 +372,162 @@ function Toast({ message, type, onClose }) {
       {message}
     </div>
   )
+}
+
+// ── ລາຍງານການຂາຍຕາມບິນຂາຍ (ໜ້າຂາຍ POS) ──────────────────────────────────
+// ໃຊ້ຕົວແຍກຍອດ orderVatBreakdown ອັນດຽວກັບໃບບິນ A5/A4 ຈຶ່ງບໍ່ຫຼົງກັນ
+function salesReportLines(rows, vatLabel) {
+  return rows.map(r => ({
+    row: r,
+    b: orderVatBreakdown(r, { label: vatLabel, itemsSum: Number(r.items_sum) || 0 }),
+  }))
+}
+
+function salesReportTotals(lines) {
+  return lines.reduce((t, { b }) => ({
+    itemsGross: t.itemsGross + b.itemsGross,
+    discount: t.discount + b.discount,
+    beforeVat: t.beforeVat + b.beforeVat,
+    vatAmount: t.vatAmount + b.vatAmount,
+    total: t.total + b.total,
+  }), { itemsGross: 0, discount: 0, beforeVat: 0, vatAmount: 0, total: 0 })
+}
+
+// ຫົວຖັນ ອມພ — ຖ້າທຸກບິນໃຊ້ອັດຕາດຽວກັນ ໃຫ້ຂຶ້ນອັດຕານັ້ນເລີຍ
+function salesReportVatHeader(lines) {
+  const rates = [...new Set(lines.filter(l => l.b.hasVat).map(l => l.b.rate))]
+  return rates.length === 1 ? `ອມພ VAT ${rates[0]}%` : 'ອມພ (VAT)'
+}
+
+function buildSalesReportBody({ lines, totals, company, rangeLabel, cashierName, vatHeader, note }) {
+  const companyName = company?.name || company?.company_name || ''
+  const methodLabel = (m) => ({
+    cash: 'ເງິນສົດ', transfer: 'ໂອນ', qr: 'QR', credit: 'ຕິດໜີ້', mixed: 'ຫຼາຍຊ່ອງທາງ',
+  }[String(m || '').toLowerCase()] || m || '')
+
+  const bodyRows = lines.map(({ row, b }, i) => `
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td>${fmtReceiptDate(row.created_at)}</td>
+        <td class="mono">${escapeReceiptHtml(row.bill_number || ('#' + row.id))}</td>
+        <td>${escapeReceiptHtml(row.customer_name || 'ລູກຄ້າທົ່ວໄປ')}</td>
+        <td>${escapeReceiptHtml(methodLabel(row.payment_method))}</td>
+        <td class="num">${fmtReceiptTotal(b.itemsGross)}</td>
+        <td class="num">${discountSign(b.discount)}${fmtReceiptTotal(Math.abs(b.discount))}</td>
+        <td class="num">${fmtReceiptTotal(b.beforeVat)}</td>
+        <td class="num">${fmtReceiptTotal(b.vatAmount)}</td>
+        <td class="num">${fmtReceiptTotal(b.total)}</td>
+      </tr>`).join('')
+
+  return `<div class="rpt">
+  <h1>ລາຍງານການຂາຍຕາມບິນຂາຍ${companyName ? ' · ' + escapeReceiptHtml(companyName) : ''}</h1>
+  <div class="meta">
+    ວັນທີ: <b>${escapeReceiptHtml(rangeLabel)}</b>
+    · ຈຳນວນບິນ: <b>${lines.length}</b>
+    ${cashierName ? ` · Cashier: <b>${escapeReceiptHtml(cashierName)}</b>` : ''}
+    · ພິມເມື່ອ: ${formatDateTime(new Date())}
+    ${note ? `<div style="color:#b45309;font-weight:700;margin-top:2px;">${escapeReceiptHtml(note)}</div>` : ''}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:36px;">#</th>
+        <th style="width:80px;">ວັນທີ</th>
+        <th style="width:120px;">ເລກທີບິນ</th>
+        <th style="width:130px;">ລູກຄ້າ</th>
+        <th style="width:80px;">ຊ່ອງທາງ</th>
+        <th>ລວມມູນຄ່າ</th>
+        <th>ສ່ວນຫຼຸດ</th>
+        <th>ລວມມູນຄ່າກ່ອນ ອມພ</th>
+        <th>${escapeReceiptHtml(vatHeader)}</th>
+        <th>ລວມທັງໝົດ</th>
+      </tr>
+    </thead>
+    <tbody>${bodyRows || '<tr><td colspan="10" style="text-align:center;padding:18px;color:#888;">ບໍ່ມີບິນຂາຍໃນຊ່ວງວັນທີນີ້</td></tr>'}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="5" style="text-align:right;">ລວມ ${lines.length} ບິນ</td>
+        <td class="num">${fmtReceiptTotal(totals.itemsGross)}</td>
+        <td class="num">${discountSign(totals.discount)}${fmtReceiptTotal(Math.abs(totals.discount))}</td>
+        <td class="num">${fmtReceiptTotal(totals.beforeVat)}</td>
+        <td class="num">${fmtReceiptTotal(totals.vatAmount)}</td>
+        <td class="num">${fmtReceiptTotal(totals.total)}</td>
+      </tr>
+    </tfoot>
+  </table>
+  <div class="footer-summary">
+    <div class="box">
+      <div class="label">ລວມມູນຄ່າກ່ອນ ອມພ</div>
+      <div class="value">${fmtReceiptTotal(totals.beforeVat)} ₭</div>
+    </div>
+    <div class="box">
+      <div class="label">${escapeReceiptHtml(vatHeader)}</div>
+      <div class="value">${fmtReceiptTotal(totals.vatAmount)} ₭</div>
+    </div>
+    <div class="box">
+      <div class="label">ລວມທັງໝົດ</div>
+      <div class="value">${fmtReceiptTotal(totals.total)} ₭</div>
+    </div>
+  </div>
+  <div class="sig">
+    <div class="col"><div class="line"></div>Cashier</div>
+    <div class="col"><div class="line"></div>ຜູ້ກວດສອບ</div>
+    <div class="col"><div class="line"></div>ຜູ້ຮັບເງິນ</div>
+  </div>
+</div>`
+}
+
+function salesReportHtml(opts) {
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>ລາຍງານການຂາຍ ${escapeReceiptHtml(opts.rangeLabel)}</title>
+<style>${receiptsSummaryStyles()}</style></head>
+<body>${buildSalesReportBody(opts)}</body></html>`
+}
+
+function printSalesReport(opts) {
+  const w = window.open('', '_blank', 'width=1100,height=800')
+  if (!w) return
+  w.document.open()
+  w.document.write(salesReportHtml(opts))
+  w.document.close()
+  w.focus()
+  setTimeout(() => { try { w.print() } catch {} }, 250)
+}
+
+// ດຶງເປັນໄຟລ໌ PDF (A4 ນອນ) — ວາງໜ້າແບບດຽວກັບສະຫຼຸບການຮັບເງິນ
+async function downloadSalesReportPdf(opts) {
+  const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+    import('jspdf'),
+    import('html2canvas'),
+  ])
+  const holder = document.createElement('div')
+  holder.style.cssText = 'position:fixed;left:-12000px;top:0;width:1123px;background:#fff;'
+  holder.innerHTML = `<style>${receiptsSummaryStyles()}</style><div style="padding:28px;">${buildSalesReportBody(opts)}</div>`
+  document.body.appendChild(holder)
+  try {
+    await (document.fonts?.ready || Promise.resolve())
+    await new Promise(r => setTimeout(r, 120))
+    const canvas = await html2canvas(holder, { scale: 2, backgroundColor: '#ffffff' })
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+    const pageW = 297, pageH = 210, margin = 8
+    const imgW = pageW - margin * 2
+    const imgH = canvas.height * imgW / canvas.width
+    const usableH = pageH - margin * 2
+    const img = canvas.toDataURL('image/png')
+    let position = margin
+    let heightLeft = imgH
+    pdf.addImage(img, 'PNG', margin, position, imgW, imgH)
+    heightLeft -= usableH
+    while (heightLeft > 0) {
+      position -= usableH
+      pdf.addPage()
+      pdf.addImage(img, 'PNG', margin, position + margin, imgW, imgH)
+      heightLeft -= usableH
+    }
+    pdf.save(`sales-report_${opts.fileTag || 'report'}.pdf`)
+  } finally {
+    holder.remove()
+  }
 }
 
 function Modal({ children, onClose, title, size = 'md', zClass = 'z-50' }) {
@@ -833,6 +989,18 @@ export default function POS({ user, onLogout }) {
 
   // Park & Recall ----------------------------------------------------------
   const [showParkedModal, setShowParkedModal] = useState(false)
+  // ລາຍງານການຂາຍຕາມບິນຂາຍ
+  const todayIso = () => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const [showSalesReport, setShowSalesReport] = useState(false)
+  const [srFrom, setSrFrom] = useState(todayIso)
+  const [srTo, setSrTo] = useState(todayIso)
+  const [srMineOnly, setSrMineOnly] = useState(false)
+  const [srData, setSrData] = useState(null)
+  const [srBusy, setSrBusy] = useState(false)
+  const [srPdfBusy, setSrPdfBusy] = useState(false)
   const [parkedCarts, setParkedCarts] = useState([])
 
   const loadParkedCarts = useCallback(async () => {
@@ -1730,20 +1898,9 @@ export default function POS({ user, onLogout }) {
     const itemsArr = order.items || []
     const billLabel = order.bill_number || `#${order.id}`
 
-    const orderVatAmount = Number(order.vat_amount) || 0
-    const orderVatRate = Number(order.vat_rate) || 0
-    const orderDiscount = Number(order.discount) || 0
-    const orderTotalNum = Number(order.total) || 0
-    const orderSubtotalEx = Number(order.subtotal) || 0
-    const isVatInclusive = order.vat_mode === 'inclusive'
-    const hasVat = orderVatAmount > 0 && orderVatRate > 0
-    const itemsGross = hasVat
-      ? (isVatInclusive ? orderTotalNum + orderDiscount : orderSubtotalEx + orderDiscount)
-      : (orderSubtotalEx > 0 ? orderSubtotalEx + orderDiscount : orderTotalNum + orderDiscount)
-    const vatLabelText = hasVat
-      ? `${company.vat_label || 'VAT'} ${orderVatRate}%${isVatInclusive ? ' (ລວມໃນ)' : ''}`
-      : ''
-    const vatInfo = { hasVat, vatAmount: orderVatAmount, vatLabelText, itemsGross, isVatInclusive }
+    // ຜົນລວມຈາກຕາລາງສິນຄ້າຈິງ — ຮັບປະກັນ "ລວມມູນຄ່າ" ຕົງກັບແຖວທີ່ພິມອອກ
+    const itemsSum = itemsArr.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0)
+    const vatInfo = orderVatBreakdown(order, { label: company.vat_label, itemsSum })
 
     const html = isPaper
       ? buildPaperReceipt({ order, size, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel, vatInfo })
@@ -1757,6 +1914,30 @@ export default function POS({ user, onLogout }) {
     win.document.open()
     win.document.write(html)
     win.document.close()
+  }
+
+  const loadSalesReport = async (from = srFrom, to = srTo, mineOnly = srMineOnly) => {
+    setSrBusy(true)
+    try {
+      const q = new URLSearchParams({ from, to })
+      if (mineOnly && user?.username) q.set('cashier', user.username)
+      const res = await fetch(`/api/orders/sales-report?${q}`, { cache: 'no-store' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      setSrData(data)
+    } catch (e) {
+      setSrData(null)
+      showToast(`ດຶງລາຍງານບໍ່ໄດ້: ${e.message}`, 'error')
+    } finally {
+      setSrBusy(false)
+    }
+  }
+
+  const openSalesReport = () => {
+    const t = todayIso()
+    setSrFrom(t); setSrTo(t); setSrMineOnly(false); setSrData(null)
+    setShowSalesReport(true)
+    loadSalesReport(t, t, false)
   }
 
   const tenderMethodLabel = (m) => ({ cash: 'ສົດ', transfer: 'ໂອນ', qr: 'QR' }[String(m || '').toLowerCase()] || '')
@@ -1841,11 +2022,14 @@ export default function POS({ user, onLogout }) {
       ${lines || '<div class="xs">ບໍ່ມີລາຍການ</div>'}
 
       <div class="divider"></div>
-      <div class="total"><span>ລວມຍ່ອຍ</span><span class="total-value">${formatPrice(vatInfo.itemsGross)}</span></div>
-      ${Number(order.discount) > 0 ? `<div class="total"><span>ສ່ວນຫຼຸດ</span><span class="total-value">−${formatPrice(order.discount)}</span></div>` : ''}
-      ${vatInfo.hasVat ? `<div class="total"><span>${vatInfo.vatLabelText}</span><span class="total-value">${vatInfo.isVatInclusive ? '' : '+'}${formatPrice(vatInfo.vatAmount)}</span></div>` : ''}
+      <div class="total"><span>${VAT_LABELS.itemsGross}</span><span class="total-value">${formatPrice(vatInfo.itemsGross)}</span></div>
+      <div class="total"><span>${VAT_LABELS.discount}</span><span class="total-value">${discountSign(vatInfo.discount)}${formatPrice(Math.abs(vatInfo.discount))}</span></div>
+      ${vatInfo.hasVat ? `
+        <div class="total"><span>${VAT_LABELS.beforeVat}</span><span class="total-value">${formatPrice(vatInfo.beforeVat)}</span></div>
+        <div class="total"><span>${vatInfo.vatLabelText}</span><span class="total-value">${formatPrice(vatInfo.vatAmount)}</span></div>
+      ` : ''}
       <div class="double"></div>
-      <div class="total grand"><span>ລວມທັງໝົດ</span><span class="total-value">${formatPrice(order.total)}</span></div>
+      <div class="total grand"><span>${VAT_LABELS.grandTotal}</span><span class="total-value">${formatPrice(vatInfo.total)}</span></div>
       <div class="divider"></div>
       <div class="total"><span>${isCreditOrder ? 'ຮັບແລ້ວ' : 'ຮັບເງິນ'}</span><span class="total-value">${formatPrice(order.amount_paid)}</span></div>
       ${paymentLines ? `
@@ -1935,22 +2119,22 @@ export default function POS({ user, onLogout }) {
       .meta-grid .label { color: #64748b; font-weight: 700; min-width: ${isA4 ? '70px' : '60px'} }
       .meta-grid .value { color: #111; font-weight: 600; word-break: break-word }
       table.items { width: 100%; border-collapse: collapse; margin: 8px 0 }
-      table.items thead th { background: #111; color: #fff; padding: 6px 8px; font-size: ${isA4 ? '11px' : '10px'}; font-weight: 700; text-align: left; letter-spacing: .3px }
+      table.items thead th { background: #111; color: #fff; padding: 5px 8px; font-size: ${isA4 ? '10px' : '9px'}; font-weight: 700; text-align: left; letter-spacing: .3px }
       table.items thead th.qty, table.items thead th.money { text-align: right }
       table.items thead { display: table-header-group }
       table.items tbody tr { break-inside: avoid; page-break-inside: avoid }
-      table.items tbody td { padding: ${isA4 ? '8px' : '6px'} 8px; border-bottom: 1px solid #e5e7eb; font-size: ${isA4 ? '12px' : '11px'} }
+      table.items tbody td { padding: ${isA4 ? '6px' : '5px'} 8px; border-bottom: 1px solid #e5e7eb; font-size: ${isA4 ? '11px' : '10px'} }
       table.items td.num { width: 28px; color: #64748b; font-variant-numeric: tabular-nums }
       table.items td.prod { font-weight: 600 }
       table.items td.qty, table.items td.money { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
-      .totals { display: grid; grid-template-columns: 1fr ${isA4 ? '220px' : '180px'}; gap: 16px; margin-top: 10px; break-inside: avoid; page-break-inside: avoid }
+      .totals { display: grid; grid-template-columns: 1fr ${isA4 ? '250px' : '208px'}; gap: 16px; margin-top: 10px; break-inside: avoid; page-break-inside: avoid }
       .totals .left { font-size: ${isA4 ? '11px' : '10px'}; color: #475569 }
       .totals .bank b { color: #111 }
       .totals .right { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; break-inside: avoid; page-break-inside: avoid }
-      .totals .right .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; font-size: ${isA4 ? '12px' : '11px'} }
+      .totals .right .row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 9px; font-size: ${isA4 ? '11px' : '10px'} }
       .totals .right .row + .row { border-top: 1px dashed #e2e8f0 }
       .totals .right .row .v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
-      .totals .right .grand { background: #fef2f2; color: #991b1b; font-weight: 900; font-size: ${isA4 ? '14px' : '13px'}; border-top: 2px solid #fca5a5 }
+      .totals .right .grand { background: #fef2f2; color: #991b1b; font-weight: 900; font-size: ${isA4 ? '13px' : '12px'}; border-top: 2px solid #fca5a5 }
       .totals .right .outstanding { background: #fffbeb; color: #92400e; font-weight: 800 }
       .totals .right .change { background: #f0fdf4; color: #166534; font-weight: 800 }
       .payments { margin-top: 12px; font-size: ${isA4 ? '11px' : '10px'}; break-inside: avoid; page-break-inside: avoid }
@@ -2029,10 +2213,13 @@ export default function POS({ user, onLogout }) {
             ` : ''}
           </div>
           <div class="right">
-            <div class="row"><span>ລວມຍ່ອຍ</span><span class="v">${formatPrice(vatInfo.itemsGross)}</span></div>
-            ${Number(order.discount) > 0 ? `<div class="row"><span>ສ່ວນຫຼຸດ</span><span class="v">−${formatPrice(order.discount)}</span></div>` : ''}
-            ${vatInfo.hasVat ? `<div class="row"><span>${vatInfo.vatLabelText}</span><span class="v">${vatInfo.isVatInclusive ? '' : '+'}${formatPrice(vatInfo.vatAmount)}</span></div>` : ''}
-            <div class="row grand"><span>ລວມທັງໝົດ</span><span class="v">${formatPrice(order.total)}</span></div>
+            <div class="row"><span>${VAT_LABELS.itemsGross}</span><span class="v">${formatPrice(vatInfo.itemsGross)}</span></div>
+            <div class="row"><span>${VAT_LABELS.discount}</span><span class="v">${discountSign(vatInfo.discount)}${formatPrice(Math.abs(vatInfo.discount))}</span></div>
+            ${vatInfo.hasVat ? `
+              <div class="row"><span>${VAT_LABELS.beforeVat}</span><span class="v">${formatPrice(vatInfo.beforeVat)}</span></div>
+              <div class="row"><span>${vatInfo.vatLabelText}</span><span class="v">${formatPrice(vatInfo.vatAmount)}</span></div>
+            ` : ''}
+            <div class="row grand"><span>${VAT_LABELS.grandTotal}</span><span class="v">${formatPrice(vatInfo.total)}</span></div>
             <div class="row"><span>${isCreditOrder ? 'ຮັບແລ້ວ' : 'ຮັບເງິນ'}</span><span class="v">${formatPrice(order.amount_paid)}</span></div>
             <div class="row ${isCreditOrder ? 'outstanding' : 'change'}"><span>${isCreditOrder ? 'ຍອດຄ້າງ' : 'ເງິນທອນ'}</span><span class="v">${formatPrice(outstanding)}</span></div>
           </div>
@@ -2194,6 +2381,16 @@ export default function POS({ user, onLogout }) {
   const memberVillages = memberForm.province && memberForm.district ? (laoLocations[memberForm.province]?.[memberForm.district] || []) : []
   const setMemberProvince = (province) => setMemberForm({ ...memberForm, province, district: '', village: '' })
   const setMemberDistrict = (district) => setMemberForm({ ...memberForm, district, village: '' })
+  // ເພີ່ມ ແຂວງ/ເມືອງ/ບ້ານ ໄດ້ຈາກໜ້າຂາຍເລີຍ — ບໍ່ຕ້ອງໄປໜ້າຫຼັງບ້ານກ່ອນ
+  const addMemberLocation = async (payload) => {
+    try {
+      await createLocation(payload)
+      return true
+    } catch (err) {
+      showToast(err.message || 'ເພີ່ມຂໍ້ມູນບໍ່ສຳເລັດ', 'error')
+      return false
+    }
+  }
 
   return (
     <div className="pos-root flex flex-col h-screen overflow-hidden bg-slate-900 text-slate-100 text-[13px]">
@@ -2292,6 +2489,11 @@ export default function POS({ user, onLogout }) {
             className="px-2 sm:px-3 py-1.5 bg-gradient-to-br from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 rounded-md text-xs font-bold flex items-center gap-1.5 shadow" title="ສະຫຼຸບຍອດຂາຍປະຈຳວັນ">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
             <span className="hidden md:inline">ສະຫຼຸບວັນນີ້</span>
+          </button>
+          <button onClick={openSalesReport}
+            className="px-2 sm:px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-md text-xs font-bold flex items-center gap-1.5" title="ລາຍງານການຂາຍຕາມບິນຂາຍ — ເລືອກວັນທີ ແລະ ພິມ PDF ໄດ້">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h8M8 17h5"/></svg>
+            <span className="hidden md:inline">ລາຍງານຂາຍ</span>
           </button>
           {(() => {
             const c = debtAlerts?.counts || { overdue: 0, today: 0, upcoming: 0, later: 0, undated: 0 }
@@ -2662,7 +2864,7 @@ export default function POS({ user, onLogout }) {
             <div className="text-[10px] text-red-300 uppercase tracking-wider font-extrabold mb-1.5">Section 03 · ສະຫຼຸບຍອດ</div>
             <div className="space-y-1.5 text-[13px] font-mono-t">
               <div className="flex justify-between text-slate-200 font-bold">
-                <span>ລວມຍ່ອຍ</span>
+                <span>{VAT_LABELS.itemsGross}</span>
                 <span>{formatPrice(cartTotal)}</span>
               </div>
               {promoResult.appliedPromos.length > 0 && (
@@ -2810,16 +3012,16 @@ export default function POS({ user, onLogout }) {
               </div>
               {vatSettings.enabled && (
                 <div className="rounded-md border border-cyan-500/30 bg-cyan-500/5 px-2 py-1.5 space-y-0.5">
-                  <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-cyan-300">
-                    <span>{vatSettings.label} {vatSettings.rate}% {vatSettings.mode === 'inclusive' ? '· ລວມໃນ' : '· ແຍກນອກ'}</span>
-                    <span className="font-mono text-cyan-200">{formatPrice(vatAmount)}</span>
-                  </div>
-                  {vatSettings.mode === 'exclusive' && subtotalExVat > 0 && (
+                  {subtotalExVat > 0 && (
                     <div className="flex items-center justify-between text-[9px] text-cyan-400/80">
-                      <span>ກ່ອນ VAT</span>
+                      <span>{VAT_LABELS.beforeVat}</span>
                       <span className="font-mono">{formatPrice(subtotalExVat)}</span>
                     </div>
                   )}
+                  <div className="flex items-center justify-between text-[10px] font-extrabold tracking-wider text-cyan-300">
+                    <span>{vatLineLabel(vatSettings)}</span>
+                    <span className="font-mono text-cyan-200">{formatPrice(vatAmount)}</span>
+                  </div>
                 </div>
               )}
               {roundingAdjustment !== 0 && (
@@ -2969,13 +3171,20 @@ export default function POS({ user, onLogout }) {
                   className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-red-500" />
                 <SearchSelect value={memberForm.province} onChange={setMemberProvince}
                   options={memberProvinces.map(p => ({ value: p, label: p }))}
-                  placeholder="ແຂວງ *" />
+                  placeholder="ແຂວງ *"
+                  onAdd={name => addMemberLocation({ province: name })} />
                 <SearchSelect value={memberForm.district} onChange={setMemberDistrict}
                   options={memberDistricts.map(d => ({ value: d, label: d }))}
-                  placeholder={memberForm.province ? 'ເມືອງ *' : 'ເລືອກແຂວງກ່ອນ'} />
+                  placeholder={memberForm.province ? 'ເມືອງ *' : 'ເລືອກແຂວງກ່ອນ'}
+                  onAdd={memberForm.province
+                    ? (name => addMemberLocation({ province: memberForm.province, district: name }))
+                    : undefined} />
                 <SearchSelect value={memberForm.village} onChange={village => setMemberForm({ ...memberForm, village })}
                   options={memberVillages.map(v => ({ value: v, label: v }))}
-                  placeholder={memberForm.district ? 'ບ້ານ *' : 'ເລືອກເມືອງກ່ອນ'} />
+                  placeholder={memberForm.district ? 'ບ້ານ *' : 'ເລືອກເມືອງກ່ອນ'}
+                  onAdd={memberForm.province && memberForm.district
+                    ? (name => addMemberLocation({ province: memberForm.province, district: memberForm.district, village: name }))
+                    : undefined} />
                 <button onClick={createMemberQuick} disabled={creatingMember || !memberForm.name.trim()}
                   className="w-full py-2.5 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-extrabold">
                   {creatingMember ? 'ກຳລັງບັນທຶກ...' : '+ ເພີ່ມ ແລະ ເລືອກ'}
@@ -2985,6 +3194,142 @@ export default function POS({ user, onLogout }) {
           </div>
         </Modal>
       )}
+
+      {/* Sales Report Modal — ລາຍງານການຂາຍຕາມບິນຂາຍ */}
+      {showSalesReport && (() => {
+        const lines = salesReportLines(srData?.rows || [], company.vat_label)
+        const totals = salesReportTotals(lines)
+        const vatHeader = salesReportVatHeader(lines)
+        const rangeLabel = srFrom === srTo ? srFrom : `${srFrom} ຫາ ${srTo}`
+        const note = srData?.truncated
+          ? `ສະແດງ ${lines.length} ບິນ ຈາກ ${srData.total_bills} ບິນ — ກະລຸນາແຄບຊ່ວງວັນທີລົງ`
+          : ''
+        const printOpts = {
+          lines, totals, company, rangeLabel, vatHeader, note,
+          cashierName: srMineOnly ? (user?.display_name || user?.username || '') : '',
+          fileTag: srFrom === srTo ? srFrom : `${srFrom}_${srTo}`,
+        }
+        return (
+          <Modal onClose={() => setShowSalesReport(false)} title="📄 ລາຍງານການຂາຍຕາມບິນຂາຍ" size="xl">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1">ຈາກວັນທີ</label>
+                  <input type="date" value={srFrom} onChange={e => setSrFrom(e.target.value)}
+                    className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1">ຫາວັນທີ</label>
+                  <input type="date" value={srTo} onChange={e => setSrTo(e.target.value)}
+                    className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm" />
+                </div>
+                <button onClick={() => loadSalesReport()} disabled={srBusy}
+                  className="px-4 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold">
+                  {srBusy ? 'ກຳລັງດຶງ...' : '🔍 ຄົ້ນຫາ'}
+                </button>
+                <label className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 cursor-pointer">
+                  <input type="checkbox" className="accent-red-600" checked={srMineOnly}
+                    onChange={e => { setSrMineOnly(e.target.checked); loadSalesReport(srFrom, srTo, e.target.checked) }} />
+                  ສະເພາະຂອງຂ້ອຍ
+                </label>
+                <div className="flex-1" />
+                <button onClick={() => printSalesReport(printOpts)} disabled={srBusy || lines.length === 0}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold">🖨 ພິມ</button>
+                <button
+                  onClick={async () => {
+                    setSrPdfBusy(true)
+                    try { await downloadSalesReportPdf(printOpts) }
+                    catch (e) { showToast(`ສ້າງ PDF ບໍ່ໄດ້: ${e.message}`, 'error') }
+                    finally { setSrPdfBusy(false) }
+                  }}
+                  disabled={srPdfBusy || srBusy || lines.length === 0}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold">
+                  {srPdfBusy ? 'ກຳລັງສ້າງ...' : '⬇ PDF'}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { l: 'ມື້ນີ້', d: 0 },
+                  { l: 'ມື້ວານ', d: 1 },
+                  { l: '7 ວັນ', d: 7 },
+                  { l: '30 ວັນ', d: 30 },
+                ].map(q => (
+                  <button key={q.l}
+                    onClick={() => {
+                      const end = new Date()
+                      const startD = new Date()
+                      if (q.d === 1) { end.setDate(end.getDate() - 1); startD.setDate(startD.getDate() - 1) }
+                      else if (q.d > 1) startD.setDate(startD.getDate() - (q.d - 1))
+                      const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                      const f = iso(startD), t = iso(end)
+                      setSrFrom(f); setSrTo(t); loadSalesReport(f, t, srMineOnly)
+                    }}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-[11px] font-bold text-slate-700">{q.l}</button>
+                ))}
+              </div>
+
+              {note && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800">{note}</div>
+              )}
+
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-slate-100">
+                    <tr className="text-left">
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">#</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600">ເລກທີບິນ</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600">ວັນທີ</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600">ລູກຄ້າ</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">ລວມມູນຄ່າ</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">ສ່ວນຫຼຸດ</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">ກ່ອນ ອມພ</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">{vatHeader}</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">ລວມທັງໝົດ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.length === 0 ? (
+                      <tr><td colSpan={9} className="px-3 py-10 text-center text-slate-400">
+                        {srBusy ? 'ກຳລັງໂຫຼດ...' : 'ບໍ່ມີບິນຂາຍໃນຊ່ວງວັນທີນີ້'}
+                      </td></tr>
+                    ) : lines.map(({ row, b }, i) => (
+                      <tr key={row.id} className="border-t border-slate-100 hover:bg-red-50/40">
+                        <td className="px-2 py-1 text-right text-slate-400 font-mono">{i + 1}</td>
+                        <td className="px-2 py-1 font-bold text-slate-800">{row.bill_number || `#${row.id}`}</td>
+                        <td className="px-2 py-1 text-slate-500 font-mono">{formatDateTime(row.created_at)}</td>
+                        <td className="px-2 py-1">
+                          {row.customer_name
+                            ? <span className="font-bold text-slate-700">{row.customer_name}</span>
+                            : <span className="text-slate-400">ລູກຄ້າທົ່ວໄປ</span>}
+                          {row.member_code && <span className="ml-1 text-[9px] text-slate-400 font-mono">{row.member_code}</span>}
+                        </td>
+                        <td className="px-2 py-1 text-right font-mono">{formatPrice(b.itemsGross)}</td>
+                        <td className="px-2 py-1 text-right font-mono text-rose-600">{discountSign(b.discount)}{formatPrice(Math.abs(b.discount))}</td>
+                        <td className="px-2 py-1 text-right font-mono">{formatPrice(b.beforeVat)}</td>
+                        <td className="px-2 py-1 text-right font-mono text-cyan-700">{formatPrice(b.vatAmount)}</td>
+                        <td className="px-2 py-1 text-right font-mono font-extrabold text-slate-900">{formatPrice(b.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {lines.length > 0 && (
+                    <tfoot>
+                      <tr className="bg-slate-100 border-t-2 border-slate-300 font-extrabold">
+                        <td className="px-2 py-1.5" colSpan={4}>ລວມ {lines.length} ບິນ</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{formatPrice(totals.itemsGross)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-rose-600">{discountSign(totals.discount)}{formatPrice(Math.abs(totals.discount))}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{formatPrice(totals.beforeVat)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-cyan-700">{formatPrice(totals.vatAmount)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono">{formatPrice(totals.total)}</td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            </div>
+          </Modal>
+        )
+      })()}
 
       {/* Parked Carts Modal */}
       {showParkedModal && (
@@ -3991,8 +4336,25 @@ export default function POS({ user, onLogout }) {
             ))}
           </div>
           <div className="space-y-1 text-xs">
-            <div className="flex justify-between text-slate-500"><span>ລວມຍ່ອຍ</span><span className="font-mono-t">{formatPrice(showReceipt.total)}</span></div>
-            {showReceipt.discount > 0 && <div className="flex justify-between text-rose-700"><span>ຫຼຸດ</span><span className="font-mono-t">−{formatPrice(showReceipt.discount)}</span></div>}
+            {(() => {
+              const b = orderVatBreakdown(showReceipt, {
+                label: company.vat_label,
+                itemsSum: (showReceipt.items || []).reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0),
+              })
+              return (
+                <>
+                  <div className="flex justify-between text-slate-500"><span>{VAT_LABELS.itemsGross}</span><span className="font-mono-t">{formatPrice(b.itemsGross)}</span></div>
+                  <div className={`flex justify-between ${b.discount !== 0 ? 'text-rose-700' : 'text-slate-500'}`}><span>{VAT_LABELS.discount}</span><span className="font-mono-t">{discountSign(b.discount)}{formatPrice(Math.abs(b.discount))}</span></div>
+                  {b.hasVat && (
+                    <>
+                      <div className="flex justify-between text-slate-500"><span>{VAT_LABELS.beforeVat}</span><span className="font-mono-t">{formatPrice(b.beforeVat)}</span></div>
+                      <div className="flex justify-between text-slate-500"><span>{b.vatLabelText}</span><span className="font-mono-t">{formatPrice(b.vatAmount)}</span></div>
+                    </>
+                  )}
+                  <div className="flex justify-between font-extrabold text-slate-800 pt-1 border-t border-slate-200"><span>{VAT_LABELS.grandTotal}</span><span className="font-mono-t">{formatPrice(b.total)}</span></div>
+                </>
+              )
+            })()}
             <div className="flex justify-between text-slate-500"><span>ຮັບເງິນ</span><span className="font-mono-t">{formatPrice(showReceipt.amount_paid)}</span></div>
             <div className={`flex justify-between font-extrabold ${showReceipt.payment_method === 'credit' ? 'text-amber-700' : 'text-red-700'} pt-2 mt-1 border-t border-slate-200`}>
               <span>{showReceipt.payment_method === 'credit' ? 'ຍອດຄ້າງ' : 'ເງິນທອນ'}</span>
