@@ -2625,9 +2625,9 @@ export default function POS({ user, onLogout }) {
               <span className="text-slate-600">·</span>
               <span>ວັນທີ {formatDate(new Date())}</span>
               <span className="text-slate-600">·</span>
-              <span>ລາຍການ <span className="text-white">{cart.length}</span></span>
+              <span>ລາຍການ <span className="text-slate-100">{cart.length}</span></span>
               <span className="text-slate-600">·</span>
-              <span>ຊິ້ນ <span className="text-white">{cartCount}</span></span>
+              <span>ຊິ້ນ <span className="text-slate-100">{cartCount}</span></span>
             </div>
             {cart.length > 0 && (
               <button onClick={() => setCart([])} className="text-rose-400 hover:text-rose-300 font-bold">ລ້າງທັງໝົດ</button>
@@ -2677,7 +2677,7 @@ export default function POS({ user, onLogout }) {
                           <td className="py-2 px-3 text-slate-400 font-bold">{String(paidIdx).padStart(2, '0')}</td>
                           <td className="py-2 px-2">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-white font-bold leading-tight">{item.name}</span>
+                              <span className="text-slate-100 font-bold leading-tight">{item.name}</span>
                               {hasPromo && <span className="text-[8px] font-extrabold px-1 py-0.5 bg-violet-500 text-white rounded">🎁 PROMO</span>}
                             </div>
                             {item.code && <div className="text-[10px] text-slate-300 font-normal">{item.code}</div>}

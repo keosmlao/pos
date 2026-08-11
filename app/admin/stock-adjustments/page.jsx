@@ -154,6 +154,24 @@ export default function StockAdjustmentsPage() {
     }
   };
 
+  const removeDoc = async (row) => {
+    const label = row.adjustment_number || `#${row.id}`;
+    const approved = row.status === 'approved' || !row.status;
+    const warn = approved
+      ? `ໃບ ${label} ອະນຸມັດແລ້ວ — ການລົບຈະ "ຄືນ" ຈຳນວນສິນຄ້າກັບຄືນດ້ວຍ.\n\nແນ່ໃຈບໍ?`
+      : `ລົບໃບ ${label}? (ຍັງບໍ່ໄດ້ປັບສະຕັອກ ຈຶ່ງບໍ່ກະທົບຈຳນວນສິນຄ້າ)`;
+    if (!confirm(warn)) return;
+    try {
+      const res = await fetch(`${API}/admin/stock-adjustments/${row.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(data.error || 'ລົບບໍ່ສຳເລັດ', 'error'); return; }
+      showToast(data.stock_reverted ? 'ລົບ ແລະ ຄືນສະຕັອກແລ້ວ' : 'ລົບແລ້ວ');
+      load();
+    } catch {
+      showToast('ລົບບໍ່ສຳເລັດ', 'error');
+    }
+  };
+
   const stats = useMemo(() => ({
     pending: list.filter(x => x.status === 'pending').length,
     approved: list.filter(x => x.status === 'approved' || !x.status).length,
@@ -392,6 +410,11 @@ export default function StockAdjustmentsPage() {
                         <button onClick={() => decide(a, 'reject')} className="ml-1 px-2 py-1 rounded bg-rose-50 text-rose-700 text-[11px] font-extrabold hover:bg-rose-100">ປະຕິເສດ</button>
                       </>
                     )}
+                    <button onClick={() => removeDoc(a)}
+                      title={a.status === 'approved' || !a.status ? 'ລົບໃບ ແລະ ຄືນຈຳນວນສິນຄ້າ' : 'ລົບໃບນີ້'}
+                      className="ml-1 px-2 py-1 rounded border border-slate-200 text-slate-500 text-[11px] font-extrabold hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200">
+                      ລົບ
+                    </button>
                   </td>
                 </tr>
               ))}
