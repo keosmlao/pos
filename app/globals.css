@@ -431,11 +431,13 @@ html:not(.dark) .pos-root .bg-slate-950\/40:not(.no-theme-flip, .no-theme-flip *
 html:not(.dark) .pos-root .bg-slate-900\/70:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(248 250 252 / 0.7); }
 html:not(.dark) .pos-root .bg-slate-900\/60:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(248 250 252 / 0.6); }
 html:not(.dark) .pos-root .bg-slate-800\/50:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(241 245 249 / 0.5); }
+html:not(.dark) .pos-root .bg-slate-800\/60:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(241 245 249 / 0.6); }
 
 /* Hover */
 html:not(.dark) .pos-root .hover\:bg-slate-900:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #f1f5f9; }
 html:not(.dark) .pos-root .hover\:bg-slate-800:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #e2e8f0; }
 html:not(.dark) .pos-root .hover\:bg-slate-700:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: #cbd5e1; }
+html:not(.dark) .pos-root .hover\:bg-slate-900\/80:hover:not(.no-theme-flip, .no-theme-flip *) { background-color: rgb(241 245 249 / 0.8); }
 
 /* --- Text --- */
 html:not(.dark) .pos-root .text-slate-100:not(.no-theme-flip, .no-theme-flip *) { color: #0f172a; }
@@ -450,6 +452,11 @@ html:not(.dark) .pos-root .border-slate-700:not(.no-theme-flip, .no-theme-flip *
 html:not(.dark) .pos-root .border-slate-800:not(.no-theme-flip, .no-theme-flip *) { border-color: #e2e8f0; }
 html:not(.dark) .pos-root .border-slate-900:not(.no-theme-flip, .no-theme-flip *) { border-color: #cbd5e1; }
 html:not(.dark) .pos-root .hover\:border-slate-900:hover:not(.no-theme-flip, .no-theme-flip *) { border-color: #94a3b8; }
+/* ຮຸ່ນໂປ່ງໃສ — ຖ້າບໍ່ພິກ ເສັ້ນຂອບເຂັ້ມຈະຄາຢູ່ພື້ນຂາວ (ຕາລາງກະຕ່າ, ປຸ່ມຫຼຸດດ່ວນ, ກ່ອງແຈ້ງເຕືອນ) */
+html:not(.dark) .pos-root .border-slate-600\/50:not(.no-theme-flip, .no-theme-flip *) { border-color: #cbd5e1; }
+html:not(.dark) .pos-root .border-slate-700\/50:not(.no-theme-flip, .no-theme-flip *) { border-color: #e2e8f0; }
+html:not(.dark) .pos-root .border-slate-800\/60:not(.no-theme-flip, .no-theme-flip *) { border-color: #e2e8f0; }
+html:not(.dark) .pos-root .hover\:border-slate-600:hover:not(.no-theme-flip, .no-theme-flip *) { border-color: #94a3b8; }
 
 /* --- Ring --- */
 html:not(.dark) .pos-root .ring-slate-700:not(.no-theme-flip, .no-theme-flip *) { --tw-ring-color: #cbd5e1; }

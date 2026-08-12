@@ -58,6 +58,7 @@ export const POST = handle(async (request) => {
       points_used,
       applied_promo_ids,
       branch_id,
+      apply_vat,
     } = await readJson(request);
     if (!Array.isArray(items) || items.length === 0) {
       return fail(400, 'items is required');
@@ -98,12 +99,16 @@ export const POST = handle(async (request) => {
        FROM company_profile WHERE id = 1`
     );
     const settings = settingsRes.rows[0] || {};
-    const vat = normalizeVatSettings(settings);
+    const companyVat = normalizeVatSettings(settings);
+    // ບິນສາມາດເລືອກອອກແບບ "ບໍ່ມີ ອມພ" ໄດ້ — ແຕ່ອັດຕາ ແລະ ໂໝດ ຍັງອີງຕາມຂໍ້ມູນບໍລິສັດສະເໝີ.
+    const vatOnBill = apply_vat !== false;
+    const vat = vatOnBill ? companyVat : { ...companyVat, enabled: false };
     const { subtotalExVat, vatAmount, total: vatTotal } = applyVat(netAfterDiscount, vat);
     // Apply bill rounding on the VAT-inclusive total.
     const { rounded: roundedTotal } = applyRounding(vatTotal, settings);
-    // When VAT/rounding is enabled, server is authoritative.
-    const settingsActive = vat.enabled || (settings.rounding_mode && settings.rounding_mode !== 'none' && Number(settings.rounding_step) > 0);
+    // When VAT/rounding is enabled, server is authoritative — including bills the
+    // cashier chose to issue without VAT, so the stored total always matches the rate/mode here.
+    const settingsActive = companyVat.enabled || (settings.rounding_mode && settings.rounding_mode !== 'none' && Number(settings.rounding_step) > 0);
     if (settingsActive) {
       total = roundedTotal;
     } else if (total == null || !isFinite(Number(total))) {

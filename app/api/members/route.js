@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureMembersSchema } from '@/lib/migrations';
+import { normalizeTaxId } from '@/lib/taxId';
 
 function normalizeText(value) {
   return String(value || '').trim();
@@ -46,14 +47,16 @@ export const POST = handle(async (request) => {
   const address = normalizeText(body.address) || null;
   const note = normalizeText(body.note) || null;
   if (!province || !district || !village) return fail(400, 'province, district and village are required');
+  const taxId = normalizeTaxId(body.tax_id);
+  if (!taxId.ok) return fail(400, taxId.error);
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const code = normalizeText(body.member_code) || await nextMemberCode(client);
     const result = await client.query(
-      `INSERT INTO members (member_code, name, phone, email, province, district, village, address, tier, points, total_spent, active, note, credit_limit)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      `INSERT INTO members (member_code, name, phone, email, province, district, village, address, tier, points, total_spent, active, note, credit_limit, tax_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
         code,
@@ -70,6 +73,7 @@ export const POST = handle(async (request) => {
         body.active !== false,
         note,
         Math.max(0, Number(body.credit_limit) || 0),
+        taxId.value,
       ]
     );
     await client.query('COMMIT');

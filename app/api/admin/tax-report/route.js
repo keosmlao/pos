@@ -25,7 +25,11 @@ export const GET = handle(async (request) => {
        COALESCE(SUM(o.total), 0) AS gross_total,
        COALESCE(SUM(o.subtotal), 0) AS net_total,
        COALESCE(SUM(o.vat_amount), 0) AS vat_total,
-       COALESCE(SUM(o.discount), 0) AS discount_total
+       COALESCE(SUM(o.discount), 0) AS discount_total,
+       -- ລາຍຮັບອື່ນ ຈາກການປັດເສດ (Rounding gain/loss) = ຈ່າຍຈິງ − (ກ່ອນ ອມພ + ອມພ)
+       COALESCE(SUM(CASE WHEN COALESCE(o.subtotal, 0) > 0 OR COALESCE(o.vat_amount, 0) > 0
+                         THEN o.total - COALESCE(o.subtotal, 0) - COALESCE(o.vat_amount, 0)
+                         ELSE 0 END), 0) AS rounding_total
      FROM orders o ${whereSql}`,
     params
   );
@@ -50,7 +54,10 @@ export const GET = handle(async (request) => {
        COUNT(*) AS orders,
        COALESCE(SUM(o.subtotal), 0) AS net,
        COALESCE(SUM(o.vat_amount), 0) AS vat,
-       COALESCE(SUM(o.total), 0) AS gross
+       COALESCE(SUM(o.total), 0) AS gross,
+       COALESCE(SUM(CASE WHEN COALESCE(o.subtotal, 0) > 0 OR COALESCE(o.vat_amount, 0) > 0
+                         THEN o.total - COALESCE(o.subtotal, 0) - COALESCE(o.vat_amount, 0)
+                         ELSE 0 END), 0) AS rounding
      FROM orders o ${whereSql}
      GROUP BY d
      ORDER BY d DESC

@@ -502,6 +502,13 @@ export default function UsersPage() {
                                   <div className="text-[12px] font-bold text-slate-700 truncate">
                                     <span className="mr-1.5">{item.icon}</span>{item.label}
                                   </div>
+                                  {/* ບອກໃຫ້ຊັດວ່າຕິກຊ່ອງໃດ ຈຶ່ງເປີດປຸ່ມນັ້ນໃນໜ້າຂາຍ POS
+                                      — ຕິກແຕ່ 👁 ເຂົ້າ ຢ່າງດຽວ ປຸ່ມຈະບໍ່ຂຶ້ນ */}
+                                  {item.posHint && form.role !== 'admin' && (
+                                    <div className="mt-0.5 text-[10px] font-bold text-amber-700 whitespace-normal leading-snug">
+                                      🛒 {item.posHint}
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="flex gap-1 shrink-0">
                                   {PERM_KEYS.map(({ key, label, icon }) => {

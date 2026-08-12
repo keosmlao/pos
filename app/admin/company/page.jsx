@@ -17,6 +17,7 @@ const blank = {
   vat_rate: 10,
   vat_mode: 'exclusive',
   vat_label: 'VAT',
+  vat_bill_button_enabled: false,
   rounding_mode: 'none',
   rounding_step: 0,
 };
@@ -409,6 +410,25 @@ export default function CompanyProfilePage() {
                     ? <><b>ລວມໃນ:</b> ລາຄາສິນຄ້າໃນຕາລາງ = ມີ ອມພ ຢູ່ແລ້ວ. {VAT_LABELS.beforeVat} = (ລວມມູນຄ່າ − ສ່ວນຫຼຸດ) ÷ (1 + ອັດຕາ).</>
                     : <><b>ແຍກນອກ:</b> ບິນຈະບວກ ອມພ ເພີ່ມຈາກລາຄາສິນຄ້າ. {VAT_LABELS.beforeVat} = ລວມມູນຄ່າ − ສ່ວນຫຼຸດ.</>}
                   <div className="mt-1">ອມພ = {VAT_LABELS.beforeVat} × ອັດຕາ · {VAT_LABELS.grandTotal} = {VAT_LABELS.beforeVat} + ອມພ</div>
+                </div>
+                {/* ປຸ່ມ "ພິມບິນ ອມພ" ໃນປະຫວັດການຂາຍ POS — ຍິງໄປລະບົບພິມບິນພາຍນອກ */}
+                <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                  <label className="flex cursor-pointer items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={!!form.vat_bill_button_enabled}
+                      onChange={(e) => upd('vat_bill_button_enabled', e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-red-600"
+                    />
+                    <span>
+                      <span className="block text-[13px] font-extrabold text-slate-800">
+                        ສະແດງປຸ່ມ “ພິມບິນ ອມພ” ໃນປະຫວັດການຂາຍ POS
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">
+                        ພະນັກງານກົດແລ້ວຈະເປີດລະບົບພິມບິນ ອມພ ພາຍນອກໃນແທັບໃໝ່ · ປິດໄວ້ = ບໍ່ເຫັນປຸ່ມ
+                      </span>
+                    </span>
+                  </label>
                 </div>
                 <VatBillPreview form={form} />
               </>

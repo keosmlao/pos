@@ -19,7 +19,7 @@ export const PUT = handle(async (request) => {
   const body = await readJson(request);
   const {
     name, slogan, tax_id, business_reg_no, address, phone, email, logo_url, payment_qr_url, bank_accounts, default_costing_method,
-    vat_enabled, vat_rate, vat_mode, vat_label,
+    vat_enabled, vat_rate, vat_mode, vat_label, vat_bill_button_enabled,
     rounding_mode, rounding_step,
   } = body;
   const accounts = Array.isArray(bank_accounts)
@@ -40,6 +40,7 @@ export const PUT = handle(async (request) => {
   const vatMode = VALID_VAT_MODES.has(String(vat_mode)) ? String(vat_mode) : 'exclusive';
   const vatRate = Math.max(0, Math.min(100, Number(vat_rate) || 0));
   const vatLabel = String(vat_label || 'VAT').trim().slice(0, 30) || 'VAT';
+  const vatBillButton = !!vat_bill_button_enabled;
 
   const roundingMode = VALID_ROUNDING_MODES.has(String(rounding_mode)) ? String(rounding_mode) : 'none';
   const roundingStep = Math.max(0, Number(rounding_step) || 0);
@@ -47,8 +48,9 @@ export const PUT = handle(async (request) => {
   const result = await pool.query(
     `INSERT INTO company_profile
        (id, name, slogan, tax_id, business_reg_no, address, phone, email, logo_url, payment_qr_url, bank_accounts,
-        default_costing_method, vat_enabled, vat_rate, vat_mode, vat_label, rounding_mode, rounding_step, updated_at)
-     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17, NOW())
+        default_costing_method, vat_enabled, vat_rate, vat_mode, vat_label, vat_bill_button_enabled,
+        rounding_mode, rounding_step, updated_at)
+     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17, $18, NOW())
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
        slogan = EXCLUDED.slogan,
@@ -65,6 +67,7 @@ export const PUT = handle(async (request) => {
        vat_rate = EXCLUDED.vat_rate,
        vat_mode = EXCLUDED.vat_mode,
        vat_label = EXCLUDED.vat_label,
+       vat_bill_button_enabled = EXCLUDED.vat_bill_button_enabled,
        rounding_mode = EXCLUDED.rounding_mode,
        rounding_step = EXCLUDED.rounding_step,
        updated_at = NOW()
@@ -85,6 +88,7 @@ export const PUT = handle(async (request) => {
       vatRate,
       vatMode,
       vatLabel,
+      vatBillButton,
       roundingMode,
       roundingStep,
     ]

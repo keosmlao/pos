@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import pool from '@/lib/db';
 import { handle, ok, fail, readJson } from '@/lib/api';
 import { ensureMembersSchema } from '@/lib/migrations';
+import { normalizeTaxId } from '@/lib/taxId';
 
 function clean(value) {
   return String(value || '').trim();
@@ -21,6 +22,8 @@ export const PATCH = handle(async (request, { params }) => {
   const district = clean(body.district);
   const village = clean(body.village);
   if (!province || !district || !village) return fail(400, 'province, district and village are required');
+  const taxId = normalizeTaxId(body.tax_id);
+  if (!taxId.ok) return fail(400, taxId.error);
 
   try {
     const result = await pool.query(
@@ -39,8 +42,9 @@ export const PATCH = handle(async (request, { params }) => {
            active = $12,
            note = $13,
            credit_limit = $14,
+           tax_id = $15,
            updated_at = NOW()
-       WHERE id = $15
+       WHERE id = $16
        RETURNING *`,
       [
         clean(body.member_code),
@@ -57,6 +61,7 @@ export const PATCH = handle(async (request, { params }) => {
         body.active !== false,
         clean(body.note) || null,
         Math.max(0, Number(body.credit_limit) || 0),
+        taxId.value,
         numericId,
       ]
     );

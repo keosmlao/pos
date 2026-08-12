@@ -17,6 +17,7 @@ const DEFAULT = {
   vat_rate: 0,
   vat_mode: 'exclusive',
   vat_label: 'VAT',
+  vat_bill_button_enabled: false,
 };
 
 let cached = null;

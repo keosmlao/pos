@@ -57,6 +57,7 @@ export default function MemberHistoryPage({ params }) {
             </div>
             <div className="mt-1 text-sm font-mono text-slate-300">{member.member_code}</div>
             {member.phone && <div className="text-sm text-slate-300 mt-1">📞 {member.phone}</div>}
+            {member.tax_id && <div className="text-xs text-slate-300 mt-1 font-mono">TIN: {member.tax_id}</div>}
             {[member.village, member.district, member.province].filter(Boolean).length > 0 && (
               <div className="text-xs text-slate-400 mt-1">📍 {[member.village, member.district, member.province].filter(Boolean).join(', ')}</div>
             )}

@@ -9,7 +9,7 @@ import { useLocations, createLocation } from '../utils/useLocations'
 import { useBranches } from '../utils/useBranches'
 import { firstAccessibleAdminPath, getPagePermission } from '../utils/adminPermissions'
 import { queueOrder, queueCount, syncQueue, cacheProducts, getCachedProducts, applyQueuedStock } from '../utils/offlineQueue'
-import { normalizeVatSettings, applyVat, orderVatBreakdown, vatLineLabel, discountSign, VAT_LABELS } from '../lib/vat'
+import { normalizeVatSettings, applyVat, orderVatBreakdown, vatLineLabel, discountSign, roundingSign, VAT_LABELS } from '../lib/vat'
 import { applyRounding } from '../lib/rounding'
 import { earnWindowState, redeemWindowState, todayLocal, fmtLaoDate } from '../lib/loyaltyWindow'
 import SearchSelect from './SearchSelect'
@@ -52,7 +52,8 @@ function receiptsSummaryStyles() {
   .rpt th, .rpt td { border: 1px solid #999; padding: 3px 5px; vertical-align: middle; }
   .rpt thead th { background: #eef2f7; font-weight: 700; text-align: center; font-size: 10px; }
   .rpt td { font-size: 11px; }
-  .rpt .num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; }
+  .rpt .num { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
+  .rpt .mono, .rpt thead th { white-space: nowrap; }
   .rpt .mono { font-family: ui-monospace, Menlo, monospace; }
   .rpt tfoot td { font-weight: 800; background: #f1f5f9; color: #111; }
   .rpt .footer-summary { margin-top: 8px; display: flex; gap: 12px; }
@@ -374,6 +375,26 @@ function Toast({ message, type, onClose }) {
   )
 }
 
+// ລາຄາຫຼັງຫຼຸດຕໍ່ໜ່ວຍ ສຳລັບການຮັບຄືນ — /api/returns/lookup ປັນສ່ວນ
+// ສ່ວນຫຼຸດບິນ + ແຕ້ມ + ອມພ + ປັດເສດ ລົງແຕ່ລະລາຍການໃຫ້ແລ້ວເປັນ net_price
+// (ບິນເກົ່າ/ຂໍ້ມູນບໍ່ຄົບ ຈຶ່ງຄ່ອຍຄິດເອງຈາກ net_ratio ຫຼື ໃຊ້ລາຄາປ້າຍ)
+function returnNetPrice(item, pricing) {
+  const raw = Number(item?.net_price)
+  if (Number.isFinite(raw) && raw >= 0) return raw
+  const ratio = Number(pricing?.net_ratio)
+  const price = Number(item?.price) || 0
+  return Number.isFinite(ratio) && ratio > 0 ? price * ratio : price
+}
+
+// ── ພິມບິນ ອມພ ຜ່ານລະບົບພາຍນອກ ─────────────────────────────────────────
+// ໄລຍະທົດລອງ: ຍິງໄປລິ້ງຕາຍຕົວອັນດຽວ ບໍ່ທັນອີງເລກບິນຈິງ
+// ພໍລະບົບພ້ອມແລ້ວ ໃຫ້ປ່ຽນເປັນ `${VAT_BILL_PRINT_BASE}${billNumber}`
+const VAT_BILL_PRINT_URL = 'http://119.59.102.23:8011/printbill_test/INV2026080001'
+
+function openVatBillPrint() {
+  window.open(VAT_BILL_PRINT_URL, '_blank', 'noopener,noreferrer')
+}
+
 // ── ລາຍງານການຂາຍຕາມບິນຂາຍ (ໜ້າຂາຍ POS) ──────────────────────────────────
 // ໃຊ້ຕົວແຍກຍອດ orderVatBreakdown ອັນດຽວກັບໃບບິນ A5/A4 ຈຶ່ງບໍ່ຫຼົງກັນ
 function salesReportLines(rows, vatLabel) {
@@ -383,14 +404,16 @@ function salesReportLines(rows, vatLabel) {
   }))
 }
 
+// ລວມສະເພາະຄ່າທີ່ລາຍງານໃຊ້ — ບໍ່ເອົາ ປັດເສດ ແລະ ຍອດຊຳລະຈິງ
+// (ລາຍງານພາສີສົນໃຈ "ລວມທັງໝົດ = ກ່ອນ ອມພ + ອມພ" ບໍ່ແມ່ນຍອດທີ່ປັດເສດແລ້ວ)
 function salesReportTotals(lines) {
   return lines.reduce((t, { b }) => ({
     itemsGross: t.itemsGross + b.itemsGross,
     discount: t.discount + b.discount,
     beforeVat: t.beforeVat + b.beforeVat,
     vatAmount: t.vatAmount + b.vatAmount,
-    total: t.total + b.total,
-  }), { itemsGross: 0, discount: 0, beforeVat: 0, vatAmount: 0, total: 0 })
+    systemTotal: t.systemTotal + b.systemTotal,
+  }), { itemsGross: 0, discount: 0, beforeVat: 0, vatAmount: 0, systemTotal: 0 })
 }
 
 // ຫົວຖັນ ອມພ — ຖ້າທຸກບິນໃຊ້ອັດຕາດຽວກັນ ໃຫ້ຂຶ້ນອັດຕານັ້ນເລີຍ
@@ -416,7 +439,7 @@ function buildSalesReportBody({ lines, totals, company, rangeLabel, cashierName,
         <td class="num">${discountSign(b.discount)}${fmtReceiptTotal(Math.abs(b.discount))}</td>
         <td class="num">${fmtReceiptTotal(b.beforeVat)}</td>
         <td class="num">${fmtReceiptTotal(b.vatAmount)}</td>
-        <td class="num">${fmtReceiptTotal(b.total)}</td>
+        <td class="num">${fmtReceiptTotal(b.systemTotal)}</td>
       </tr>`).join('')
 
   return `<div class="rpt">
@@ -451,7 +474,7 @@ function buildSalesReportBody({ lines, totals, company, rangeLabel, cashierName,
         <td class="num">${discountSign(totals.discount)}${fmtReceiptTotal(Math.abs(totals.discount))}</td>
         <td class="num">${fmtReceiptTotal(totals.beforeVat)}</td>
         <td class="num">${fmtReceiptTotal(totals.vatAmount)}</td>
-        <td class="num">${fmtReceiptTotal(totals.total)}</td>
+        <td class="num">${fmtReceiptTotal(totals.systemTotal)}</td>
       </tr>
     </tfoot>
   </table>
@@ -466,7 +489,7 @@ function buildSalesReportBody({ lines, totals, company, rangeLabel, cashierName,
     </div>
     <div class="box">
       <div class="label">ລວມທັງໝົດ</div>
-      <div class="value">${fmtReceiptTotal(totals.total)} ₭</div>
+      <div class="value">${fmtReceiptTotal(totals.systemTotal)} ₭</div>
     </div>
   </div>
   <div class="sig">
@@ -531,7 +554,7 @@ async function downloadSalesReportPdf(opts) {
 }
 
 function Modal({ children, onClose, title, size = 'md', zClass = 'z-50' }) {
-  const sizes = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-3xl', '2xl': 'max-w-3xl' }
+  const sizes = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-3xl', '2xl': 'max-w-3xl', '3xl': 'max-w-6xl' }
   return (
     <div className={`fixed inset-0 bg-slate-950/70 backdrop-blur flex items-center justify-center ${zClass} p-4 animate-fade-in text-slate-900`} onClick={onClose}>
       <div className={`bg-white text-slate-900 rounded-2xl shadow-2xl w-full ${sizes[size]} max-h-[90vh] overflow-hidden flex flex-col animate-scale-in`} onClick={e => e.stopPropagation()}>
@@ -604,6 +627,8 @@ export default function POS({ user, onLogout }) {
   const [toast, setToast] = useState(null)
   const [discount, setDiscount] = useState(() => Number(initialDraft.discount) || 0)
   const [discountMode, setDiscountMode] = useState(() => initialDraft.discountMode === 'amount' ? 'amount' : 'percent') // 'percent' | 'amount'
+  // ບິນນີ້ຈະອອກແບບມີ ອມພ (VAT) ຫຼື ບໍ່ — ອັດຕາ/ໂໝດ ຍັງອີງຕາມທີ່ຕັ້ງໄວ້ໜ້າຂໍ້ມູນບໍລິສັດ
+  const [vatOnBill, setVatOnBill] = useState(() => initialDraft.vatOnBill !== false)
   const [paymentMethod, setPaymentMethod] = useState(() => initialDraft.paymentMethod || 'cash')
   const [customerNote, setCustomerNote] = useState(() => initialDraft.customerNote || '')
   const [creditCustomer, setCreditCustomer] = useState(() => ({
@@ -670,6 +695,7 @@ export default function POS({ user, onLogout }) {
         amountPaid,
         discount,
         discountMode,
+        vatOnBill,
         paymentMethod,
         customerNote,
         creditCustomer,
@@ -679,7 +705,7 @@ export default function POS({ user, onLogout }) {
         savedAt: new Date().toISOString(),
       }))
     } catch {}
-  }, [cart, amountPaid, discount, discountMode, paymentMethod, customerNote, creditCustomer, selectedMember, payments, pointsToRedeem])
+  }, [cart, amountPaid, discount, discountMode, vatOnBill, paymentMethod, customerNote, creditCustomer, selectedMember, payments, pointsToRedeem])
   const [debtAlerts, setDebtAlerts] = useState(null)
   const [showDebtAlerts, setShowDebtAlerts] = useState(false)
   const customerWinRef = useRef(null)
@@ -1247,7 +1273,13 @@ export default function POS({ user, onLogout }) {
   const pointsDiscountAmount = pointsUsed * redeemValue
   const discountAmount = manualDiscountAmount + promoTotalDisc + pointsDiscountAmount
   const netBeforeVat = Math.max(0, afterManualDisc - pointsDiscountAmount)
-  const vatSettings = useMemo(() => normalizeVatSettings(company), [company])
+  // ຄ່າ ອມພ ຕາມທີ່ຕັ້ງໄວ້ຫຼັງບ້ານ (ໜ້າຈັດການຂໍ້ມູນບໍລິສັດ) — ອັດຕາ ແລະ ໂໝດ ມາຈາກບ່ອນນີ້ບ່ອນດຽວ
+  const companyVat = useMemo(() => normalizeVatSettings(company), [company])
+  // ບິນປັດຈຸບັນ: ພະນັກງານເລືອກໄດ້ວ່າຈະຄິດ ອມພ ຫຼື ບໍ່ (ອັດຕາ/ໂໝດ ບໍ່ປ່ຽນ)
+  const vatSettings = useMemo(
+    () => (vatOnBill ? companyVat : { ...companyVat, enabled: false }),
+    [companyVat, vatOnBill]
+  )
   const vatBreakdown = useMemo(() => applyVat(netBeforeVat, vatSettings), [netBeforeVat, vatSettings])
   const vatAmount = vatBreakdown.vatAmount
   const subtotalExVat = vatBreakdown.subtotalExVat
@@ -1280,15 +1312,27 @@ export default function POS({ user, onLogout }) {
   const selectedReturnItems = useMemo(() => {
     return (returnLookup?.items || []).map(item => {
       const qty = Math.max(0, Math.min(Number(returnQty[item.order_item_id]) || 0, Number(item.returnable_qty) || 0))
+      const unitNet = returnNetPrice(item, returnLookup?.pricing)
       return {
         ...item,
         selected_qty: qty,
-        selected_amount: qty * (Number(item.price) || 0),
+        unit_net_price: unitNet,
+        selected_gross: qty * (Number(item.price) || 0),   // ລາຄາປ້າຍ (ຍັງບໍ່ຫັກຫຼຸດ)
+        selected_amount: qty * unitNet,                    // ຍອດຄືນຈິງ (ຫຼັງປັນສ່ວນຫຼຸດ)
       }
     }).filter(item => item.selected_qty > 0)
   }, [returnLookup, returnQty])
+  // ຍອດຄືນ = ຜົນລວມລາຄາຫຼັງຫຼຸດ ແລ້ວຄ່ອຍປັດ — ຄິດແບບດຽວກັບ /api/returns
+  // ຈຶ່ງບໍ່ຫຼົງກັນລະຫວ່າງຕົວເລກທີ່ພະນັກງານເຫັນ ກັບ ຍອດທີ່ບັນທຶກຈິງ
   const returnRefundTotal = useMemo(() => {
-    return selectedReturnItems.reduce((sum, item) => sum + item.selected_amount, 0)
+    return Math.round(selectedReturnItems.reduce((sum, item) => sum + item.selected_amount, 0))
+  }, [selectedReturnItems])
+  const returnGrossTotal = useMemo(() => {
+    return Math.round(selectedReturnItems.reduce((sum, item) => sum + item.selected_gross, 0))
+  }, [selectedReturnItems])
+  const returnDiscountTotal = Math.max(0, returnGrossTotal - returnRefundTotal)
+  const returnPieces = useMemo(() => {
+    return selectedReturnItems.reduce((sum, item) => sum + Number(item.selected_qty || 0), 0)
   }, [selectedReturnItems])
   const customerDisplayState = useMemo(() => ({
     type: 'state',
@@ -1551,6 +1595,7 @@ export default function POS({ user, onLogout }) {
         setShowReceipt(order); setCart([]); setAmountPaid(''); setShowCheckout(false)
         setDiscount(0); setDiscountMode('percent'); setCustomerNote('')
         setLastScan(null); setPayments([]); setActiveMethod('cash'); setCashAuto(true)
+        setVatOnBill(true)
         setLoadedLayby(null)
         fetchProducts()
       } else {
@@ -1607,6 +1652,7 @@ export default function POS({ user, onLogout }) {
       coupon_codes: activeCouponCodes,
       applied_promo_ids: (promoResult.appliedPromos || []).map(p => p.id),
       branch_id: activeBranchId || null,
+      apply_vat: vatOnBill,   // ບິນນີ້ຄິດ ອມພ ຫຼື ບໍ່ (ອັດຕາ/ໂໝດ server ອ່ານຈາກຂໍ້ມູນບໍລິສັດ)
     }
     let res
     try {
@@ -1626,7 +1672,11 @@ export default function POS({ user, onLogout }) {
         bill_number: entry.ref,
         created_at: entry.sold_at,
         total: finalTotal,
-        subtotal: cartTotal,
+        // ບັນທຶກຄືກັນກັບທີ່ server ເກັບ ບິນ offline ຈຶ່ງສະແດງ ອມພ/ປັດເສດ ຖືກຕ້ອງ
+        subtotal: subtotalExVat,
+        vat_rate: vatSettings.enabled ? vatSettings.rate : 0,
+        vat_mode: vatSettings.enabled ? vatSettings.mode : null,
+        vat_amount: vatAmount,
         discount: discountAmount,
         amount_paid: paid,
         change_amount: paid - finalTotal,
@@ -1640,7 +1690,7 @@ export default function POS({ user, onLogout }) {
       try { bcRef.current?.postMessage({ type: 'complete', order: localOrder }) } catch {}
       clearPosDraft()
       setShowReceipt(localOrder); setCart([]); setAmountPaid(''); setShowCheckout(false)
-      setDiscount(0); setDiscountMode('percent'); setCustomerNote(''); setLastScan(null); setPayments([]); setActiveMethod('cash'); setCashAuto(true); setSelectedMember(DEFAULT_MEMBER); setPointsToRedeem(0); setActiveCoupons([]); setCouponInput('')
+      setDiscount(0); setDiscountMode('percent'); setCustomerNote(''); setLastScan(null); setPayments([]); setActiveMethod('cash'); setCashAuto(true); setSelectedMember(DEFAULT_MEMBER); setPointsToRedeem(0); setActiveCoupons([]); setCouponInput(''); setVatOnBill(true)
       return
     }
     if (res.ok) {
@@ -1651,7 +1701,7 @@ export default function POS({ user, onLogout }) {
       try { bcRef.current?.postMessage({ type: 'complete', order }) } catch {}
       clearPosDraft()
       setShowReceipt(order); setCart([]); setAmountPaid(''); setShowCheckout(false)
-      setDiscount(0); setDiscountMode('percent'); setCustomerNote(''); setCreditCustomer({ name: '', phone: '', dueDate: dateAfterDays(30) }); setLastScan(null); setPayments([]); setActiveMethod('cash'); setCashAuto(true); setSelectedMember(DEFAULT_MEMBER); setPointsToRedeem(0); setActiveCoupons([]); setCouponInput('')
+      setDiscount(0); setDiscountMode('percent'); setCustomerNote(''); setCreditCustomer({ name: '', phone: '', dueDate: dateAfterDays(30) }); setLastScan(null); setPayments([]); setActiveMethod('cash'); setCashAuto(true); setSelectedMember(DEFAULT_MEMBER); setPointsToRedeem(0); setActiveCoupons([]); setCouponInput(''); setVatOnBill(true)
       loadMembers('')
       fetchProducts()
     } else { const err = await res.json(); showToast(err.error, 'error') }
@@ -1941,21 +1991,34 @@ export default function POS({ user, onLogout }) {
   }
 
   const tenderMethodLabel = (m) => ({ cash: 'ສົດ', transfer: 'ໂອນ', qr: 'QR' }[String(m || '').toLowerCase()] || '')
+  // ການຮັບເງິນຕົວຈິງ ແຍກຕາມຊ່ອງທາງ (ສົດ/ໂອນ/QR) ຄິດເປັນກີບ — ໃຊ້ຮ່ວມກັນທຸກຂະໜາດບິນ
+  // ເງິນຕາຕ່າງປະເທດຈະຕິດ "ສະກຸນ ຈຳນວນ @ ອັດຕາ" ໄວ້ໃນປ້າຍ ຈຶ່ງບໍ່ຕ້ອງມີຕາລາງແຍກອີກ
+  const tenderRowsOf = (order, orderPayments) => {
+    if (Array.isArray(orderPayments) && orderPayments.length > 0) {
+      const grouped = new Map()
+      for (const p of orderPayments) {
+        const method = String(p.method || 'cash').toLowerCase()
+        const currency = String(p.currency || 'LAK').toUpperCase()
+        const rate = Number(p.rate) || 1
+        const amount = Number(p.amount) || 0
+        const key = `${method}|${currency}|${rate}`
+        const g = grouped.get(key) || { method, currency, rate, amount: 0, lak: 0 }
+        g.amount += amount
+        g.lak += Number(p.amount_lak) || amount * rate
+        grouped.set(key, g)
+      }
+      return [...grouped.values()].map(g => ({
+        label: g.currency === 'LAK'
+          ? (tenderMethodLabel(g.method) || 'ຮັບເງິນ')
+          : `${tenderMethodLabel(g.method) || 'ຮັບເງິນ'} · ${g.currency} ${formatNumber(g.amount)} @ ${formatNumber(g.rate)}`,
+        amount: g.lak,
+      }))
+    }
+    return [{ label: tenderMethodLabel(order.payment_method) || 'ຮັບເງິນ', amount: Number(order.amount_paid) || 0 }]
+  }
 
   const buildThermalReceipt = ({ order, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel, vatInfo }) => {
-    const paymentLines = orderPayments.map(p => {
-      const currency = p.currency || 'LAK'
-      const rate = Number(p.rate) || 1
-      const amount = Number(p.amount) || 0
-      const amountLak = Number(p.amount_lak) || amount * rate
-      const mLabel = tenderMethodLabel(p.method)
-      return `
-        <div class="payrow">
-          <span>${mLabel ? mLabel + ' · ' : ''}${currency} ${formatNumber(amount)}</span>
-          <span>@ ${formatNumber(rate)} = ${formatPrice(amountLak)}</span>
-        </div>
-      `
-    }).join('')
+    const tenderRows = tenderRowsOf(order, orderPayments)
     const lines = itemsArr.map(it => `
       <div class="row">
         <div class="name">${(it.name || it.product_name || '—')}</div>
@@ -1991,7 +2054,6 @@ export default function POS({ user, onLogout }) {
       .total span:first-child { min-width: 0; overflow-wrap: anywhere; }
       .total span:last-child { flex-shrink: 0; text-align: right; }
       .total-value { font-variant-numeric: tabular-nums }
-      .payrow { display: flex; justify-content: space-between; gap: 4px; margin: 2px 0; font-size: 9px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
       .grand { font-size: 13px; font-weight: 800; }
       .note { font-size: 9px; color: #333; margin-top: 4px; padding: 4px; border: 1px dashed #000; overflow-wrap: anywhere; }
     </style></head><body>
@@ -2028,15 +2090,21 @@ export default function POS({ user, onLogout }) {
         <div class="total"><span>${VAT_LABELS.beforeVat}</span><span class="total-value">${formatPrice(vatInfo.beforeVat)}</span></div>
         <div class="total"><span>${vatInfo.vatLabelText}</span><span class="total-value">${formatPrice(vatInfo.vatAmount)}</span></div>
       ` : ''}
-      <div class="double"></div>
-      <div class="total grand"><span>${VAT_LABELS.grandTotal}</span><span class="total-value">${formatPrice(vatInfo.total)}</span></div>
-      <div class="divider"></div>
-      <div class="total"><span>${isCreditOrder ? 'ຮັບແລ້ວ' : 'ຮັບເງິນ'}</span><span class="total-value">${formatPrice(order.amount_paid)}</span></div>
-      ${paymentLines ? `
-        <div class="xs bold" style="margin-top:4px;">ລາຍລະອຽດການຮັບເງິນ / Rate</div>
-        ${paymentLines}
+      ${vatInfo.hasRounding ? `
+        <div class="total"><span>${VAT_LABELS.systemTotal}</span><span class="total-value">${formatPrice(vatInfo.systemTotal)}</span></div>
+        <div class="total"><span>${VAT_LABELS.rounding}</span><span class="total-value">${roundingSign(vatInfo.rounding)}${formatPrice(Math.abs(vatInfo.rounding))}</span></div>
       ` : ''}
-      <div class="total bold"><span>${isCreditOrder ? 'ຍອດຄ້າງ' : 'ເງິນທອນ'}</span><span class="total-value">${formatPrice(isCreditOrder ? Number(order.total) - Number(order.amount_paid || 0) : order.change_amount)}</span></div>
+      <div class="double"></div>
+      <div class="total grand"><span>${vatInfo.grandTotalLabel}</span><span class="total-value">${formatPrice(vatInfo.total)}</span></div>
+      <div class="divider"></div>
+      ${isCreditOrder ? `
+        <div class="total"><span>ຮັບແລ້ວ</span><span class="total-value">${formatPrice(order.amount_paid)}</span></div>
+        <div class="total bold"><span>ຍອດຄ້າງ</span><span class="total-value">${formatPrice(Number(order.total) - Number(order.amount_paid || 0))}</span></div>
+      ` : `
+        <div class="xs bold">${VAT_LABELS.paymentDetail}</div>
+        ${tenderRows.map(t => `<div class="total"><span>${t.label}</span><span class="total-value">${formatPrice(t.amount)}</span></div>`).join('')}
+        <div class="total bold"><span>${VAT_LABELS.change}</span><span class="total-value">${formatPrice(order.change_amount)}</span></div>
+      `}
 
       ${order.note ? `<div class="note">📝 ${order.note}</div>` : ''}
 
@@ -2063,6 +2131,7 @@ export default function POS({ user, onLogout }) {
   }
 
   const buildPaperReceipt = ({ order, size, company, user, methodText, isCreditOrder, dateStr, orderPayments, itemsArr, billLabel, vatInfo }) => {
+    const tenderRows = tenderRowsOf(order, orderPayments)
     const isA4 = size === 'a4'
     const itemRows = itemsArr.map((it, i) => {
       const qty = Number(it.quantity) || 0
@@ -2078,14 +2147,6 @@ export default function POS({ user, onLogout }) {
         </tr>
       `
     }).join('')
-    const paymentRows = orderPayments.map(p => {
-      const currency = p.currency || 'LAK'
-      const rate = Number(p.rate) || 1
-      const amount = Number(p.amount) || 0
-      const amountLak = Number(p.amount_lak) || amount * rate
-      const mLabel = tenderMethodLabel(p.method)
-      return `<tr><td>${mLabel ? mLabel + ' · ' : ''}${currency}</td><td class="money">${formatNumber(amount)}</td><td>@ ${formatNumber(rate)}</td><td class="money">${formatPrice(amountLak)}</td></tr>`
-    }).join('')
     const outstanding = isCreditOrder ? Math.max(0, Number(order.total) - Number(order.amount_paid || 0)) : Number(order.change_amount || 0)
 
     return `<!doctype html>
@@ -2094,10 +2155,10 @@ export default function POS({ user, onLogout }) {
       @page { size: ${isA4 ? 'A4' : 'A5'} portrait; margin: ${isA4 ? '12mm' : '8mm'} }
       * { box-sizing: border-box; font-family: 'Noto Sans Lao','Phetsarath OT',system-ui,sans-serif; }
       html, body { margin: 0; padding: 0; color: #111; font-size: ${isA4 ? '12px' : '11px'}; line-height: 1.45; -webkit-print-color-adjust: exact; print-color-adjust: exact }
-      .receipt { width: 100%; min-height: ${isA4 ? '273mm' : '194mm'}; display: flex; flex-direction: column }
-      .spacer { flex: 1 1 auto; min-height: ${isA4 ? '16px' : '10px'} }
+      .receipt { width: ${isA4 ? '186mm' : '132mm'}; margin: 0 auto; min-height: ${isA4 ? '273mm' : '194mm'}; display: flex; flex-direction: column }
+      .spacer { flex: 1 1 auto; min-height: ${isA4 ? '10px' : '6px'} }
       .closing { break-inside: avoid; page-break-inside: avoid }
-      .sheet { height: ${isA4 ? '273mm' : '194mm'}; display: flex; flex-direction: column; overflow: hidden; break-after: page; page-break-after: always }
+      .sheet { width: ${isA4 ? '186mm' : '132mm'}; margin: 0 auto; height: ${isA4 ? '273mm' : '194mm'}; display: flex; flex-direction: column; overflow: hidden; break-after: page; page-break-after: always }
       .sheet:last-child { break-after: auto; page-break-after: auto }
       .sheet.measuring { height: auto; overflow: visible }
       .sheet header.top { margin-bottom: ${isA4 ? '12px' : '8px'} }
@@ -2105,49 +2166,54 @@ export default function POS({ user, onLogout }) {
       .pagefoot:empty { display: none }
       .carried { font-weight: 700; color: #b45309 }
       table.items tr.filler td { color: transparent; border-bottom: 1px solid #eef2f7 }
-      header.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 12px }
+      header.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 2px solid #111; padding-bottom: ${isA4 ? '8px' : '5px'}; margin-bottom: ${isA4 ? '10px' : '6px'} }
       .brand { display: flex; align-items: center; gap: 12px; min-width: 0 }
-      .brand img { max-height: ${isA4 ? '64px' : '52px'}; max-width: ${isA4 ? '120px' : '90px'}; object-fit: contain }
+      .brand img { max-height: ${isA4 ? '56px' : '42px'}; max-width: ${isA4 ? '110px' : '78px'}; object-fit: contain }
       .brand .name { font-size: ${isA4 ? '20px' : '16px'}; font-weight: 800; letter-spacing: .2px }
-      .brand .info { font-size: ${isA4 ? '11px' : '10px'}; color: #444; line-height: 1.4 }
+      .brand .info { font-size: ${isA4 ? '11px' : '10px'}; color: #444; line-height: 1.3 }
       .doc { text-align: right }
       .doc h1 { margin: 0; font-size: ${isA4 ? '22px' : '18px'}; font-weight: 900; letter-spacing: 1px; color: #b91c1c }
       .doc .meta { margin-top: 4px; font-size: ${isA4 ? '11px' : '10px'}; color: #444 }
       .doc .meta b { color: #111 }
-      .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; padding: 8px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 12px; font-size: ${isA4 ? '11px' : '10px'} }
+      .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: ${isA4 ? '5px' : '3px'} 20px; padding: ${isA4 ? '7px' : '5px'} 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: ${isA4 ? '10px' : '6px'}; font-size: ${isA4 ? '11px' : '10px'} }
       .meta-grid .row { display: flex; gap: 6px; align-items: baseline }
       .meta-grid .label { color: #64748b; font-weight: 700; min-width: ${isA4 ? '70px' : '60px'} }
       .meta-grid .value { color: #111; font-weight: 600; word-break: break-word }
-      table.items { width: 100%; border-collapse: collapse; margin: 8px 0 }
-      table.items thead th { background: #111; color: #fff; padding: 5px 8px; font-size: ${isA4 ? '10px' : '9px'}; font-weight: 700; text-align: left; letter-spacing: .3px }
+      table.items { width: 100%; border-collapse: collapse; margin: ${isA4 ? '6px' : '4px'} 0 }
+      table.items thead th { background: #111; color: #fff; padding: ${isA4 ? '5px' : '4px'} 8px; font-size: ${isA4 ? '10px' : '9px'}; font-weight: 700; text-align: left; letter-spacing: .3px }
       table.items thead th.qty, table.items thead th.money { text-align: right }
       table.items thead { display: table-header-group }
       table.items tbody tr { break-inside: avoid; page-break-inside: avoid }
-      table.items tbody td { padding: ${isA4 ? '6px' : '5px'} 8px; border-bottom: 1px solid #e5e7eb; font-size: ${isA4 ? '11px' : '10px'} }
+      table.items tbody td { padding: ${isA4 ? '4px' : '3px'} 8px; border-bottom: 1px solid #e5e7eb; font-size: ${isA4 ? '11px' : '10px'}; line-height: 1.35 }
       table.items td.num { width: 28px; color: #64748b; font-variant-numeric: tabular-nums }
       table.items td.prod { font-weight: 600 }
       table.items td.qty, table.items td.money { text-align: right; font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
-      .totals { display: grid; grid-template-columns: 1fr ${isA4 ? '250px' : '208px'}; gap: 16px; margin-top: 10px; break-inside: avoid; page-break-inside: avoid }
+      .totals { display: grid; grid-template-columns: 1fr ${isA4 ? '250px' : '208px'}; align-items: start; gap: 12px; margin-top: ${isA4 ? '8px' : '6px'}; break-inside: avoid; page-break-inside: avoid }
       .totals .left { font-size: ${isA4 ? '11px' : '10px'}; color: #475569 }
+      .totals .bank { margin-top: ${isA4 ? '6px' : '4px'} }
       .totals .bank b { color: #111 }
+      .totals .left > :first-child { margin-top: 0 }
+      .totals .qr { margin-top: ${isA4 ? '8px' : '6px'} }
+      .totals .qr img { width: ${isA4 ? '132px' : '108px'}; height: ${isA4 ? '132px' : '108px'}; object-fit: contain; display: block }
+      .totals .qr .cap { font-size: 10px; font-weight: 700; margin-top: 2px }
       .totals .right { border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; break-inside: avoid; page-break-inside: avoid }
-      .totals .right .row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 9px; font-size: ${isA4 ? '11px' : '10px'} }
+      .totals .right .row { display: flex; justify-content: space-between; gap: 10px; padding: ${isA4 ? '4px' : '3px'} 9px; font-size: ${isA4 ? '11px' : '10px'} }
       .totals .right .row + .row { border-top: 1px dashed #e2e8f0 }
       .totals .right .row .v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums }
       .totals .right .grand { background: #fef2f2; color: #991b1b; font-weight: 900; font-size: ${isA4 ? '13px' : '12px'}; border-top: 2px solid #fca5a5 }
       .totals .right .outstanding { background: #fffbeb; color: #92400e; font-weight: 800 }
       .totals .right .change { background: #f0fdf4; color: #166534; font-weight: 800 }
-      .payments { margin-top: 12px; font-size: ${isA4 ? '11px' : '10px'}; break-inside: avoid; page-break-inside: avoid }
-      .payments h4 { margin: 0 0 6px; font-size: ${isA4 ? '11px' : '10px'}; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: .5px }
+      .payments { margin-top: ${isA4 ? '10px' : '7px'}; max-width: ${isA4 ? '260px' : '210px'}; font-size: ${isA4 ? '11px' : '10px'}; break-inside: avoid; page-break-inside: avoid }
+      .payments h4 { margin: 0 0 4px; font-size: ${isA4 ? '11px' : '10px'}; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: .5px }
       .payments table { width: 100%; border-collapse: collapse }
-      .payments td { padding: 4px 8px; border-bottom: 1px dotted #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
+      .payments td { padding: ${isA4 ? '4px' : '3px'} 8px; border-bottom: 1px dotted #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
       .payments td.money { text-align: right }
-      .note { margin-top: 12px; padding: 8px 12px; border: 1px dashed #94a3b8; border-radius: 6px; font-size: ${isA4 ? '11px' : '10px'}; color: #334155 }
-      .sign { display: grid; grid-template-columns: repeat(5, 1fr); gap: ${isA4 ? '12px' : '8px'}; margin-top: ${isA4 ? '22px' : '14px'}; page-break-inside: avoid; break-inside: avoid }
+      .note { margin-top: ${isA4 ? '10px' : '7px'}; padding: ${isA4 ? '7px' : '5px'} 10px; border: 1px dashed #94a3b8; border-radius: 6px; font-size: ${isA4 ? '11px' : '10px'}; color: #334155 }
+      .sign { display: grid; grid-template-columns: repeat(5, 1fr); gap: ${isA4 ? '12px' : '8px'}; margin-top: ${isA4 ? '16px' : '9px'}; page-break-inside: avoid; break-inside: avoid }
       .sign .box { text-align: center; font-size: ${isA4 ? '10px' : '8px'}; color: #475569; white-space: nowrap }
       .sign .name { font-weight: 700; color: #334155 }
-      .sign .line { margin-top: 4px; height: ${isA4 ? '34px' : '26px'}; border-bottom: 1px solid #94a3b8 }
-      footer.bottom { margin-top: ${isA4 ? '24px' : '16px'}; padding-top: 8px; border-top: 1px solid #cbd5e1; text-align: center; font-size: ${isA4 ? '11px' : '10px'}; color: #475569 }
+      .sign .line { margin-top: 4px; height: ${isA4 ? '28px' : '20px'}; border-bottom: 1px solid #94a3b8 }
+      footer.bottom { margin-top: ${isA4 ? '14px' : '8px'}; padding-top: ${isA4 ? '6px' : '5px'}; border-top: 1px solid #cbd5e1; text-align: center; font-size: ${isA4 ? '11px' : '10px'}; color: #475569 }
     </style></head><body>
       <div class="receipt">
         <header class="top">
@@ -2200,17 +2266,26 @@ export default function POS({ user, onLogout }) {
           <div class="left">
             ${order.member_id && Number(order.member_points_used) > 0 ? `<div>ໃຊ້ແຕ້ມ: <b>−${formatNumber(order.member_points_used)}</b> (${formatPrice(order.member_points_discount || 0)})</div>` : ''}
             ${Array.isArray(company.bank_accounts) && company.bank_accounts.length > 0 ? `
-              <div class="bank" style="margin-top:8px">
+              <div class="bank">
                 <b>ບັນຊີຊຳລະ:</b>
                 ${company.bank_accounts.map(a => `<div>• ${[a.bank_name, a.account_name].filter(Boolean).join(' — ')}${a.account_number ? `: ${a.account_number}` : ''}</div>`).join('')}
               </div>
             ` : ''}
             ${company.payment_qr_url ? `
-              <div style="margin-top:8px">
-                <img src="${location.origin}${company.payment_qr_url}" style="width:88px;height:88px;object-fit:contain;" alt="QR" />
-                <div style="font-size:10px;font-weight:bold;">📱 ສະແກນຈ່າຍ</div>
+              <div class="qr">
+                <img src="${location.origin}${company.payment_qr_url}" alt="QR" />
+                <div class="cap">📱 ສະແກນຈ່າຍ</div>
               </div>
             ` : ''}
+            ${isCreditOrder ? '' : `
+              <div class="payments">
+                <h4>${VAT_LABELS.paymentDetail}</h4>
+                <table>
+                  ${tenderRows.map(t => `<tr><td>${t.label}</td><td class="money">${formatPrice(t.amount)}</td></tr>`).join('')}
+                  <tr><td><b>${VAT_LABELS.change}</b></td><td class="money"><b>${formatPrice(order.change_amount)}</b></td></tr>
+                </table>
+              </div>
+            `}
           </div>
           <div class="right">
             <div class="row"><span>${VAT_LABELS.itemsGross}</span><span class="v">${formatPrice(vatInfo.itemsGross)}</span></div>
@@ -2219,18 +2294,17 @@ export default function POS({ user, onLogout }) {
               <div class="row"><span>${VAT_LABELS.beforeVat}</span><span class="v">${formatPrice(vatInfo.beforeVat)}</span></div>
               <div class="row"><span>${vatInfo.vatLabelText}</span><span class="v">${formatPrice(vatInfo.vatAmount)}</span></div>
             ` : ''}
-            <div class="row grand"><span>${VAT_LABELS.grandTotal}</span><span class="v">${formatPrice(vatInfo.total)}</span></div>
-            <div class="row"><span>${isCreditOrder ? 'ຮັບແລ້ວ' : 'ຮັບເງິນ'}</span><span class="v">${formatPrice(order.amount_paid)}</span></div>
-            <div class="row ${isCreditOrder ? 'outstanding' : 'change'}"><span>${isCreditOrder ? 'ຍອດຄ້າງ' : 'ເງິນທອນ'}</span><span class="v">${formatPrice(outstanding)}</span></div>
+            ${vatInfo.hasRounding ? `
+              <div class="row"><span>${VAT_LABELS.systemTotal}</span><span class="v">${formatPrice(vatInfo.systemTotal)}</span></div>
+              <div class="row"><span>${VAT_LABELS.rounding}</span><span class="v">${roundingSign(vatInfo.rounding)}${formatPrice(Math.abs(vatInfo.rounding))}</span></div>
+            ` : ''}
+            <div class="row grand"><span>${vatInfo.grandTotalLabel}</span><span class="v">${formatPrice(vatInfo.total)}</span></div>
+            ${isCreditOrder ? `
+              <div class="row"><span>ຮັບແລ້ວ</span><span class="v">${formatPrice(order.amount_paid)}</span></div>
+              <div class="row outstanding"><span>ຍອດຄ້າງ</span><span class="v">${formatPrice(outstanding)}</span></div>
+            ` : ''}
           </div>
         </div>
-
-        ${paymentRows ? `
-          <div class="payments">
-            <h4>ລາຍລະອຽດການຮັບເງິນ</h4>
-            <table>${paymentRows}</table>
-          </div>
-        ` : ''}
 
         ${order.note ? `<div class="note"><b>ໝາຍເຫດ:</b> ${order.note}</div>` : ''}
 
@@ -3010,6 +3084,32 @@ export default function POS({ user, onLogout }) {
                   </div>
                 )}
               </div>
+              {companyVat.enabled && (
+                <div className="rounded-md border border-cyan-500/30 bg-cyan-500/5 px-2 py-1.5 space-y-1">
+                  <div className="text-[9px] font-extrabold uppercase tracking-wider text-cyan-400/80">ຮູບແບບບິນ</div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setVatOnBill(true)}
+                      className={`h-7 rounded text-[10px] font-extrabold transition ${vatOnBill
+                        ? 'bg-cyan-500/25 border border-cyan-400/60 text-cyan-100'
+                        : 'bg-slate-950 border border-slate-700 text-slate-300 hover:text-slate-200'}`}
+                    >ມີ ອມພ {companyVat.rate}%</button>
+                    <button
+                      type="button"
+                      onClick={() => setVatOnBill(false)}
+                      className={`h-7 rounded text-[10px] font-extrabold transition ${!vatOnBill
+                        ? 'bg-amber-500/25 border border-amber-400/60 text-amber-100'
+                        : 'bg-slate-950 border border-slate-700 text-slate-300 hover:text-slate-200'}`}
+                    >ບໍ່ມີ ອມພ</button>
+                  </div>
+                  <div className="text-[9px] text-slate-400">
+                    {vatOnBill
+                      ? (companyVat.mode === 'inclusive' ? 'ລາຄາລວມ ອມພ ແລ້ວ' : 'ຄິດ ອມພ ເພີ່ມຈາກລາຄາ')
+                      : 'ບິນນີ້ຈະບໍ່ຄິດ ອມພ'}
+                  </div>
+                </div>
+              )}
               {vatSettings.enabled && (
                 <div className="rounded-md border border-cyan-500/30 bg-cyan-500/5 px-2 py-1.5 space-y-0.5">
                   {subtotalExVat > 0 && (
@@ -3025,9 +3125,15 @@ export default function POS({ user, onLogout }) {
                 </div>
               )}
               {roundingAdjustment !== 0 && (
-                <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                  <span>ປັດສະຕັງ</span>
-                  <span className="font-mono">{roundingAdjustment > 0 ? '+' : ''}{formatPrice(roundingAdjustment)}</span>
+                <div className="space-y-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+                    <span>{VAT_LABELS.systemTotal}</span>
+                    <span className="font-mono">{formatPrice(vatBreakdown.total)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                    <span>{VAT_LABELS.rounding}</span>
+                    <span className="font-mono">{roundingSign(roundingAdjustment)}{formatPrice(Math.abs(roundingAdjustment))}</span>
+                  </div>
                 </div>
               )}
               {!selectedMember?.isDefault && selectedMember && !earnWindow.open && (
@@ -3197,12 +3303,14 @@ export default function POS({ user, onLogout }) {
 
       {/* Sales Report Modal — ລາຍງານການຂາຍຕາມບິນຂາຍ */}
       {showSalesReport && (() => {
-        const lines = salesReportLines(srData?.rows || [], company.vat_label)
+        const allLines = salesReportLines(srData?.rows || [], company.vat_label)
+        // ລາຍງານນີ້ເບິ່ງສະເພາະບິນທີ່ມີ ອມພ — ບິນທີ່ອອກແບບບໍ່ມີ ອມພ ຈະບໍ່ຂຶ້ນລາຍງານ
+        const lines = allLines.filter(l => l.b.hasVat)
         const totals = salesReportTotals(lines)
         const vatHeader = salesReportVatHeader(lines)
         const rangeLabel = srFrom === srTo ? srFrom : `${srFrom} ຫາ ${srTo}`
         const note = srData?.truncated
-          ? `ສະແດງ ${lines.length} ບິນ ຈາກ ${srData.total_bills} ບິນ — ກະລຸນາແຄບຊ່ວງວັນທີລົງ`
+          ? `ສະແດງ ${allLines.length} ບິນ ຈາກ ${srData.total_bills} ບິນ — ກະລຸນາແຄບຊ່ວງວັນທີລົງ`
           : ''
         const printOpts = {
           lines, totals, company, rangeLabel, vatHeader, note,
@@ -3210,7 +3318,7 @@ export default function POS({ user, onLogout }) {
           fileTag: srFrom === srTo ? srFrom : `${srFrom}_${srTo}`,
         }
         return (
-          <Modal onClose={() => setShowSalesReport(false)} title="📄 ລາຍງານການຂາຍຕາມບິນຂາຍ" size="xl">
+          <Modal onClose={() => setShowSalesReport(false)} title="📄 ລາຍງານການຂາຍຕາມບິນຂາຍ" size="3xl">
             <div className="space-y-3">
               <div className="flex flex-wrap items-end gap-2">
                 <div>
@@ -3277,50 +3385,50 @@ export default function POS({ user, onLogout }) {
                 <table className="w-full text-[11px]">
                   <thead className="bg-slate-100">
                     <tr className="text-left">
-                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">#</th>
-                      <th className="px-2 py-1.5 font-bold text-slate-600">ເລກທີບິນ</th>
-                      <th className="px-2 py-1.5 font-bold text-slate-600">ວັນທີ</th>
-                      <th className="px-2 py-1.5 font-bold text-slate-600">ລູກຄ້າ</th>
-                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">ລວມມູນຄ່າ</th>
-                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">ສ່ວນຫຼຸດ</th>
-                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">ກ່ອນ ອມພ</th>
-                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">{vatHeader}</th>
-                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right">ລວມທັງໝົດ</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right whitespace-nowrap">#</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 whitespace-nowrap">ເລກທີບິນ</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 whitespace-nowrap">ວັນທີ</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 whitespace-nowrap">ລູກຄ້າ</th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right whitespace-nowrap">ລວມມູນຄ່າ <span className="font-normal text-slate-400">(₭)</span></th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right whitespace-nowrap">ສ່ວນຫຼຸດ <span className="font-normal text-slate-400">(₭)</span></th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right whitespace-nowrap">ກ່ອນ ອມພ <span className="font-normal text-slate-400">(₭)</span></th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right whitespace-nowrap">{vatHeader} <span className="font-normal text-slate-400">(₭)</span></th>
+                      <th className="px-2 py-1.5 font-bold text-slate-600 text-right whitespace-nowrap">ລວມທັງໝົດ <span className="font-normal text-slate-400">(₭)</span></th>
                     </tr>
                   </thead>
                   <tbody>
                     {lines.length === 0 ? (
                       <tr><td colSpan={9} className="px-3 py-10 text-center text-slate-400">
-                        {srBusy ? 'ກຳລັງໂຫຼດ...' : 'ບໍ່ມີບິນຂາຍໃນຊ່ວງວັນທີນີ້'}
+                        {srBusy ? 'ກຳລັງໂຫຼດ...' : 'ບໍ່ມີບິນທີ່ມີ ອມພ ໃນຊ່ວງວັນທີນີ້'}
                       </td></tr>
                     ) : lines.map(({ row, b }, i) => (
                       <tr key={row.id} className="border-t border-slate-100 hover:bg-red-50/40">
-                        <td className="px-2 py-1 text-right text-slate-400 font-mono">{i + 1}</td>
-                        <td className="px-2 py-1 font-bold text-slate-800">{row.bill_number || `#${row.id}`}</td>
-                        <td className="px-2 py-1 text-slate-500 font-mono">{formatDateTime(row.created_at)}</td>
-                        <td className="px-2 py-1">
+                        <td className="px-2 py-1 text-right text-slate-400 font-mono whitespace-nowrap">{i + 1}</td>
+                        <td className="px-2 py-1 font-bold text-slate-800 whitespace-nowrap">{row.bill_number || `#${row.id}`}</td>
+                        <td className="px-2 py-1 text-slate-500 font-mono whitespace-nowrap">{formatDateTime(row.created_at)}</td>
+                        <td className="px-2 py-1 whitespace-nowrap">
                           {row.customer_name
                             ? <span className="font-bold text-slate-700">{row.customer_name}</span>
                             : <span className="text-slate-400">ລູກຄ້າທົ່ວໄປ</span>}
                           {row.member_code && <span className="ml-1 text-[9px] text-slate-400 font-mono">{row.member_code}</span>}
                         </td>
-                        <td className="px-2 py-1 text-right font-mono">{formatPrice(b.itemsGross)}</td>
-                        <td className="px-2 py-1 text-right font-mono text-rose-600">{discountSign(b.discount)}{formatPrice(Math.abs(b.discount))}</td>
-                        <td className="px-2 py-1 text-right font-mono">{formatPrice(b.beforeVat)}</td>
-                        <td className="px-2 py-1 text-right font-mono text-cyan-700">{formatPrice(b.vatAmount)}</td>
-                        <td className="px-2 py-1 text-right font-mono font-extrabold text-slate-900">{formatPrice(b.total)}</td>
+                        <td className="px-2 py-1 text-right font-mono whitespace-nowrap">{formatNumber(b.itemsGross)}</td>
+                        <td className="px-2 py-1 text-right font-mono text-rose-600 whitespace-nowrap">{discountSign(b.discount)}{formatNumber(Math.abs(b.discount))}</td>
+                        <td className="px-2 py-1 text-right font-mono whitespace-nowrap">{formatNumber(b.beforeVat)}</td>
+                        <td className="px-2 py-1 text-right font-mono text-cyan-700 whitespace-nowrap">{formatNumber(b.vatAmount)}</td>
+                        <td className="px-2 py-1 text-right font-mono font-extrabold text-slate-900 whitespace-nowrap">{formatNumber(b.systemTotal)}</td>
                       </tr>
                     ))}
                   </tbody>
                   {lines.length > 0 && (
                     <tfoot>
                       <tr className="bg-slate-100 border-t-2 border-slate-300 font-extrabold">
-                        <td className="px-2 py-1.5" colSpan={4}>ລວມ {lines.length} ບິນ</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{formatPrice(totals.itemsGross)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-rose-600">{discountSign(totals.discount)}{formatPrice(Math.abs(totals.discount))}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{formatPrice(totals.beforeVat)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono text-cyan-700">{formatPrice(totals.vatAmount)}</td>
-                        <td className="px-2 py-1.5 text-right font-mono">{formatPrice(totals.total)}</td>
+                        <td className="px-2 py-1.5 whitespace-nowrap" colSpan={4}>ລວມ {lines.length} ບິນ</td>
+                        <td className="px-2 py-1.5 text-right font-mono whitespace-nowrap">{formatNumber(totals.itemsGross)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-rose-600 whitespace-nowrap">{discountSign(totals.discount)}{formatNumber(Math.abs(totals.discount))}</td>
+                        <td className="px-2 py-1.5 text-right font-mono whitespace-nowrap">{formatNumber(totals.beforeVat)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono text-cyan-700 whitespace-nowrap">{formatNumber(totals.vatAmount)}</td>
+                        <td className="px-2 py-1.5 text-right font-mono whitespace-nowrap">{formatNumber(totals.systemTotal)}</td>
                       </tr>
                     </tfoot>
                   )}
@@ -4351,15 +4459,36 @@ export default function POS({ user, onLogout }) {
                       <div className="flex justify-between text-slate-500"><span>{b.vatLabelText}</span><span className="font-mono-t">{formatPrice(b.vatAmount)}</span></div>
                     </>
                   )}
-                  <div className="flex justify-between font-extrabold text-slate-800 pt-1 border-t border-slate-200"><span>{VAT_LABELS.grandTotal}</span><span className="font-mono-t">{formatPrice(b.total)}</span></div>
+                  {b.hasRounding && (
+                    <>
+                      <div className="flex justify-between text-slate-500"><span>{VAT_LABELS.systemTotal}</span><span className="font-mono-t">{formatPrice(b.systemTotal)}</span></div>
+                      <div className="flex justify-between text-slate-500"><span>{VAT_LABELS.rounding}</span><span className="font-mono-t">{roundingSign(b.rounding)}{formatPrice(Math.abs(b.rounding))}</span></div>
+                    </>
+                  )}
+                  <div className="flex justify-between font-extrabold text-slate-800 pt-1 border-t border-slate-200"><span>{b.grandTotalLabel}</span><span className="font-mono-t">{formatPrice(b.total)}</span></div>
                 </>
               )
             })()}
-            <div className="flex justify-between text-slate-500"><span>ຮັບເງິນ</span><span className="font-mono-t">{formatPrice(showReceipt.amount_paid)}</span></div>
-            <div className={`flex justify-between font-extrabold ${showReceipt.payment_method === 'credit' ? 'text-amber-700' : 'text-red-700'} pt-2 mt-1 border-t border-slate-200`}>
-              <span>{showReceipt.payment_method === 'credit' ? 'ຍອດຄ້າງ' : 'ເງິນທອນ'}</span>
-              <span className="font-mono-t">{formatPrice(showReceipt.payment_method === 'credit' ? Number(showReceipt.total) - Number(showReceipt.amount_paid || 0) : showReceipt.change_amount)}</span>
-            </div>
+            {showReceipt.payment_method === 'credit' ? (
+              <>
+                <div className="flex justify-between text-slate-500"><span>ຮັບແລ້ວ</span><span className="font-mono-t">{formatPrice(showReceipt.amount_paid)}</span></div>
+                <div className="flex justify-between font-extrabold text-amber-700 pt-2 mt-1 border-t border-slate-200">
+                  <span>ຍອດຄ້າງ</span>
+                  <span className="font-mono-t">{formatPrice(Number(showReceipt.total) - Number(showReceipt.amount_paid || 0))}</span>
+                </div>
+              </>
+            ) : (
+              <div className="pt-2 mt-1 border-t border-slate-200 space-y-1">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">{VAT_LABELS.paymentDetail}</div>
+                {tenderRowsOf(showReceipt, showReceipt.payments).map((t, i) => (
+                  <div key={i} className="flex justify-between text-slate-500"><span>{t.label}</span><span className="font-mono-t">{formatPrice(t.amount)}</span></div>
+                ))}
+                <div className="flex justify-between font-extrabold text-red-700">
+                  <span>{VAT_LABELS.change}</span>
+                  <span className="font-mono-t">{formatPrice(showReceipt.change_amount)}</span>
+                </div>
+              </div>
+            )}
           </div>
           {showReceipt.payment_method === 'credit' && (
             <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-2 text-xs text-amber-900">
@@ -4691,6 +4820,14 @@ export default function POS({ user, onLogout }) {
                           </button>
                         ))}
                       </div>
+                      {company.vat_bill_button_enabled && (
+                        <button onClick={openVatBillPrint}
+                          className="h-7 px-2 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 text-cyan-800 rounded flex items-center gap-1 text-[10px] font-extrabold"
+                          title="ພິມບິນ ອມພ ຜ່ານລະບົບພາຍນອກ">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
+                          ບິນ ອມພ
+                        </button>
+                      )}
                       {canMakeReturn && (
                         <button onClick={() => openReturnModal(order)}
                           className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded flex items-center justify-center" title="ຮັບຄືນ / ຄືນເງິນ">
@@ -4774,6 +4911,14 @@ export default function POS({ user, onLogout }) {
 
             {returnLookup?.order && (
               <>
+                {/* ບອກໃຫ້ພະນັກງານຮູ້ວ່າບິນນີ້ຄືນຕາມລາຄາຫຼັງຫຼຸດ ບໍ່ແມ່ນລາຄາປ້າຍ */}
+                {returnLookup.pricing?.discounted && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800">
+                    ບິນນີ້ມີສ່ວນຫຼຸດ {formatNumber(returnLookup.pricing.total_discount || 0)} ₭ —
+                    ຄືນເງິນຕາມ<b> ລາຄາຫຼັງຫຼຸດ</b> ຂອງແຕ່ລະລາຍການ (ບໍ່ແມ່ນລາຄາປ້າຍ)
+                  </div>
+                )}
+
                 {/* Order info card */}
                 <div className="rounded-xl border-2 border-slate-200 bg-gradient-to-br from-slate-50 to-white p-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4803,6 +4948,9 @@ export default function POS({ user, onLogout }) {
                     {(returnLookup.items || []).map((item, idx) => {
                       const maxQty = Number(item.returnable_qty) || 0
                       const selectedQty = Math.max(0, Math.min(Number(returnQty[item.order_item_id]) || 0, maxQty))
+                      const listPrice = Number(item.price) || 0
+                      const netPrice = returnNetPrice(item, returnLookup.pricing)
+                      const hasDiscount = listPrice - netPrice > 0.5
                       const setQ = (n) => setReturnQty(prev => ({
                         ...prev,
                         [item.order_item_id]: Math.max(0, Math.min(Number(n) || 0, maxQty))
@@ -4821,13 +4969,26 @@ export default function POS({ user, onLogout }) {
                                 <span>ຂາຍ <b className="text-slate-700">{formatNumber(item.sold_qty || 0)}</b></span>
                                 <span>ຄືນໄດ້ <b className={maxQty > 0 ? 'text-emerald-600' : 'text-slate-400'}>{formatNumber(maxQty)}</b></span>
                                 <span className="text-slate-300">·</span>
-                                <span>ລາຄາ <b className="text-slate-700 font-mono">{formatNumber(item.price || 0)}</b> ₭</span>
+                                {hasDiscount ? (
+                                  <span>
+                                    ລາຄາ <b className="text-slate-400 font-mono line-through">{formatNumber(listPrice)}</b>
+                                    <b className="ml-1 text-emerald-700 font-mono">{formatNumber(netPrice)}</b> ₭
+                                    <span className="ml-1 text-[10px] font-bold text-emerald-600">(ຫຼັງຫຼຸດ)</span>
+                                  </span>
+                                ) : (
+                                  <span>ລາຄາ <b className="text-slate-700 font-mono">{formatNumber(listPrice)}</b> ₭</span>
+                                )}
                               </div>
                             </div>
                             <div className="shrink-0 text-right">
                               <div className={`font-mono text-base font-extrabold ${isSelected ? 'text-blue-700' : 'text-slate-300'}`}>
-                                {formatPrice(selectedQty * (Number(item.price) || 0))}
+                                {formatPrice(selectedQty * netPrice)}
                               </div>
+                              {isSelected && hasDiscount && (
+                                <div className="font-mono text-[10px] text-slate-400 line-through">
+                                  {formatNumber(selectedQty * listPrice)}
+                                </div>
+                              )}
                             </div>
                           </div>
                           {maxQty > 0 && (
@@ -4918,9 +5079,14 @@ export default function POS({ user, onLogout }) {
                     <div>
                       <div className="text-[10px] font-extrabold uppercase tracking-widest text-blue-100">ຍອດຕ້ອງຄືນເງິນ</div>
                       <div className="mt-0.5 text-2xl font-extrabold font-mono tracking-tight">{formatPrice(returnRefundTotal)}</div>
+                      {returnDiscountTotal > 0 && (
+                        <div className="mt-0.5 text-[10px] font-bold text-blue-100 font-mono">
+                          ມູນຄ່າສິນຄ້າ {formatNumber(returnGrossTotal)} · ສ່ວນຫຼຸດ −{formatNumber(returnDiscountTotal)}
+                        </div>
+                      )}
                       <div className="text-[10px] font-bold text-blue-200 mt-0.5">
                         {selectedReturnItems.length > 0
-                          ? `${formatNumber(selectedReturnItems.reduce((s, x) => s + Number(x.quantity || 0), 0))} ຊິ້ນ · ${selectedReturnItems.length} ລາຍການ`
+                          ? `${formatNumber(returnPieces)} ຊິ້ນ · ${selectedReturnItems.length} ລາຍການ`
                           : 'ຍັງບໍ່ໄດ້ເລືອກສິນຄ້າ'}
                       </div>
                     </div>

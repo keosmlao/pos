@@ -5,6 +5,7 @@ import SearchSelect from '@/components/SearchSelect';
 import { AdminHero } from '@/components/admin/ui/AdminHero';
 import { useLocations, createLocation } from '@/utils/useLocations';
 import { usePagePermission } from '@/utils/adminPermissions';
+import { digitsOnly, normalizeTaxId, TAX_ID_LENGTH } from '@/lib/taxId';
 
 const API = '/api';
 const fmtNum = n => new Intl.NumberFormat('lo-LA').format(n || 0);
@@ -15,6 +16,7 @@ const emptyForm = {
   name: '',
   phone: '',
   email: '',
+  tax_id: '',
   province: '',
   district: '',
   village: '',
@@ -83,6 +85,7 @@ export default function MembersPage() {
       name: m.name || '',
       phone: m.phone || '',
       email: m.email || '',
+      tax_id: m.tax_id || '',
       province: m.province || '',
       district: m.district || '',
       village: m.village || '',
@@ -100,6 +103,11 @@ export default function MembersPage() {
     e.preventDefault();
     if (!form.province || !form.district || !form.village) {
       alert('ກະລຸນາເລືອກແຂວງ/ເມືອງ/ບ້ານ');
+      return;
+    }
+    const taxId = normalizeTaxId(form.tax_id);
+    if (!taxId.ok) {
+      alert(taxId.error);
       return;
     }
     const url = editing ? `${API}/admin/members/${editing.id}` : `${API}/admin/members`;
@@ -225,6 +233,7 @@ export default function MembersPage() {
                     <td className="px-3 py-2">
                       <div className="font-extrabold text-slate-900">{m.name}</div>
                       <div className="text-[10px] text-slate-400 font-mono">{m.member_code}</div>
+                      {m.tax_id && <div className="text-[10px] text-slate-400 font-mono">TIN: {m.tax_id}</div>}
                     </td>
                     <td className="px-3 py-2 text-slate-600">
                       <div>{m.phone || '—'}</div>
@@ -332,6 +341,28 @@ export default function MembersPage() {
                     className="mt-1 w-full px-2 py-2 border border-slate-200 rounded text-sm outline-none focus:border-red-500" />
                 </label>
               </div>
+              {/* TIN — type="text" ບໍ່ແມ່ນ number ຈຶ່ງຮັກສາເລກ 0 ຂ້າງໜ້າໄວ້ໄດ້ ແລະ ລັອກ 12 ຕົວພໍດີ */}
+              <label className="block">
+                <span className="text-[10px] font-bold text-slate-500">ເລກປະຈຳຕົວຜູ້ເສຍອາກອນ (TIN)</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={TAX_ID_LENGTH}
+                  value={form.tax_id}
+                  onChange={e => setForm({ ...form, tax_id: digitsOnly(e.target.value) })}
+                  placeholder={`ຕົວເລກ ${TAX_ID_LENGTH} ຕົວ`}
+                  className={`mt-1 w-full px-2 py-2 border rounded text-sm font-mono tracking-wider outline-none focus:border-red-500 ${
+                    form.tax_id && form.tax_id.length !== TAX_ID_LENGTH ? 'border-rose-400 bg-rose-50/40' : 'border-slate-200'
+                  }`} />
+                <span className={`mt-1 block text-[10px] font-bold ${
+                  form.tax_id && form.tax_id.length !== TAX_ID_LENGTH ? 'text-rose-600' : 'text-slate-400'
+                }`}>
+                  {form.tax_id
+                    ? `${form.tax_id.length}/${TAX_ID_LENGTH} ຕົວ${form.tax_id.length === TAX_ID_LENGTH ? ' ✓' : ' — ຕ້ອງຄົບ ' + TAX_ID_LENGTH + ' ຕົວ'}`
+                    : `ບໍ່ບັງຄັບ — ຖ້າປ້ອນ ຕ້ອງເປັນຕົວເລກ ${TAX_ID_LENGTH} ຕົວພໍດີ`}
+                </span>
+              </label>
               <div className="grid grid-cols-1 gap-2">
                 <div>
                   <span className="text-[10px] font-bold text-slate-500">ແຂວງ *</span>

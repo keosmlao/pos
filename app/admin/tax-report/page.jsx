@@ -134,11 +134,17 @@ export default function TaxReportPage() {
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <Kpi label="ບີນທີ່ມີ VAT" value={fmtNum(summary.taxable_count)} accent="cyan" sub={`${fmtNum(summary.exempt_count)} ບໍ່ມີ VAT`} />
         <Kpi label="ມູນຄ່າກ່ອນ VAT" value={fmtPrice(summary.net_total)} accent="slate" />
         <Kpi label="VAT ລວມ" value={fmtPrice(summary.vat_total)} accent="rose" highlight />
-        <Kpi label="ມູນຄ່າທັງໝົດ" value={fmtPrice(summary.gross_total)} accent="emerald" />
+        <Kpi
+          label="ລາຍຮັບອື່ນ — ຈາກການປັດເສດ"
+          value={`${Number(summary.rounding_total) > 0 ? '+' : ''}${fmtPrice(summary.rounding_total)}`}
+          accent="slate"
+          sub="ຍອດຈ່າຍຈິງ − (ກ່ອນ VAT + VAT)"
+        />
+        <Kpi label="ມູນຄ່າທັງໝົດ" value={fmtPrice(summary.gross_total)} accent="emerald" sub="ຍອດທີ່ລູກຄ້າຈ່າຍຈິງ" />
       </div>
 
       {/* By rate */}
